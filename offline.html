@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Offline - WAPOS</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-align: center;
+            padding: 20px;
+        }
+        .offline-container {
+            max-width: 500px;
+        }
+        .offline-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+        p {
+            font-size: 1.2em;
+            margin-bottom: 30px;
+            opacity: 0.9;
+        }
+        .btn {
+            background: white;
+            color: #667eea;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn:hover {
+            background: #f0f0f0;
+        }
+        .features {
+            margin-top: 40px;
+            text-align: left;
+        }
+        .feature {
+            margin: 15px 0;
+            padding: 15px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="offline-container">
+        <div class="offline-icon">📡</div>
+        <h1>You're Offline</h1>
+        <p>WAPOS can't connect to the internet right now, but you can still work offline!</p>
+        
+        <button class="btn" onclick="window.location.reload()">Try Again</button>
+        
+        <div class="features">
+            <div class="feature">
+                <strong>✓ Continue Working</strong><br>
+                Your recent pages are cached and available offline
+            </div>
+            <div class="feature">
+                <strong>✓ Auto-Sync</strong><br>
+                Sales will automatically sync when you're back online
+            </div>
+            <div class="feature">
+                <strong>✓ No Data Loss</strong><br>
+                All your work is saved locally and will upload later
+            </div>
+        </div>
+        
+        <p style="margin-top: 30px; font-size: 0.9em; opacity: 0.7;">
+            Checking connection status...
+        </p>
+    </div>
+    
+    <script>
+        // Check for online status every 5 seconds
+        setInterval(() => {
+            if (navigator.onLine) {
+                window.location.reload();
+            }
+        }, 5000);
+        
+        // Update status
+        window.addEventListener('online', () => {
+            window.location.reload();
+        });
+    </script>
+</body>
+</html>

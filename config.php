@@ -1,0 +1,37 @@
+<?php
+/**
+ * WAPOS - Waesta Point of Sale System
+ * Configuration File
+ */
+
+// Database Configuration
+define('DB_HOST', '127.0.0.1');
+define('DB_NAME', 'wapos');
+define('DB_USER', 'root');
+define('DB_PASS', '');
+define('DB_CHARSET', 'utf8mb4');
+
+// Application Settings
+define('APP_NAME', 'WAPOS');
+define('APP_URL', 'http://localhost/wapos');
+define('TIMEZONE', 'Africa/Nairobi');
+
+// Session Settings
+define('SESSION_LIFETIME', 7200); // 2 hours
+define('SESSION_NAME', 'wapos_session');
+
+// Security
+define('HASH_ALGO', PASSWORD_ARGON2ID);
+define('HASH_OPTIONS', ['memory_cost' => 65536, 'time_cost' => 4, 'threads' => 1]);
+
+// Paths
+define('ROOT_PATH', __DIR__);
+define('UPLOAD_PATH', ROOT_PATH . '/uploads');
+define('LOG_PATH', ROOT_PATH . '/logs');
+
+// Set timezone
+date_default_timezone_set(TIMEZONE);
+
+// Error Reporting (set to 0 for production)
+error_reporting(E_ALL);
+ini_set('display_errors', 1);

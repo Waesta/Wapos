@@ -1,0 +1,33 @@
+============================================
+    WAPOS LOGO INSTALLATION
+============================================
+
+Your logo is ready to use! Just save it to the correct location:
+
+STEP 1: Save Your Logo Image
+-----------------------------
+Save your WAPOS logo file (the one you sent) as:
+
+    C:\xampp\htdocs\wapos\assets\images\logo.png
+
+The folder already exists, just save the file there.
+
+
+STEP 2: Refresh Your Browser
+-----------------------------
+After saving the logo, refresh any WAPOS page and your logo will appear:
+- In the sidebar navigation
+- On the login page
+- In PWA manifest
+
+
+That's it! The system is already configured to use your logo.
+============================================
+
+Note: The logo will show in:
+1. Sidebar (all pages)
+2. Login page
+3. Mobile app icon (when installed as PWA)
+4. Browser favicon
+
+All references are already set up in the code!
