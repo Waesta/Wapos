@@ -1,0 +1,259 @@
+/**
+ * Thermal Printer CSS for Epson TM-T20/TM-T88 Series
+ * Optimized for 80mm (79.5mm) thermal receipt printers
+ */
+
+/* Print-specific styles */
+@media print {
+    @page {
+        margin: 0;
+        size: 80mm auto;
+    }
+    
+    body {
+        width: 79.5mm !important;
+        margin: 0 !important;
+        padding: 2mm !important;
+        font-family: 'Courier New', monospace !important;
+        font-size: 11px !important;
+        line-height: 1.2 !important;
+        color: #000 !important;
+        background: white !important;
+    }
+    
+    /* Hide non-printable elements */
+    .no-print,
+    .no-print * {
+        display: none !important;
+    }
+    
+    /* Ensure proper text sizing for thermal printers */
+    h1, h2, h3, h4, h5, h6 {
+        font-size: 14px !important;
+        font-weight: bold !important;
+        margin: 2mm 0 !important;
+    }
+    
+    /* Optimize spacing for thermal printing */
+    .header {
+        text-align: center !important;
+        border-bottom: 2px dashed #000 !important;
+        padding-bottom: 3mm !important;
+        margin-bottom: 3mm !important;
+    }
+    
+    .transaction-info {
+        border: 1px solid #000 !important;
+        padding: 2mm !important;
+        margin: 3mm 0 !important;
+        font-size: 10px !important;
+    }
+    
+    .items {
+        border-top: 1px dashed #000 !important;
+        border-bottom: 1px dashed #000 !important;
+        padding: 3mm 0 !important;
+        margin: 3mm 0 !important;
+    }
+    
+    .items-header {
+        font-weight: bold !important;
+        border-bottom: 1px solid #000 !important;
+        padding-bottom: 1mm !important;
+        margin-bottom: 2mm !important;
+        font-size: 9px !important;
+    }
+    
+    .item {
+        margin: 1mm 0 !important;
+        font-size: 9px !important;
+        border-bottom: 1px dotted #ccc !important;
+        padding-bottom: 1mm !important;
+    }
+    
+    .item-details {
+        font-size: 8px !important;
+        margin-left: 3mm !important;
+        color: #333 !important;
+    }
+    
+    .totals {
+        margin: 3mm 0 !important;
+        font-size: 11px !important;
+    }
+    
+    .total-line {
+        display: flex !important;
+        justify-content: space-between !important;
+        margin: 1mm 0 !important;
+    }
+    
+    .grand-total {
+        font-size: 13px !important;
+        font-weight: bold !important;
+        border-top: 2px solid #000 !important;
+        padding-top: 2mm !important;
+        margin-top: 2mm !important;
+    }
+    
+    .return-policy {
+        border: 1px solid #000 !important;
+        padding: 2mm !important;
+        margin: 3mm 0 !important;
+        font-size: 7px !important;
+    }
+    
+    .qr-code {
+        text-align: center !important;
+        margin: 3mm 0 !important;
+    }
+    
+    .qr-code img {
+        width: 15mm !important;
+        height: 15mm !important;
+        margin: 1mm auto !important;
+    }
+    
+    .promo-section {
+        border: 2px solid #000 !important;
+        padding: 2mm !important;
+        margin: 3mm 0 !important;
+        text-align: center !important;
+        font-size: 8px !important;
+        font-weight: bold !important;
+    }
+    
+    .promo-section img {
+        width: 10mm !important;
+        height: 10mm !important;
+    }
+    
+    .social-links {
+        font-size: 7px !important;
+        margin: 2mm 0 !important;
+    }
+    
+    .footer {
+        text-align: center !important;
+        border-top: 2px dashed #000 !important;
+        padding-top: 3mm !important;
+        margin-top: 3mm !important;
+        font-size: 8px !important;
+    }
+    
+    /* Force black text for thermal printers */
+    * {
+        color: #000 !important;
+        background: transparent !important;
+    }
+    
+    /* Ensure borders print correctly */
+    .header,
+    .transaction-info,
+    .items,
+    .return-policy,
+    .promo-section,
+    .footer {
+        border-color: #000 !important;
+    }
+    
+    /* Optimize images for thermal printing */
+    img {
+        max-width: 100% !important;
+        height: auto !important;
+        filter: contrast(1.2) !important;
+    }
+    
+    /* Business logo sizing */
+    .logo {
+        max-width: 20mm !important;
+        height: auto !important;
+        margin-bottom: 2mm !important;
+    }
+}
+
+/* Screen preview styles (mimics thermal printer appearance) */
+@media screen {
+    .thermal-preview {
+        width: 79.5mm;
+        margin: 0 auto;
+        padding: 5mm;
+        background: white;
+        box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        font-family: 'Courier New', monospace;
+        font-size: 12px;
+        line-height: 1.2;
+        border: 1px solid #ddd;
+    }
+    
+    .thermal-preview .header {
+        text-align: center;
+        border-bottom: 2px dashed #000;
+        padding-bottom: 8px;
+        margin-bottom: 8px;
+    }
+    
+    .thermal-preview .logo {
+        max-width: 60mm;
+        height: auto;
+        margin-bottom: 5px;
+    }
+}
+
+/* Specific optimizations for different thermal printer models */
+.epson-tm-t20 {
+    /* TM-T20 specific optimizations */
+    font-size: 10px !important;
+}
+
+.epson-tm-t88 {
+    /* TM-T88 specific optimizations */
+    font-size: 11px !important;
+}
+
+/* Character density optimizations */
+.high-density {
+    font-size: 9px !important;
+    line-height: 1.1 !important;
+}
+
+.low-density {
+    font-size: 12px !important;
+    line-height: 1.3 !important;
+}
+
+/* Barcode and QR code optimizations */
+.barcode,
+.qr-code {
+    image-rendering: pixelated !important;
+    image-rendering: -moz-crisp-edges !important;
+    image-rendering: crisp-edges !important;
+}
+
+/* Text emphasis for thermal printers */
+.thermal-bold {
+    font-weight: bold !important;
+    font-size: 110% !important;
+}
+
+.thermal-large {
+    font-size: 150% !important;
+    font-weight: bold !important;
+}
+
+.thermal-small {
+    font-size: 80% !important;
+}
+
+/* Dashed lines for thermal printers */
+.thermal-divider {
+    border-top: 1px dashed #000 !important;
+    margin: 3mm 0 !important;
+    height: 0 !important;
+}
+
+.thermal-divider-thick {
+    border-top: 2px dashed #000 !important;
+    margin: 4mm 0 !important;
+    height: 0 !important;
+}

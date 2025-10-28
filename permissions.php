@@ -111,23 +111,130 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // Get data for display with error handling
 try {
     $users = $db->fetchAll("SELECT id, username, full_name, role FROM users WHERE is_active = 1 ORDER BY full_name") ?: [];
-    $groups = $systemManager->getPermissionGroups();
-    $modules = $systemManager->getSystemModules();
-    $actions = $systemManager->getSystemActions();
+    
+    // Get permission modules
+    $modules = $db->fetchAll("SELECT * FROM permission_modules WHERE is_active = 1 ORDER BY module_name") ?: [];
+    
+    // Get permission actions
+    $actions = $db->fetchAll("
+        SELECT pa.*, pm.module_name 
+        FROM permission_actions pa 
+        JOIN permission_modules pm ON pa.module_id = pm.id 
+        WHERE pa.is_active = 1 AND pm.is_active = 1 
+        ORDER BY pm.module_name, pa.action_name
+    ") ?: [];
+    
+    // Get user permissions
+    $userPermissions = $db->fetchAll("
+        SELECT up.*, pm.module_key, pa.action_key, u.username 
+        FROM user_permissions up 
+        JOIN permission_modules pm ON up.module_id = pm.id 
+        JOIN permission_actions pa ON up.action_id = pa.id 
+        JOIN users u ON up.user_id = u.id 
+        WHERE up.is_active = 1 
+        ORDER BY u.username, pm.module_name, pa.action_name
+    ") ?: [];
+    
+    // Define permission groups (role-based templates)
+    $groups = [
+        [
+            'id' => 1,
+            'name' => 'Administrator',
+            'description' => 'Full system access with all permissions',
+            'color' => '#dc3545',
+            'permissions' => ['*'] // All permissions
+        ],
+        [
+            'id' => 2,
+            'name' => 'Manager',
+            'description' => 'Business operations and reporting access',
+            'color' => '#0d6efd',
+            'permissions' => ['pos.*', 'restaurant.*', 'inventory.*', 'customers.*', 'sales.*', 'reports.*']
+        ],
+        [
+            'id' => 3,
+            'name' => 'Cashier',
+            'description' => 'Point of sale operations only',
+            'color' => '#198754',
+            'permissions' => ['pos.create', 'pos.read', 'customers.read', 'customers.create']
+        ],
+        [
+            'id' => 4,
+            'name' => 'Waiter',
+            'description' => 'Restaurant service operations',
+            'color' => '#fd7e14',
+            'permissions' => ['restaurant.*', 'customers.read', 'customers.create']
+        ],
+        [
+            'id' => 5,
+            'name' => 'Inventory Manager',
+            'description' => 'Stock and inventory management',
+            'color' => '#6f42c1',
+            'permissions' => ['inventory.*', 'products.*', 'reports.inventory']
+        ],
+        [
+            'id' => 6,
+            'name' => 'Accountant',
+            'description' => 'Financial and accounting access',
+            'color' => '#20c997',
+            'permissions' => ['accounting.*', 'reports.financial', 'sales.read']
+        ]
+    ];
+    
 } catch (Exception $e) {
     error_log('Permissions data loading error: ' . $e->getMessage());
     $users = [];
-    $groups = [];
     $modules = [];
     $actions = [];
+    $userPermissions = [];
+    $groups = [];
 }
 
 // Get selected user's permissions for matrix display
 $selectedUserId = $_GET['user_id'] ?? ($users[0]['id'] ?? null);
 $permissionMatrix = [];
 if ($selectedUserId) {
-    $userPermissionManager = new PermissionManager($selectedUserId);
-    $permissionMatrix = $userPermissionManager->getPermissionMatrix();
+    try {
+        // Build permission matrix directly from database
+        $userSpecificPermissions = $db->fetchAll("
+            SELECT pm.module_key, pm.module_name, pa.action_key, pa.action_name
+            FROM user_permissions up
+            JOIN permission_modules pm ON up.module_id = pm.id
+            JOIN permission_actions pa ON up.action_id = pa.id
+            WHERE up.user_id = ? AND up.is_active = 1
+        ", [$selectedUserId]) ?: [];
+        
+        // Create matrix structure
+        foreach ($modules as $module) {
+            $moduleKey = $module['module_key'];
+            $permissionMatrix[$moduleKey] = [
+                'module_name' => $module['module_name'],
+                'module_key' => $moduleKey,
+                'icon' => 'bi bi-gear',
+                'actions' => []
+            ];
+            
+            // Check each action for this module
+            foreach ($actions as $action) {
+                if ($action['module_id'] == $module['id']) {
+                    $hasPermission = false;
+                    foreach ($userSpecificPermissions as $userPerm) {
+                        if ($userPerm['module_key'] == $moduleKey && $userPerm['action_key'] == $action['action_key']) {
+                            $hasPermission = true;
+                            break;
+                        }
+                    }
+                    
+                    $permissionMatrix[$moduleKey]['actions'][$action['action_key']] = [
+                        'has_permission' => $hasPermission,
+                        'is_sensitive' => false
+                    ];
+                }
+            }
+        }
+    } catch (Exception $e) {
+        $permissionMatrix = [];
+    }
 }
 
 $pageTitle = 'User Permissions Management';
@@ -176,6 +283,9 @@ include 'includes/header.php';
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h4 class="mb-0"><i class="bi bi-shield-lock me-2"></i>User Permissions Management</h4>
     <div class="btn-group">
+        <a href="create-permission-templates.php" class="btn btn-success">
+            <i class="bi bi-collection me-2"></i>Permission Templates
+        </a>
         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createGroupModal">
             <i class="bi bi-plus-circle me-2"></i>Create Group
         </button>
@@ -238,9 +348,9 @@ include 'includes/header.php';
                             <tr>
                                 <th style="writing-mode: horizontal-tb;">Module</th>
                                 <?php foreach ($actions as $action): ?>
-                                    <th class="<?= $action['is_sensitive'] ? 'sensitive-action' : '' ?>">
-                                        <?= htmlspecialchars($action['display_name']) ?>
-                                        <?php if ($action['is_sensitive']): ?>
+                                    <th class="<?= ($action['is_sensitive'] ?? false) ? 'sensitive-action' : '' ?>">
+                                        <?= htmlspecialchars($action['action_name'] ?? $action['action_key'] ?? 'Unknown') ?>
+                                        <?php if ($action['is_sensitive'] ?? false): ?>
                                             <i class="bi bi-exclamation-triangle-fill text-warning ms-1"></i>
                                         <?php endif; ?>
                                     </th>
@@ -252,15 +362,15 @@ include 'includes/header.php';
                             <tr>
                                 <td class="text-start">
                                     <i class="<?= $module['icon'] ?> me-2"></i>
-                                    <?= htmlspecialchars($module['display_name']) ?>
+                                    <?= htmlspecialchars($module['module_name']) ?>
                                 </td>
                                 <?php foreach ($actions as $action): ?>
                                     <?php 
                                     $hasPermission = $module['actions'][$action['action_key']]['has_permission'] ?? false;
                                     $isSensitive = $module['actions'][$action['action_key']]['is_sensitive'] ?? false;
                                     ?>
-                                    <td class="<?= $hasPermission ? 'permission-granted' : 'permission-denied' ?> <?= $isSensitive ? 'sensitive-action' : '' ?>">
-                                        <i class="bi bi-<?= $hasPermission ? 'check-circle-fill' : 'x-circle-fill' ?>"></i>
+                                    <td class="text-center <?= $hasPermission ? 'permission-granted' : 'permission-denied' ?> <?= $isSensitive ? 'sensitive-action' : '' ?>">
+                                        <i class="bi bi-<?= $hasPermission ? 'check-circle-fill text-success' : 'x-circle-fill text-danger' ?>"></i>
                                     </td>
                                 <?php endforeach; ?>
                             </tr>
@@ -354,7 +464,7 @@ include 'includes/header.php';
                         <select class="form-select" name="module_key" required>
                             <option value="">Select Module</option>
                             <?php foreach ($modules as $module): ?>
-                                <option value="<?= $module['module_key'] ?>"><?= htmlspecialchars($module['display_name']) ?></option>
+                                <option value="<?= $module['module_key'] ?>"><?= htmlspecialchars($module['module_name'] ?? $module['module_key'] ?? 'Unknown') ?></option>
                             <?php endforeach; ?>
                         </select>
                     </div>
@@ -364,9 +474,9 @@ include 'includes/header.php';
                         <select class="form-select" name="action_key" required>
                             <option value="">Select Action</option>
                             <?php foreach ($actions as $action): ?>
-                                <option value="<?= $action['action_key'] ?>" <?= $action['is_sensitive'] ? 'data-sensitive="true"' : '' ?>>
-                                    <?= htmlspecialchars($action['display_name']) ?>
-                                    <?= $action['is_sensitive'] ? ' ⚠️' : '' ?>
+                                <option value="<?= $action['action_key'] ?>" <?= ($action['is_sensitive'] ?? false) ? 'data-sensitive="true"' : '' ?>>
+                                    <?= htmlspecialchars($action['action_name'] ?? $action['action_key'] ?? 'Unknown') ?>
+                                    <?= ($action['is_sensitive'] ?? false) ? ' ⚠️' : '' ?>
                                 </option>
                             <?php endforeach; ?>
                         </select>
@@ -466,8 +576,8 @@ include 'includes/header.php';
                                     <div class="card border">
                                         <div class="card-header py-2">
                                             <small class="fw-bold">
-                                                <i class="<?= $module['icon'] ?> me-1"></i>
-                                                <?= htmlspecialchars($module['display_name']) ?>
+                                                <i class="<?= $module['icon'] ?? 'bi bi-gear' ?> me-1"></i>
+                                                <?= htmlspecialchars($module['module_name'] ?? $module['module_key'] ?? 'Unknown') ?>
                                             </small>
                                         </div>
                                         <div class="card-body py-2">
@@ -515,14 +625,12 @@ include 'includes/header.php';
                         SELECT 
                             pal.*,
                             u.full_name as user_name,
-                            tu.full_name as target_user_name,
-                            sm.display_name as module_name,
-                            sa.display_name as action_name
+                            pm.module_name,
+                            pa.action_name
                         FROM permission_audit_log pal
                         LEFT JOIN users u ON pal.user_id = u.id
-                        LEFT JOIN users tu ON pal.target_user_id = tu.id
-                        LEFT JOIN system_modules sm ON pal.module_id = sm.id
-                        LEFT JOIN system_actions sa ON pal.action_id = sa.id
+                        LEFT JOIN permission_modules pm ON pal.module_key = pm.module_key
+                        LEFT JOIN permission_actions pa ON pal.action_key = pa.action_key
                         ORDER BY pal.created_at DESC
                         LIMIT 100
                     ");

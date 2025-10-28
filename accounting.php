@@ -1,29 +1,107 @@
 <?php
 require_once 'includes/bootstrap.php';
-$auth->requireRole('manager');
+$auth->requireRole(['admin', 'manager', 'accountant']);
 
 $db = Database::getInstance();
 
-// Handle expense actions
+// Handle accounting actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     
-    if ($action === 'add_expense') {
-        $data = [
-            'amount' => $_POST['amount'],
-            'category_id' => $_POST['category_id'],
-            'description' => sanitizeInput($_POST['description']),
-            'expense_date' => $_POST['expense_date'],
-            'payment_method' => $_POST['payment_method'],
-            'reference' => sanitizeInput($_POST['reference'] ?? ''),
-            'user_id' => $auth->getUserId(),
-            'location_id' => $_POST['location_id'] ?: null
-        ];
-        
-        if ($db->insert('expenses', $data)) {
-            $_SESSION['success_message'] = 'Expense added successfully';
+    try {
+        if ($action === 'add_expense') {
+            $data = [
+                'amount' => $_POST['amount'],
+                'category_id' => $_POST['category_id'],
+                'description' => sanitizeInput($_POST['description']),
+                'expense_date' => $_POST['expense_date'],
+                'payment_method' => $_POST['payment_method'],
+                'reference' => sanitizeInput($_POST['reference'] ?? ''),
+                'user_id' => $auth->getUserId(),
+                'location_id' => $_POST['location_id'] ?: null
+            ];
+            
+            if ($db->insert('expenses', $data)) {
+                // Create journal entry
+                $this->createJournalEntry('expense', $data['amount'], $data['description'], [
+                    'debit_account' => 'expense_' . $data['category_id'],
+                    'credit_account' => 'cash_' . $data['payment_method']
+                ]);
+                
+                showAlert('Expense added successfully', 'success');
+            }
+            
+        } elseif ($action === 'add_journal_entry') {
+            $entries = json_decode($_POST['entries'], true);
+            $description = sanitizeInput($_POST['description']);
+            $reference = sanitizeInput($_POST['reference']);
+            
+            $totalDebits = 0;
+            $totalCredits = 0;
+            
+            // Validate entries balance
+            foreach ($entries as $entry) {
+                $totalDebits += $entry['debit'] ?? 0;
+                $totalCredits += $entry['credit'] ?? 0;
+            }
+            
+            if (abs($totalDebits - $totalCredits) > 0.01) {
+                throw new Exception('Journal entry must balance. Debits: ' . $totalDebits . ', Credits: ' . $totalCredits);
+            }
+            
+            // Create journal entry
+            $journalId = $db->insert('journal_entries', [
+                'reference' => $reference,
+                'description' => $description,
+                'entry_date' => $_POST['entry_date'],
+                'total_amount' => $totalDebits,
+                'created_by' => $auth->getUserId(),
+                'created_at' => date('Y-m-d H:i:s')
+            ]);
+            
+            // Add journal lines
+            foreach ($entries as $entry) {
+                if (($entry['debit'] ?? 0) > 0 || ($entry['credit'] ?? 0) > 0) {
+                    $db->insert('journal_lines', [
+                        'journal_entry_id' => $journalId,
+                        'account_id' => $entry['account_id'],
+                        'debit_amount' => $entry['debit'] ?? 0,
+                        'credit_amount' => $entry['credit'] ?? 0,
+                        'description' => $entry['description'] ?? $description
+                    ]);
+                }
+            }
+            
+            showAlert('Journal entry created successfully', 'success');
+            
+        } elseif ($action === 'reconcile_account') {
+            $accountId = $_POST['account_id'];
+            $statementBalance = $_POST['statement_balance'];
+            $reconciliationDate = $_POST['reconciliation_date'];
+            
+            // Mark transactions as reconciled
+            $selectedTransactions = $_POST['reconciled_transactions'] ?? [];
+            if (!empty($selectedTransactions)) {
+                $placeholders = str_repeat('?,', count($selectedTransactions) - 1) . '?';
+                $db->query("UPDATE journal_lines SET is_reconciled = 1, reconciled_date = ? WHERE id IN ($placeholders)", 
+                    array_merge([$reconciliationDate], $selectedTransactions));
+            }
+            
+            // Create reconciliation record
+            $db->insert('account_reconciliations', [
+                'account_id' => $accountId,
+                'reconciliation_date' => $reconciliationDate,
+                'statement_balance' => $statementBalance,
+                'book_balance' => $this->getAccountBalance($accountId, $reconciliationDate),
+                'reconciled_by' => $auth->getUserId(),
+                'created_at' => date('Y-m-d H:i:s')
+            ]);
+            
+            showAlert('Account reconciled successfully', 'success');
         }
-        redirect($_SERVER['PHP_SELF']);
+        
+    } catch (Exception $e) {
+        showAlert('Error: ' . $e->getMessage(), 'error');
     }
 }
 

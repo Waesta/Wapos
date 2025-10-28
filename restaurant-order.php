@@ -33,8 +33,9 @@ include 'includes/header.php';
 
 <style>
     .pos-container {
-        height: calc(100vh - 120px);
+        height: calc(100vh - 220px);
         overflow: hidden;
+        margin-bottom: 60px;
     }
     .product-card {
         cursor: pointer;
@@ -50,11 +51,98 @@ include 'includes/header.php';
         height: 100%;
         display: flex;
         flex-direction: column;
+        padding-bottom: 20px;
+        overflow-y: auto;
     }
     .cart-items {
-        flex: 1;
+        flex: 0 0 auto;
         overflow-y: auto;
-        max-height: 50vh;
+        max-height: 30vh;
+        margin-bottom: 10px;
+    }
+    
+    /* Custom scrollbar styling */
+    .cart-section::-webkit-scrollbar {
+        width: 8px;
+    }
+    
+    .cart-section::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 4px;
+    }
+    
+    .cart-section::-webkit-scrollbar-thumb {
+        background: #c1c1c1;
+        border-radius: 4px;
+    }
+    
+    .cart-section::-webkit-scrollbar-thumb:hover {
+        background: #a8a8a8;
+    }
+    
+    .cart-items::-webkit-scrollbar {
+        width: 6px;
+    }
+    
+    .cart-items::-webkit-scrollbar-track {
+        background: #f8f9fa;
+        border-radius: 3px;
+    }
+    
+    .cart-items::-webkit-scrollbar-thumb {
+        background: #dee2e6;
+        border-radius: 3px;
+    }
+    
+    .cart-items::-webkit-scrollbar-thumb:hover {
+        background: #c1c1c1;
+    }
+    
+    /* Compact form elements */
+    .form-label {
+        margin-bottom: 4px;
+        font-size: 0.9rem;
+    }
+    
+    .form-control, .form-select {
+        padding: 6px 12px;
+        font-size: 0.9rem;
+    }
+    
+    .btn-sm {
+        padding: 4px 8px;
+        font-size: 0.8rem;
+    }
+    
+    /* Responsive adjustments for scrollable layout */
+    @media (max-height: 800px) {
+        .pos-container {
+            height: calc(100vh - 180px);
+            margin-bottom: 40px;
+        }
+        .cart-items {
+            max-height: 25vh;
+        }
+    }
+    
+    @media (max-height: 700px) {
+        .pos-container {
+            height: calc(100vh - 160px);
+            margin-bottom: 40px;
+        }
+        .cart-items {
+            max-height: 20vh;
+        }
+    }
+    
+    @media (max-height: 600px) {
+        .pos-container {
+            height: calc(100vh - 140px);
+            margin-bottom: 40px;
+        }
+        .cart-items {
+            max-height: 18vh;
+        }
     }
 </style>
 
@@ -104,7 +192,7 @@ include 'includes/header.php';
                     <div class="card product-card" onclick='addToCart(<?= json_encode($product) ?>)'>
                         <div class="card-body p-2">
                             <h6 class="mb-1"><?= htmlspecialchars($product['name']) ?></h6>
-                            <p class="text-primary mb-0 fw-bold">KES <?= formatMoney($product['selling_price']) ?></p>
+                            <p class="text-primary mb-0 fw-bold"><?= formatMoney($product['selling_price'], false) ?></p>
                             <small class="text-muted">Stock: <?= $product['stock_quantity'] ?></small>
                         </div>
                     </div>
@@ -138,15 +226,15 @@ include 'includes/header.php';
                 <div class="border-top pt-3 mt-3">
                     <div class="d-flex justify-content-between mb-2">
                         <span>Subtotal:</span>
-                        <span id="subtotal"><?= formatMoney(0) ?></span>
+                        <span id="subtotal"><?= formatMoney(0, false) ?></span>
                     </div>
                     <div class="d-flex justify-content-between mb-2">
                         <span>Tax (16%):</span>
-                        <span id="taxAmount"><?= formatMoney(0) ?></span>
+                        <span id="taxAmount"><?= formatMoney(0, false) ?></span>
                     </div>
                     <div class="d-flex justify-content-between mb-3">
                         <strong>Total:</strong>
-                        <strong class="text-primary fs-4" id="total"><?= formatMoney(0) ?></strong>
+                        <strong class="text-primary fs-4" id="total"><?= formatMoney(0, false) ?></strong>
                     </div>
 
                     <div class="mb-3">
@@ -158,12 +246,27 @@ include 'includes/header.php';
                     </div>
 
                     <div class="d-grid gap-2">
-                        <button class="btn btn-success btn-lg" onclick="submitOrder()" id="submitBtn" disabled>
-                            <i class="bi bi-check-circle me-2"></i>Submit Order
-                        </button>
-                        <button class="btn btn-outline-danger" onclick="clearCart()">
-                            <i class="bi bi-trash me-2"></i>Clear All
-                        </button>
+                        <div class="d-grid gap-2">
+                            <button class="btn btn-info" onclick="printInvoice()" id="invoiceBtn" disabled>
+                                <i class="bi bi-receipt me-2"></i>Print Invoice
+                            </button>
+                            <button class="btn btn-primary btn-lg" onclick="processPayment()" id="paymentBtn" disabled>
+                                <i class="bi bi-credit-card me-2"></i>Process Payment
+                            </button>
+                        </div>
+                        <div class="d-grid gap-2 mt-2">
+                            <div class="btn-group">
+                                <button class="btn btn-outline-success btn-sm" onclick="printKitchenOrder()" id="kitchenBtn" disabled>
+                                    <i class="bi bi-printer me-1"></i>Kitchen
+                                </button>
+                                <button class="btn btn-outline-info btn-sm" onclick="printCustomerReceipt()" id="receiptBtn" disabled>
+                                    <i class="bi bi-receipt-cutoff me-1"></i>Receipt
+                                </button>
+                            </div>
+                            <button class="btn btn-outline-danger" onclick="clearCart()">
+                                <i class="bi bi-trash me-2"></i>Clear Cart
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -203,7 +306,7 @@ include 'includes/header.php';
                             <label class="form-check-label" for="mod_<?= $mod['id'] ?>">
                                 <?= htmlspecialchars($mod['name']) ?>
                                 <?php if ($mod['price'] > 0): ?>
-                                    (+KES <?= formatMoney($mod['price']) ?>)
+                                    (+<?= formatMoney($mod['price'], false) ?>)
                                 <?php endif; ?>
                             </label>
                         </div>
@@ -261,7 +364,7 @@ function addToCart(product) {
     
     // Show modifier modal
     document.getElementById('itemName').textContent = product.name;
-    document.getElementById('itemPrice').textContent = currencySymbol + ' ' + parseFloat(product.selling_price).toFixed(2);
+    document.getElementById('itemPrice').textContent = parseFloat(product.selling_price).toFixed(2);
     document.querySelectorAll('.modifier-check').forEach(cb => cb.checked = false);
     document.getElementById('specialInstructions').value = '';
     
@@ -326,14 +429,13 @@ function updateCart() {
                             <button class="btn btn-outline-secondary" disabled>${item.quantity}</button>
                             <button class="btn btn-outline-secondary" onclick="updateQuantity(${index}, 1)">+</button>
                         </div>
-                        <strong>${currencySymbol} ${item.total.toFixed(2)}</strong>
+                        <strong>${item.total.toFixed(2)}</strong>
                     </div>
                 </div>
             `;
         });
         html += '</div>';
         cartDiv.innerHTML = html;
-        document.getElementById('submitBtn').disabled = false;
     }
     
     // Calculate totals
@@ -341,9 +443,12 @@ function updateCart() {
     const taxAmount = subtotal * (TAX_RATE / 100);
     const total = subtotal + taxAmount;
     
-    document.getElementById('subtotal').textContent = currencySymbol + ' ' + subtotal.toFixed(2);
-    document.getElementById('taxAmount').textContent = currencySymbol + ' ' + taxAmount.toFixed(2);
-    document.getElementById('total').textContent = currencySymbol + ' ' + total.toFixed(2);
+    document.getElementById('subtotal').textContent = subtotal.toFixed(2);
+    document.getElementById('taxAmount').textContent = taxAmount.toFixed(2);
+    document.getElementById('total').textContent = total.toFixed(2);
+    
+    // Update button states
+    updateButtonStates();
 }
 
 function removeFromCart(index) {
@@ -372,6 +477,9 @@ function clearCart() {
     }
 }
 
+let currentOrderId = null;
+let orderStatus = 'draft'; // draft, placed, paid
+
 async function submitOrder() {
     if (cart.length === 0) return;
     
@@ -380,6 +488,7 @@ async function submitOrder() {
     const total = subtotal + taxAmount;
     
     const orderData = {
+        action: 'place_order',
         order_type: '<?= $orderType ?>',
         table_id: <?= $tableId ?? 'null' ?>,
         customer_name: document.getElementById('customerName')?.value || null,
@@ -392,7 +501,7 @@ async function submitOrder() {
     };
     
     try {
-        const response = await fetch('api/create-restaurant-order.php', {
+        const response = await fetch('api/restaurant-order-workflow.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(orderData)
@@ -401,15 +510,267 @@ async function submitOrder() {
         const result = await response.json();
         
         if (result.success) {
-            alert('Order submitted successfully!');
-            window.location.href = 'restaurant.php';
+            currentOrderId = result.order_id;
+            orderStatus = 'placed';
+            
+            alert('Order placed successfully! Order #: ' + result.order_number);
+            
+            // Update button states
+            updateButtonStates();
+            
+            // Show print results if any
+            if (result.print_results) {
+                showPrintResults(result.print_results);
+            }
+            
         } else {
-            alert('Error: ' + (result.message || 'Failed to submit order'));
+            alert('Error: ' + (result.message || 'Failed to place order'));
         }
     } catch (error) {
         alert('Error: ' + error.message);
     }
 }
+
+async function printInvoice() {
+    console.log('printInvoice called, currentOrderId:', currentOrderId);
+    
+    if (!currentOrderId) {
+        await submitOrder();
+        if (!currentOrderId) return;
+    }
+    
+    try {
+        const response = await fetch('api/restaurant-order-workflow.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'print_receipt',
+                order_id: currentOrderId,
+                receipt_type: 'invoice'
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        console.log('Invoice print result:', result);
+        
+        if (result.success) {
+            // Open invoice in new window
+            window.open('print-customer-invoice.php?id=' + currentOrderId, '_blank', 'width=400,height=600');
+        } else {
+            alert('Error printing invoice: ' + result.message);
+        }
+    } catch (error) {
+        console.error('Invoice print error:', error);
+        alert('Error: ' + error.message);
+    }
+}
+
+async function processPayment() {
+    if (!currentOrderId) {
+        await submitOrder();
+        if (!currentOrderId) return;
+    }
+    
+    const paymentMethod = document.getElementById('paymentMethod').value;
+    const total = cart.reduce((sum, item) => sum + item.total, 0) * (1 + TAX_RATE / 100);
+    
+    if (!confirm(`Process payment of ${currencySymbol} ${total.toFixed(2)} via ${paymentMethod}?`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('api/restaurant-order-workflow.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'process_payment',
+                order_id: currentOrderId,
+                payment_method: paymentMethod,
+                amount_paid: total
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            orderStatus = 'paid';
+            alert('Payment processed successfully!');
+            
+            // Update button states
+            updateButtonStates();
+            
+            // Show print results if any
+            if (result.print_results) {
+                showPrintResults(result.print_results);
+            }
+            
+            // Ask if want to print receipt
+            if (confirm('Print customer receipt?')) {
+                printCustomerReceipt();
+            }
+            
+        } else {
+            alert('Error processing payment: ' + result.message);
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+async function printKitchenOrder() {
+    console.log('printKitchenOrder called, currentOrderId:', currentOrderId);
+    
+    if (!currentOrderId) {
+        alert('Please place the order first');
+        return;
+    }
+    
+    try {
+        const response = await fetch('api/restaurant-order-workflow.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'print_receipt',
+                order_id: currentOrderId,
+                receipt_type: 'kitchen'
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            // Open kitchen order in new window
+            window.open('print-kitchen-order.php?id=' + currentOrderId, '_blank', 'width=400,height=600');
+        } else {
+            alert('Error printing kitchen order: ' + result.message);
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+async function printCustomerReceipt() {
+    console.log('printCustomerReceipt called, currentOrderId:', currentOrderId, 'orderStatus:', orderStatus);
+    
+    if (!currentOrderId) {
+        alert('Please place the order first');
+        return;
+    }
+    
+    if (orderStatus !== 'paid') {
+        alert('Payment must be completed before printing receipt');
+        return;
+    }
+    
+    try {
+        const response = await fetch('api/restaurant-order-workflow.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'print_receipt',
+                order_id: currentOrderId,
+                receipt_type: 'receipt'
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            // Open customer receipt in new window
+            window.open('print-customer-receipt.php?id=' + currentOrderId, '_blank', 'width=400,height=600');
+        } else {
+            alert('Error printing customer receipt: ' + result.message);
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+function updateButtonStates() {
+    const hasItems = cart.length > 0;
+    const hasOrder = currentOrderId !== null;
+    const isPaid = orderStatus === 'paid';
+    
+    // Enable/disable buttons based on state with error handling
+    try {
+        const invoiceBtn = document.getElementById('invoiceBtn');
+        const paymentBtn = document.getElementById('paymentBtn');
+        const kitchenBtn = document.getElementById('kitchenBtn');
+        const receiptBtn = document.getElementById('receiptBtn');
+        
+        if (invoiceBtn) invoiceBtn.disabled = !hasItems;
+        if (paymentBtn) paymentBtn.disabled = !hasItems;
+        if (kitchenBtn) kitchenBtn.disabled = !hasOrder;
+        if (receiptBtn) receiptBtn.disabled = !isPaid;
+    } catch (error) {
+        console.error('Error updating button states:', error);
+    }
+}
+
+function showPrintResults(printResults) {
+    let message = 'Print Status:\n';
+    
+    if (printResults.kitchen) {
+        message += `Kitchen: ${printResults.kitchen.success ? '✓ Printed' : '✗ Failed'}\n`;
+    }
+    if (printResults.invoice) {
+        message += `Invoice: ${printResults.invoice.success ? '✓ Printed' : '✗ Failed'}\n`;
+    }
+    if (printResults.receipt) {
+        message += `Receipt: ${printResults.receipt.success ? '✓ Printed' : '✗ Failed'}\n`;
+    }
+    
+    if (message !== 'Print Status:\n') {
+        alert(message);
+    }
+}
+
+// Test function to verify buttons work
+function testButtons() {
+    console.log('Testing buttons...');
+    console.log('Cart length:', cart.length);
+    console.log('Current order ID:', currentOrderId);
+    console.log('Order status:', orderStatus);
+    
+    const buttons = ['invoiceBtn', 'paymentBtn', 'kitchenBtn', 'receiptBtn'];
+    buttons.forEach(btnId => {
+        const btn = document.getElementById(btnId);
+        console.log(`${btnId}:`, btn ? `exists, disabled: ${btn.disabled}` : 'NOT FOUND');
+    });
+}
+
+// Initialize the page when DOM is loaded
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM loaded, initializing restaurant order page...');
+    
+    // Initialize button states
+    updateButtonStates();
+    
+    // Add debug logging for button clicks
+    const buttons = ['invoiceBtn', 'paymentBtn', 'kitchenBtn', 'receiptBtn'];
+    buttons.forEach(btnId => {
+        const btn = document.getElementById(btnId);
+        if (btn) {
+            console.log(`Found button: ${btnId}`);
+            btn.addEventListener('click', function(e) {
+                console.log(`Button ${btnId} clicked, disabled: ${btn.disabled}`);
+                if (btn.disabled) {
+                    e.preventDefault();
+                    console.log('Button click prevented - button is disabled');
+                }
+            });
+        } else {
+            console.error(`Button not found: ${btnId}`);
+        }
+    });
+    
+    // Add test button for debugging
+    console.log('Page initialized. You can run testButtons() in console to debug.');
+});
 </script>
 
 <?php include 'includes/footer.php'; ?>

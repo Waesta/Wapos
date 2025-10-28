@@ -13,7 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-$data = json_decode(file_get_contents('php:input'), true);
+$data = json_decode(file_get_contents('php://input'), true);
 
 if (!$data || empty($data['items'])) {
     echo json_encode(['success' => false, 'message' => 'Invalid data']);

@@ -7,15 +7,32 @@
 class Database {
     private static $instance = null;
     private $pdo;
+    private $queryCache = [];
+    private $cacheEnabled = true;
+    private $queryCount = 0;
+    private $slowQueryThreshold = 1.0; // 1 second
     
     private function __construct() {
         try {
             $dsn = "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET;
-            $this->pdo = new PDO($dsn, DB_USER, DB_PASS);
-            $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-            $this->pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+            $options = [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_PERSISTENT => true, // Use persistent connections
+                PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES " . DB_CHARSET . " COLLATE utf8mb4_unicode_ci",
+                PDO::ATTR_TIMEOUT => 30,
+                PDO::MYSQL_ATTR_USE_BUFFERED_QUERY => true
+            ];
+            
+            $this->pdo = new PDO($dsn, DB_USER, DB_PASS, $options);
+            
+            // Optimize MySQL settings for performance
+            $this->pdo->exec("SET SESSION sql_mode = 'STRICT_TRANS_TABLES,NO_ZERO_DATE,NO_ZERO_IN_DATE,ERROR_FOR_DIVISION_BY_ZERO'");
+            $this->pdo->exec("SET SESSION innodb_lock_wait_timeout = 10");
+            
         } catch (PDOException $e) {
-            die("Database connection failed: " . $e->getMessage());
+            error_log("Database connection failed: " . $e->getMessage());
+            die("Database connection failed. Please check your configuration.");
         }
     }
     
@@ -31,12 +48,33 @@ class Database {
     }
     
     public function query($sql, $params = []) {
+        $startTime = microtime(true);
+        $this->queryCount++;
+        
         try {
             // Ensure connection is still alive
             $this->ensureConnection();
             
+            // Check cache for SELECT queries (but don't cache everything to avoid memory issues)
+            $cacheKey = $this->getCacheKey($sql, $params);
+            if ($this->cacheEnabled && $this->isSelectQuery($sql) && isset($this->queryCache[$cacheKey]) && count($this->queryCache) < 100) {
+                return $this->queryCache[$cacheKey];
+            }
+            
             $stmt = $this->pdo->prepare($sql);
             $stmt->execute($params);
+            
+            // Cache SELECT results
+            if ($this->cacheEnabled && $this->isSelectQuery($sql)) {
+                $this->queryCache[$cacheKey] = $stmt;
+            }
+            
+            // Log slow queries
+            $executionTime = microtime(true) - $startTime;
+            if ($executionTime > $this->slowQueryThreshold) {
+                error_log("SLOW QUERY ({$executionTime}s): " . $sql . " | Params: " . json_encode($params));
+            }
+            
             return $stmt;
         } catch (PDOException $e) {
             error_log("Database query error: " . $e->getMessage() . " SQL: " . $sql);
@@ -176,6 +214,48 @@ class Database {
             $this->rollback();
             error_log("Multiple query execution failed: " . $e->getMessage());
             return false;
+        }
+    }
+    
+    /**
+     * Generate cache key for query
+     */
+    private function getCacheKey($sql, $params) {
+        return md5($sql . serialize($params));
+    }
+    
+    /**
+     * Check if query is a SELECT statement
+     */
+    private function isSelectQuery($sql) {
+        return stripos(trim($sql), 'SELECT') === 0;
+    }
+    
+    /**
+     * Clear query cache
+     */
+    public function clearCache() {
+        $this->queryCache = [];
+    }
+    
+    /**
+     * Get performance statistics
+     */
+    public function getStats() {
+        return [
+            'query_count' => $this->queryCount,
+            'cache_size' => count($this->queryCache),
+            'cache_enabled' => $this->cacheEnabled
+        ];
+    }
+    
+    /**
+     * Enable/disable query caching
+     */
+    public function setCacheEnabled($enabled) {
+        $this->cacheEnabled = $enabled;
+        if (!$enabled) {
+            $this->clearCache();
         }
     }
 }

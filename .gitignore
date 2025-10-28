@@ -5,8 +5,7 @@
 vendor/
 composer.phar
 
-# Database
-*.sql
+# Database (exclude schema files)
 *.db
 *.sqlite
 
