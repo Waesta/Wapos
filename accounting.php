@@ -4,8 +4,40 @@ $auth->requireRole(['admin', 'manager', 'accountant']);
 
 $db = Database::getInstance();
 
+// Helpers
+function getAccountBalance(Database $db, $accountId, $asOfDate) {
+    try {
+        $row = $db->fetchOne(
+            "SELECT COALESCE(SUM(debit_amount - credit_amount), 0) AS balance
+             FROM journal_lines
+             WHERE account_id = ? AND DATE(created_at) <= ?",
+            [$accountId, $asOfDate]
+        );
+        return $row['balance'] ?? 0;
+    } catch (Exception $e) {
+        return 0;
+    }
+
+function getAccountIdByCode(Database $db, string $code): int {
+    $acct = $db->fetchOne("SELECT id FROM accounts WHERE code = ?", [$code]);
+    if ($acct && isset($acct['id'])) { return (int)$acct['id']; }
+    $db->insert('accounts', [
+        'code' => $code,
+        'name' => $code,
+        'type' => in_array($code, ['1000','1100','1200','1300']) ? 'ASSET' : (in_array($code,['2000','2100']) ? 'LIABILITY' : (in_array($code,['4000','4100']) ? 'REVENUE' : 'EXPENSE')),
+        'is_active' => 1
+    ]);
+    $acct = $db->fetchOne("SELECT id FROM accounts WHERE code = ?", [$code]);
+    return (int)($acct['id'] ?? 0);
+}
+}
+
 // Handle accounting actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // CSRF validation for all accounting POST actions
+    if (!validateCSRFToken($_POST['csrf_token'] ?? '')) {
+        showAlert('Invalid request. Please try again.', 'error');
+    } else {
     $action = $_POST['action'] ?? '';
     
     try {
@@ -22,12 +54,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ];
             
             if ($db->insert('expenses', $data)) {
-                // Create journal entry
-                $this->createJournalEntry('expense', $data['amount'], $data['description'], [
-                    'debit_account' => 'expense_' . $data['category_id'],
-                    'credit_account' => 'cash_' . $data['payment_method']
+                // Post journal: Dr Operating Expense (6000), Cr Cash/Bank
+                $journalId = $db->insert('journal_entries', [
+                    'reference' => $data['reference'] ?? null,
+                    'description' => 'Expense: ' . $data['description'],
+                    'entry_date' => $data['expense_date'],
+                    'total_amount' => $data['amount'],
+                    'created_by' => $auth->getUserId(),
+                    'created_at' => date('Y-m-d H:i:s')
                 ]);
-                
+
+                $tender = strtolower($data['payment_method'] ?? 'cash');
+                $cashAcct = ($tender === 'cash') ? '1000' : '1100';
+
+                // Dr Expense
+                $db->insert('journal_lines', [
+                    'journal_entry_id' => $journalId,
+                    'account_id' => getAccountIdByCode($db, '6000'),
+                    'debit_amount' => $data['amount'],
+                    'credit_amount' => 0,
+                    'description' => 'Operating expense'
+                ]);
+                // Cr Cash/Bank
+                $db->insert('journal_lines', [
+                    'journal_entry_id' => $journalId,
+                    'account_id' => getAccountIdByCode($db, $cashAcct),
+                    'debit_amount' => 0,
+                    'credit_amount' => $data['amount'],
+                    'description' => 'Payment of expense'
+                ]);
+
                 showAlert('Expense added successfully', 'success');
             }
             
@@ -92,7 +148,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'account_id' => $accountId,
                 'reconciliation_date' => $reconciliationDate,
                 'statement_balance' => $statementBalance,
-                'book_balance' => $this->getAccountBalance($accountId, $reconciliationDate),
+                'book_balance' => getAccountBalance($db, $accountId, $reconciliationDate),
                 'reconciled_by' => $auth->getUserId(),
                 'created_at' => date('Y-m-d H:i:s')
             ]);
@@ -102,6 +158,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
     } catch (Exception $e) {
         showAlert('Error: ' . $e->getMessage(), 'error');
+    }
     }
 }
 
@@ -323,6 +380,7 @@ include 'includes/header.php';
         <div class="modal-content">
             <form method="POST">
                 <input type="hidden" name="action" value="add_expense">
+                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken(); ?>">
                 <div class="modal-header">
                     <h5 class="modal-title">Add Expense</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
