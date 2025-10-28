@@ -8,6 +8,11 @@ $currencyManager = CurrencyManager::getInstance();
 // Handle settings update
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
+        // CSRF validation
+        if (!validateCSRFToken($_POST['csrf_token'] ?? '')) {
+            $_SESSION['error_message'] = 'Invalid request. Please try again.';
+            redirect($_SERVER['PHP_SELF']);
+        }
         $settings = [
             'currency_code' => sanitizeInput($_POST['currency_code']),
             'currency_symbol' => sanitizeInput($_POST['currency_symbol']),
@@ -79,6 +84,7 @@ include 'includes/header.php';
                 </div>
                 <div class="card-body">
                     <form method="POST">
+                        <input type="hidden" name="csrf_token" value="<?= generateCSRFToken(); ?>">
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="mb-3">

@@ -9,6 +9,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     
     if ($action === 'update_settings') {
+        // CSRF validation
+        if (!validateCSRFToken($_POST['csrf_token'] ?? '')) {
+            $_SESSION['error_message'] = 'Invalid request. Please try again.';
+            redirect($_SERVER['PHP_SELF']);
+        }
         $settings = [
             'business_name' => sanitizeInput($_POST['business_name']),
             'business_address' => sanitizeInput($_POST['business_address']),
@@ -59,6 +64,7 @@ include 'includes/header.php';
             <div class="card-body">
                 <form method="POST">
                     <input type="hidden" name="action" value="update_settings">
+                    <input type="hidden" name="csrf_token" value="<?= generateCSRFToken(); ?>">
                     
                     <div class="mb-3">
                         <label class="form-label">Business Name *</label>

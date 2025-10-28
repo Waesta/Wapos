@@ -9,6 +9,11 @@ $db = Database::getInstance();
 
 // Handle actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // CSRF validation for all POST actions on this page
+    if (!validateCSRFToken($_POST['csrf_token'] ?? '')) {
+        $_SESSION['error_message'] = 'Invalid request. Please try again.';
+        redirect($_SERVER['PHP_SELF']);
+    }
     $action = $_POST['action'] ?? '';
     
     try {
@@ -448,6 +453,7 @@ include 'includes/header.php';
             <div class="card-body">
                 <form method="POST" class="row g-3">
                     <input type="hidden" name="action" value="grant_permission">
+                    <input type="hidden" name="csrf_token" value="<?= generateCSRFToken(); ?>">
                     
                     <div class="col-md-3">
                         <label class="form-label">User *</label>
@@ -550,6 +556,7 @@ include 'includes/header.php';
         <div class="modal-content">
             <form method="POST">
                 <input type="hidden" name="action" value="create_group">
+                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken(); ?>">
                 <div class="modal-header">
                     <h5 class="modal-title">Create Permission Group</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>

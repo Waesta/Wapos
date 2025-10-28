@@ -6,6 +6,10 @@ $db = Database::getInstance();
 
 // Handle actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // CSRF validation for all inventory POST actions
+    if (!validateCSRFToken($_POST['csrf_token'] ?? '')) {
+        showAlert('Invalid request. Please try again.', 'error');
+    } else {
     $action = $_POST['action'] ?? '';
     
     try {
@@ -114,6 +118,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
     } catch (Exception $e) {
         showAlert('Error: ' . $e->getMessage(), 'error');
+    }
     }
 }
 
@@ -538,9 +543,10 @@ include 'includes/header.php';
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <form method="POST">
+                <input type="hidden" name="action" value="adjust_stock">
+                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken(); ?>">
+                
                 <div class="modal-body">
-                    <input type="hidden" name="action" value="adjust_stock">
-                    
                     <div class="mb-3">
                         <label class="form-label">Product</label>
                         <select name="product_id" class="form-select" required>
@@ -609,6 +615,7 @@ include 'includes/header.php';
                 <div class="modal-body">
                     <input type="hidden" name="action" value="create_purchase_order">
                     <input type="hidden" name="items" id="poItems">
+                    <input type="hidden" name="csrf_token" value="<?= generateCSRFToken(); ?>">
                     
                     <div class="mb-3">
                         <label class="form-label">Supplier</label>
@@ -718,7 +725,7 @@ function removePOItem(index) {
 }
 
 function formatMoney(amount) {
-    return '$' + parseFloat(amount).toFixed(2);
+    return parseFloat(amount).toFixed(2);
 }
 
 function adjustStock(productId, productName) {

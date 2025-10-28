@@ -13,6 +13,11 @@ $db = Database::getInstance();
 
 // Handle settings update
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // CSRF validation for all POST actions on this page
+    if (!validateCSRFToken($_POST['csrf_token'] ?? '')) {
+        $_SESSION['error_message'] = 'Invalid request. Please try again.';
+        redirect($_SERVER['PHP_SELF']);
+    }
     $action = $_POST['action'] ?? '';
     
     try {
@@ -141,7 +146,7 @@ include 'includes/header.php';
             <div class="card border-0 shadow-sm">
                 <div class="card-body text-center">
                     <i class="bi bi-currency-dollar text-warning fs-1 mb-2"></i>
-                    <h3 class="text-warning"><?= formatMoney($voidStats['total_void_amount_month']) ?></h3>
+                    <h3 class="text-warning"><?= formatMoney($voidStats['total_void_amount_month'], false) ?></h3>
                     <p class="text-muted mb-0">Void Amount This Month</p>
                 </div>
             </div>
@@ -150,7 +155,7 @@ include 'includes/header.php';
             <div class="card border-0 shadow-sm">
                 <div class="card-body text-center">
                     <i class="bi bi-bar-chart text-info fs-1 mb-2"></i>
-                    <h3 class="text-info"><?= formatMoney($voidStats['avg_void_amount']) ?></h3>
+                    <h3 class="text-info"><?= formatMoney($voidStats['avg_void_amount'], false) ?></h3>
                     <p class="text-muted mb-0">Average Void Amount</p>
                 </div>
             </div>
@@ -178,6 +183,7 @@ include 'includes/header.php';
                 <div class="card-body">
                     <form method="POST">
                         <input type="hidden" name="action" value="update_void_settings">
+                        <input type="hidden" name="csrf_token" value="<?= generateCSRFToken(); ?>">
                         
                         <div class="row">
                             <div class="col-md-6">
@@ -371,6 +377,7 @@ include 'includes/header.php';
                 <div class="modal-body">
                     <input type="hidden" name="action" id="voidReasonAction" value="add_void_reason">
                     <input type="hidden" name="reason_id" id="voidReasonId">
+                    <input type="hidden" name="csrf_token" value="<?= generateCSRFToken(); ?>">
                     
                     <div class="mb-3">
                         <label for="code" class="form-label">Code <span class="text-danger">*</span></label>

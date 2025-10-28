@@ -17,6 +17,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     try {
         if ($action === 'void_order') {
+            // CSRF validation
+            if (!validateCSRFToken($_POST['csrf_token'] ?? '')) {
+                throw new Exception('Invalid request. Please try again.');
+            }
             $orderId = (int)$_POST['order_id'];
             $reasonCode = sanitizeInput($_POST['reason_code']);
             $reasonText = sanitizeInput($_POST['reason_text'] ?? '');
@@ -71,8 +75,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $result = voidOrder($orderId, $reasonCode, $reasonText, $auth->getUserId(), $managerUserId, $db);
             
             if ($result['success']) {
-                // Log the action
-                $permissionManager->logAudit('void_order', 'orders', 'void', "Voided order #{$order['order_number']} - Reason: {$reasonCode}");
+                try {
+                    $db->insert('permission_audit_log', [
+                        'user_id' => $auth->getUserId(),
+                        'action_type' => 'void_order',
+                        'module_id' => null,
+                        'action_id' => null,
+                        'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                        'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
+                        'session_id' => session_id(),
+                        'risk_level' => 'medium',
+                        'additional_data' => json_encode(['details' => "Voided order #{$order['order_number']} - Reason: {$reasonCode}"])
+                    ]);
+                } catch (Exception $e) {}
                 
                 $_SESSION['success_message'] = $result['message'];
                 
@@ -334,6 +349,7 @@ include 'includes/header.php';
                 <div class="modal-body">
                     <input type="hidden" name="action" value="void_order">
                     <input type="hidden" name="order_id" id="voidOrderId">
+                    <input type="hidden" name="csrf_token" value="<?= generateCSRFToken(); ?>">
                     
                     <div class="alert alert-warning">
                         <i class="bi bi-exclamation-triangle me-2"></i>

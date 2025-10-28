@@ -6,6 +6,11 @@ $db = Database::getInstance();
 
 // Handle actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // CSRF validation for all POST actions
+    if (!validateCSRFToken($_POST['csrf_token'] ?? '')) {
+        $_SESSION['error_message'] = 'Invalid request. Please try again.';
+        redirect($_SERVER['PHP_SELF']);
+    }
     $action = $_POST['action'] ?? '';
     
     if ($action === 'add' || $action === 'edit') {
@@ -154,6 +159,7 @@ include 'includes/header.php';
                 <div class="modal-body">
                     <input type="hidden" name="action" id="formAction" value="add">
                     <input type="hidden" name="id" id="userId">
+                    <input type="hidden" name="csrf_token" value="<?= generateCSRFToken(); ?>">
                     
                     <div class="mb-3">
                         <label class="form-label">Username *</label>
@@ -217,6 +223,7 @@ include 'includes/header.php';
 </div>
 
 <script>
+const CSRF_TOKEN = '<?= generateCSRFToken(); ?>';
 function resetForm() {
     document.getElementById('userForm').reset();
     document.getElementById('formAction').value = 'add';
@@ -250,6 +257,7 @@ function deleteUser(id, username) {
         form.innerHTML = `
             <input type="hidden" name="action" value="delete">
             <input type="hidden" name="id" value="${id}">
+            <input type="hidden" name="csrf_token" value="${CSRF_TOKEN}">
         `;
         document.body.appendChild(form);
         form.submit();

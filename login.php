@@ -9,16 +9,21 @@ if ($auth->isLoggedIn()) {
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $username = sanitizeInput($_POST['username'] ?? '');
-    $password = $_POST['password'] ?? '';
-    
-    if (empty($username) || empty($password)) {
-        $error = 'Please enter both username and password';
+    // CSRF validation
+    if (!validateCSRFToken($_POST['csrf_token'] ?? '')) {
+        $error = 'Invalid request. Please try again.';
     } else {
-        if ($auth->login($username, $password)) {
-            redirect(APP_URL . '/index.php');
+        $username = sanitizeInput($_POST['username'] ?? '');
+        $password = $_POST['password'] ?? '';
+        
+        if (empty($username) || empty($password)) {
+            $error = 'Please enter both username and password';
         } else {
-            $error = 'Invalid username or password';
+            if ($auth->login($username, $password)) {
+                redirect(APP_URL . '/index.php');
+            } else {
+                $error = 'Invalid username or password';
+            }
         }
     }
 }
