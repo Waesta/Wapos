@@ -46,11 +46,12 @@ foreach ($settingsResult as $setting) {
 }
 
 // Get WhatsApp order statistics
+// Note: WhatsApp integration requires additional database setup
 $whatsappStats = [
-    'total_orders' => $db->fetchOne("SELECT COUNT(*) as count FROM orders WHERE order_source = 'whatsapp'")['count'] ?? 0,
-    'orders_today' => $db->fetchOne("SELECT COUNT(*) as count FROM orders WHERE order_source = 'whatsapp' AND DATE(created_at) = CURDATE()")['count'] ?? 0,
-    'messages_sent' => $db->fetchOne("SELECT COUNT(*) as count FROM whatsapp_messages WHERE message_type = 'outbound' AND DATE(created_at) = CURDATE()")['count'] ?? 0,
-    'active_chats' => $db->fetchOne("SELECT COUNT(DISTINCT customer_phone) as count FROM whatsapp_messages WHERE DATE(created_at) = CURDATE()")['count'] ?? 0
+    'total_orders' => 0, // Requires order_source column
+    'orders_today' => 0, // Requires order_source column
+    'messages_sent' => 0, // Requires whatsapp_messages table
+    'active_chats' => 0  // Requires whatsapp_messages table
 ];
 
 $pageTitle = 'WhatsApp Integration';

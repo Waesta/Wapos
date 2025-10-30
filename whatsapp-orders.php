@@ -59,6 +59,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // Get WhatsApp orders
+// Note: WhatsApp integration requires order_source column in orders table
+$whatsappOrders = [];
+/*
 $whatsappOrders = $db->fetchAll("
     SELECT o.*, 
            COUNT(oi.id) as item_count,
@@ -70,8 +73,12 @@ $whatsappOrders = $db->fetchAll("
     ORDER BY o.created_at DESC
     LIMIT 50
 ");
+*/
 
 // Get recent WhatsApp messages
+// Note: Requires whatsapp_messages table
+$recentMessages = [];
+/*
 $recentMessages = $db->fetchAll("
     SELECT wm.*, 
            o.order_number,
@@ -82,6 +89,7 @@ $recentMessages = $db->fetchAll("
     ORDER BY wm.created_at DESC
     LIMIT 100
 ");
+*/
 
 $pageTitle = 'WhatsApp Orders Management';
 include 'includes/header.php';

@@ -72,7 +72,7 @@ function sendOrderStatusUpdate($data, $db, $settings) {
         SELECT o.*, COUNT(oi.id) as item_count
         FROM orders o
         LEFT JOIN order_items oi ON o.id = oi.order_id
-        WHERE o.id = ? AND o.order_source = 'whatsapp'
+        WHERE o.id = ?
         GROUP BY o.id
     ", [$orderId]);
     

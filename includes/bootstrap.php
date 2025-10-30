@@ -3,6 +3,11 @@
  * WAPOS Bootstrap - Clean Version
  */
 
+// Define ROOT_PATH if not already defined
+if (!defined('ROOT_PATH')) {
+    define('ROOT_PATH', dirname(__DIR__));
+}
+
 // Start session and error handling
 // Security: set cookie flags BEFORE session_start (Auth will start session)
 ini_set('session.cookie_httponly', '1');
@@ -14,7 +19,10 @@ error_reporting(E_ALL);
 ini_set("display_errors", 1);
 
 // Load configuration
-require_once __DIR__ . "/../config.php";
+require_once ROOT_PATH . '/config.php';
+
+// Load currency helper functions
+require_once ROOT_PATH . '/includes/currency-helper.php';
 
 // Load core classes
 require_once __DIR__ . "/Database.php";

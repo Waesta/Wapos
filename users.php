@@ -24,6 +24,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'is_active' => isset($_POST['is_active']) ? 1 : 0
         ];
         
+        // Add created_at for new users
+        if ($action === 'add') {
+            $data['created_at'] = date('Y-m-d H:i:s');
+        }
+        
         // Add password if provided
         if (!empty($_POST['password'])) {
             $data['password'] = Auth::hashPassword($_POST['password']);
@@ -33,10 +38,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (empty($_POST['password'])) {
                 $_SESSION['error_message'] = 'Password is required for new users';
             } else {
-                if ($db->insert('users', $data)) {
-                    $_SESSION['success_message'] = 'User added successfully';
-                } else {
-                    $_SESSION['error_message'] = 'Failed to add user';
+                try {
+                    if ($db->insert('users', $data)) {
+                        $_SESSION['success_message'] = 'User added successfully';
+                    } else {
+                        $_SESSION['error_message'] = 'Failed to add user';
+                    }
+                } catch (Exception $e) {
+                    $_SESSION['error_message'] = 'Error: ' . $e->getMessage();
+                    error_log("User creation error: " . $e->getMessage());
                 }
             }
         } else {
@@ -192,6 +202,7 @@ include 'includes/header.php';
                         <select class="form-select" name="role" id="role" required>
                             <option value="cashier">Cashier</option>
                             <option value="waiter">Waiter</option>
+                            <option value="accountant">Accountant</option>
                             <option value="inventory_manager">Inventory Manager</option>
                             <option value="manager">Manager</option>
                             <option value="admin">Admin</option>

@@ -4,6 +4,9 @@
  * Focus on daily operations, sales, and team management
  */
 
+require_once '../includes/bootstrap.php';
+$auth->requireRole('manager');
+
 $db = Database::getInstance();
 
 // Manager-specific metrics

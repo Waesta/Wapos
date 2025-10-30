@@ -1,6 +1,6 @@
 <?php
 require_once 'includes/bootstrap.php';
-$auth->requireRole(['admin', 'manager', 'accountant']);
+$auth->requireRole(['admin', 'manager']);
 
 $db = Database::getInstance();
 
@@ -17,6 +17,7 @@ function getAccountBalance(Database $db, $accountId, $asOfDate) {
     } catch (Exception $e) {
         return 0;
     }
+}
 
 function getAccountIdByCode(Database $db, string $code): int {
     $acct = $db->fetchOne("SELECT id FROM accounts WHERE code = ?", [$code]);
@@ -29,7 +30,6 @@ function getAccountIdByCode(Database $db, string $code): int {
     ]);
     $acct = $db->fetchOne("SELECT id FROM accounts WHERE code = ?", [$code]);
     return (int)($acct['id'] ?? 0);
-}
 }
 
 // Handle accounting actions

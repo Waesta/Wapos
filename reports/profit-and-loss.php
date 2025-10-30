@@ -1,6 +1,6 @@
 <?php
 require_once '../includes/bootstrap.php';
-$auth->requireRole(['admin', 'manager', 'accountant']);
+$auth->requireRole(['admin', 'manager']);
 
 $db = Database::getInstance();
 

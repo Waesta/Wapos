@@ -8,7 +8,7 @@ class Database {
     private static $instance = null;
     private $pdo;
     private $queryCache = [];
-    private $cacheEnabled = true;
+    private $cacheEnabled = false; // DISABLED for real-time updates
     private $queryCount = 0;
     private $slowQueryThreshold = 1.0; // 1 second
     private $lastPing = 0;
@@ -82,10 +82,12 @@ class Database {
                     return $stmt;
                 } catch (PDOException $retryE) {
                     error_log("Database retry failed: " . $retryE->getMessage());
+                    throw $retryE; // Re-throw after retry fails
                 }
             }
             
-            return false;
+            // Re-throw the exception instead of returning false
+            throw $e;
         }
     }
     
@@ -116,14 +118,22 @@ class Database {
     }
     
     public function insert($table, $data) {
-        $keys = array_keys($data);
-        $fields = implode(', ', $keys);
-        $placeholders = ':' . implode(', :', $keys);
-        
-        $sql = "INSERT INTO {$table} ({$fields}) VALUES ({$placeholders})";
-        $stmt = $this->query($sql, $data);
-        
-        return $stmt ? $this->pdo->lastInsertId() : false;
+        try {
+            $keys = array_keys($data);
+            $fields = implode(', ', $keys);
+            $placeholders = ':' . implode(', :', $keys);
+            
+            $sql = "INSERT INTO {$table} ({$fields}) VALUES ({$placeholders})";
+            $stmt = $this->query($sql, $data);
+            
+            if ($stmt) {
+                return $this->pdo->lastInsertId();
+            }
+            return false;
+        } catch (PDOException $e) {
+            error_log("Database insert error in table {$table}: " . $e->getMessage());
+            throw $e; // Re-throw so calling code can catch it
+        }
     }
     
     public function update($table, $data, $where, $whereParams = []) {
