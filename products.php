@@ -6,6 +6,12 @@ $db = Database::getInstance();
 
 // Handle actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // CSRF validation for all POST actions
+    if (!validateCSRFToken($_POST['csrf_token'] ?? '')) {
+        $_SESSION['error_message'] = 'Invalid request. Please try again.';
+        redirect($_SERVER['PHP_SELF']);
+    }
+    
     $action = $_POST['action'] ?? '';
     
     if ($action === 'add' || $action === 'edit') {
@@ -14,16 +20,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'name' => sanitizeInput($_POST['name']),
             'description' => sanitizeInput($_POST['description']),
             'sku' => sanitizeInput($_POST['sku']),
-            'barcode' => sanitizeInput($_POST['barcode']),
-            'cost_price' => $_POST['cost_price'],
+            'barcode' => sanitizeInput($_POST['barcode']) ?: null,
+            'cost_price' => $_POST['cost_price'] ?: 0,
             'selling_price' => $_POST['selling_price'],
-            'stock_quantity' => $_POST['stock_quantity'],
-            'min_stock_level' => $_POST['min_stock_level'],
-            'supplier_id' => $_POST['supplier_id'] ?: null,
+            'stock_quantity' => $_POST['stock_quantity'] ?: 0,
+            'min_stock_level' => $_POST['min_stock_level'] ?: 10,
             'unit' => sanitizeInput($_POST['unit']) ?: 'pcs',
-            'has_expiry' => isset($_POST['has_expiry']) ? 1 : 0,
-            'alert_before_days' => $_POST['alert_before_days'] ?: 30,
-            'tax_rate' => $_POST['tax_rate'],
+            'tax_rate' => $_POST['tax_rate'] ?: 0,
             'is_active' => isset($_POST['is_active']) ? 1 : 0
         ];
         
@@ -156,6 +159,7 @@ include 'includes/header.php';
                 <div class="modal-body">
                     <input type="hidden" name="action" id="formAction" value="add">
                     <input type="hidden" name="id" id="productId">
+                    <input type="hidden" name="csrf_token" value="<?= generateCSRFToken(); ?>">
                     
                     <div class="row g-3">
                         <div class="col-md-8">
@@ -212,30 +216,6 @@ include 'includes/header.php';
                             <input type="text" class="form-control" name="unit" id="unit" value="pcs" placeholder="pcs, kg, ltr, box">
                         </div>
                         
-                        <div class="col-md-6">
-                            <label class="form-label">Supplier</label>
-                            <select class="form-select" name="supplier_id" id="supplier_id">
-                                <option value="">No Supplier</option>
-                                <?php foreach ($suppliers as $supplier): ?>
-                                    <option value="<?= $supplier['id'] ?>"><?= htmlspecialchars($supplier['name']) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        
-                        <div class="col-md-3">
-                            <label class="form-label">Alert Before (Days)</label>
-                            <input type="number" class="form-control" name="alert_before_days" id="alert_before_days" value="30">
-                            <small class="text-muted">For expiry tracking</small>
-                        </div>
-                        
-                        <div class="col-md-3">
-                            <div class="form-check mt-4">
-                                <input class="form-check-input" type="checkbox" name="has_expiry" id="has_expiry">
-                                <label class="form-check-label" for="has_expiry">
-                                    Has Expiry Date
-                                </label>
-                            </div>
-                        </div>
                         
                         <div class="col-12">
                             <div class="form-check">
@@ -289,6 +269,7 @@ function deleteProduct(id, name) {
         form.innerHTML = `
             <input type="hidden" name="action" value="delete">
             <input type="hidden" name="id" value="${id}">
+            <input type="hidden" name="csrf_token" value="<?= generateCSRFToken(); ?>">
         `;
         document.body.appendChild(form);
         form.submit();
