@@ -655,7 +655,7 @@ include 'includes/header.php';
                         <div id="poItemsList">
                             <div class="row g-2 mb-2">
                                 <div class="col-md-5">
-                                    <select class="form-select po-product" required>
+                                    <select class="form-select po-product">
                                         <option value="">Select Product</option>
                                         <?php foreach ($allProducts as $product): ?>
                                         <option value="<?= $product['id'] ?>"><?= htmlspecialchars($product['name']) ?></option>
@@ -663,14 +663,14 @@ include 'includes/header.php';
                                     </select>
                                 </div>
                                 <div class="col-md-2">
-                                    <input type="number" class="form-control po-quantity" placeholder="Qty" step="0.01" required>
+                                    <input type="number" class="form-control po-quantity" placeholder="Qty" step="0.01" min="0.01">
                                 </div>
                                 <div class="col-md-3">
-                                    <input type="number" class="form-control po-cost" placeholder="Unit Cost" step="0.01" required>
+                                    <input type="number" class="form-control po-cost" placeholder="Unit Cost" step="0.01" min="0.01">
                                 </div>
                                 <div class="col-md-2">
-                                    <button type="button" class="btn btn-outline-success" onclick="addPOItem()">
-                                        <i class="bi bi-plus"></i>
+                                    <button type="button" class="btn btn-success w-100" onclick="addPOItem()">
+                                        <i class="bi bi-plus"></i> Add
                                     </button>
                                 </div>
                             </div>
@@ -696,27 +696,50 @@ function addPOItem() {
     const quantityInput = document.querySelector('.po-quantity');
     const costInput = document.querySelector('.po-cost');
     
-    if (productSelect.value && quantityInput.value && costInput.value) {
-        const item = {
-            product_id: productSelect.value,
-            product_name: productSelect.options[productSelect.selectedIndex].text,
-            quantity: parseFloat(quantityInput.value),
-            unit_cost: parseFloat(costInput.value)
-        };
-        
-        poItems.push(item);
-        updatePOItemsDisplay();
-        
-        // Clear inputs
-        productSelect.value = '';
-        quantityInput.value = '';
-        costInput.value = '';
+    // Validate inputs
+    if (!productSelect.value) {
+        alert('Please select a product');
+        productSelect.focus();
+        return;
     }
+    if (!quantityInput.value || parseFloat(quantityInput.value) <= 0) {
+        alert('Please enter a valid quantity');
+        quantityInput.focus();
+        return;
+    }
+    if (!costInput.value || parseFloat(costInput.value) <= 0) {
+        alert('Please enter a valid unit cost');
+        costInput.focus();
+        return;
+    }
+    
+    const item = {
+        product_id: productSelect.value,
+        product_name: productSelect.options[productSelect.selectedIndex].text,
+        quantity: parseFloat(quantityInput.value),
+        unit_cost: parseFloat(costInput.value)
+    };
+    
+    poItems.push(item);
+    updatePOItemsDisplay();
+    
+    // Clear inputs
+    productSelect.value = '';
+    quantityInput.value = '';
+    costInput.value = '';
+    productSelect.focus();
 }
 
 function updatePOItemsDisplay() {
     const container = document.getElementById('selectedItems');
-    let html = '<h6>Selected Items:</h6>';
+    
+    if (poItems.length === 0) {
+        container.innerHTML = '<div class="alert alert-info">No items added yet. Use the form above to add items.</div>';
+        document.getElementById('poItems').value = '[]';
+        return;
+    }
+    
+    let html = '<div class="alert alert-success"><strong>Selected Items (' + poItems.length + '):</strong></div>';
     let total = 0;
     
     poItems.forEach((item, index) => {
@@ -724,19 +747,19 @@ function updatePOItemsDisplay() {
         total += subtotal;
         
         html += `
-            <div class="d-flex justify-content-between align-items-center mb-2 p-2 bg-light rounded">
+            <div class="d-flex justify-content-between align-items-center mb-2 p-3 border rounded bg-light">
                 <div>
                     <strong>${item.product_name}</strong><br>
-                    <small>Qty: ${item.quantity} × ${formatMoney(item.unit_cost)} = ${formatMoney(subtotal)}</small>
+                    <small class="text-muted">Qty: ${item.quantity} × KES ${formatMoney(item.unit_cost)} = KES ${formatMoney(subtotal)}</small>
                 </div>
-                <button type="button" class="btn btn-sm btn-outline-danger" onclick="removePOItem(${index})">
-                    <i class="bi bi-trash"></i>
+                <button type="button" class="btn btn-sm btn-danger" onclick="removePOItem(${index})">
+                    <i class="bi bi-trash"></i> Remove
                 </button>
             </div>
         `;
     });
     
-    html += `<div class="text-end"><strong>Total: ${formatMoney(total)}</strong></div>`;
+    html += `<div class="text-end mt-3 p-3 bg-primary text-white rounded"><h5 class="mb-0">Total: KES ${formatMoney(total)}</h5></div>`;
     container.innerHTML = html;
     
     document.getElementById('poItems').value = JSON.stringify(poItems);
@@ -769,6 +792,12 @@ function validatePOForm() {
     }
     return true;
 }
+
+// Initialize the display when modal opens
+document.getElementById('purchaseOrderModal').addEventListener('show.bs.modal', function () {
+    poItems = [];
+    updatePOItemsDisplay();
+});
 </script>
 
 <?php include 'includes/footer.php'; ?>

@@ -141,6 +141,9 @@
             <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'inventory.php' ? ' active' : '' ?>" href="inventory.php">
                 <i class="bi bi-boxes me-2"></i>Inventory Management
             </a>
+            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'goods-received.php' ? ' active' : '' ?>" href="goods-received.php">
+                <i class="bi bi-truck me-2"></i>Goods Received (GRN)
+            </a>
             
             <!-- Customer & Sales -->
             <div class="mt-3 px-3">
