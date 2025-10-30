@@ -80,6 +80,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $supplierId = $_POST['supplier_id'];
             $items = json_decode($_POST['items'], true);
             
+            // Validate items
+            if (empty($items) || !is_array($items)) {
+                throw new Exception('Please add at least one item to the purchase order');
+            }
+            
             // Create purchase order
             $poNumber = 'PO-' . date('Ymd') . '-' . strtoupper(substr(uniqid(), -6));
             
@@ -91,6 +96,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'created_by' => $auth->getUserId(),
                 'created_at' => date('Y-m-d H:i:s')
             ]);
+            
+            if (!$poId) {
+                throw new Exception('Failed to create purchase order');
+            }
             
             $totalAmount = 0;
             foreach ($items as $item) {
@@ -611,10 +620,10 @@ include 'includes/header.php';
                 <h5 class="modal-title">Create Purchase Order</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <form method="POST" id="purchaseOrderForm">
+            <form method="POST" id="purchaseOrderForm" onsubmit="return validatePOForm()">
                 <div class="modal-body">
                     <input type="hidden" name="action" value="create_purchase_order">
-                    <input type="hidden" name="items" id="poItems">
+                    <input type="hidden" name="items" id="poItems" value="[]">
                     <input type="hidden" name="csrf_token" value="<?= generateCSRFToken(); ?>">
                     
                     <div class="mb-3">
@@ -737,6 +746,14 @@ function adjustStock(productId, productName) {
 function setReorderLevel(productId, currentLevel, currentQuantity) {
     // Implementation for setting reorder levels
     console.log('Set reorder level for product', productId);
+}
+
+function validatePOForm() {
+    if (poItems.length === 0) {
+        alert('Please add at least one item to the purchase order');
+        return false;
+    }
+    return true;
 }
 </script>
 
