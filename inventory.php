@@ -62,7 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'created_at' => date('Y-m-d H:i:s')
             ]);
             
-            showAlert('Stock adjusted successfully', 'success');
+            $_SESSION['success_message'] = 'Stock adjusted successfully';
             
         } elseif ($action === 'set_reorder_level') {
             $productId = $_POST['product_id'];
@@ -74,7 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'reorder_quantity' => $reorderQuantity
             ], 'id = :id', ['id' => $productId]);
             
-            showAlert('Reorder levels updated successfully', 'success');
+            $_SESSION['success_message'] = 'Reorder levels updated successfully';
             
         } elseif ($action === 'create_purchase_order') {
             $supplierId = $_POST['supplier_id'];
@@ -122,12 +122,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ['id' => $poId]
             );
             
-            showAlert("Purchase Order $poNumber created successfully", 'success');
+            $_SESSION['success_message'] = "Purchase Order $poNumber created successfully";
         }
         
     } catch (Exception $e) {
-        showAlert('Error: ' . $e->getMessage(), 'error');
+        $_SESSION['error_message'] = 'Error: ' . $e->getMessage();
     }
+    redirect($_SERVER['PHP_SELF']);
     }
 }
 
@@ -173,6 +174,19 @@ try {
 $pageTitle = 'Inventory Management';
 include 'includes/header.php';
 ?>
+
+<?php if (isset($_SESSION['success_message'])): ?>
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <?= htmlspecialchars($_SESSION['success_message']); unset($_SESSION['success_message']); ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+<?php endif; ?>
+<?php if (isset($_SESSION['error_message'])): ?>
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <?= htmlspecialchars($_SESSION['error_message']); unset($_SESSION['error_message']); ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+<?php endif; ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
