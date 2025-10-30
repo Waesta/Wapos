@@ -104,6 +104,16 @@ class Auth {
             return true;
         }
         
+        // Support checking against multiple roles
+        if (is_array($role)) {
+            foreach ($role as $r) {
+                if ($this->hasRole($r)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        
         // Manager has access to manager, inventory_manager, cashier, waiter, rider
         if ($userRole === 'manager' && in_array($role, ['manager', 'inventory_manager', 'cashier', 'waiter', 'rider'])) {
             return true;

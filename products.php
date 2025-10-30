@@ -28,10 +28,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ];
         
         if ($action === 'add') {
-            if ($db->insert('products', $data)) {
-                $_SESSION['success_message'] = 'Product added successfully';
-            } else {
-                $_SESSION['error_message'] = 'Failed to add product';
+            try {
+                $result = $db->insert('products', $data);
+                if ($result) {
+                    $_SESSION['success_message'] = 'Product added successfully';
+                } else {
+                    throw new Exception('Insert operation returned false');
+                }
+            } catch (Exception $e) {
+                error_log('Failed to add product: ' . $e->getMessage());
+                error_log('Product data: ' . print_r($data, true));
+                $_SESSION['error_message'] = 'Failed to add product. Please check error logs for details.';
             }
         } else {
             $id = $_POST['id'];

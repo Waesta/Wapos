@@ -11,6 +11,8 @@ class Database {
     private $cacheEnabled = true;
     private $queryCount = 0;
     private $slowQueryThreshold = 1.0; // 1 second
+    private $lastPing = 0;
+    private $pingIntervalSeconds = 60;
     
     private function __construct() {
         try {
@@ -52,22 +54,14 @@ class Database {
         $this->queryCount++;
         
         try {
-            // Ensure connection is still alive
-            $this->ensureConnection();
-            
-            // Check cache for SELECT queries (but don't cache everything to avoid memory issues)
-            $cacheKey = $this->getCacheKey($sql, $params);
-            if ($this->cacheEnabled && $this->isSelectQuery($sql) && isset($this->queryCache[$cacheKey]) && count($this->queryCache) < 100) {
-                return $this->queryCache[$cacheKey];
+            // Periodic connection keepalive to reduce overhead
+            if ((time() - $this->lastPing) >= $this->pingIntervalSeconds) {
+                $this->ensureConnection();
+                $this->lastPing = time();
             }
             
             $stmt = $this->pdo->prepare($sql);
             $stmt->execute($params);
-            
-            // Cache SELECT results
-            if ($this->cacheEnabled && $this->isSelectQuery($sql)) {
-                $this->queryCache[$cacheKey] = $stmt;
-            }
             
             // Log slow queries
             $executionTime = microtime(true) - $startTime;
@@ -96,13 +90,29 @@ class Database {
     }
     
     public function fetchAll($sql, $params = []) {
+        $cacheKey = $this->getCacheKey($sql, $params) . ':all';
+        if ($this->cacheEnabled && $this->isSelectQuery($sql) && isset($this->queryCache[$cacheKey]) && count($this->queryCache) < 100) {
+            return $this->queryCache[$cacheKey];
+        }
         $stmt = $this->query($sql, $params);
-        return $stmt ? $stmt->fetchAll() : [];
+        $rows = $stmt ? $stmt->fetchAll() : [];
+        if ($this->cacheEnabled && $this->isSelectQuery($sql)) {
+            $this->queryCache[$cacheKey] = $rows;
+        }
+        return $rows;
     }
     
     public function fetchOne($sql, $params = []) {
+        $cacheKey = $this->getCacheKey($sql, $params) . ':one';
+        if ($this->cacheEnabled && $this->isSelectQuery($sql) && isset($this->queryCache[$cacheKey]) && count($this->queryCache) < 100) {
+            return $this->queryCache[$cacheKey];
+        }
         $stmt = $this->query($sql, $params);
-        return $stmt ? $stmt->fetch() : null;
+        $row = $stmt ? $stmt->fetch() : null;
+        if ($this->cacheEnabled && $this->isSelectQuery($sql)) {
+            $this->queryCache[$cacheKey] = $row;
+        }
+        return $row;
     }
     
     public function insert($table, $data) {
@@ -183,9 +193,18 @@ class Database {
     private function reconnect() {
         try {
             $dsn = "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET;
-            $this->pdo = new PDO($dsn, DB_USER, DB_PASS);
-            $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-            $this->pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+            $options = [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_PERSISTENT => true,
+                PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES " . DB_CHARSET . " COLLATE utf8mb4_unicode_ci",
+                PDO::ATTR_TIMEOUT => 30,
+                PDO::MYSQL_ATTR_USE_BUFFERED_QUERY => true
+            ];
+            $this->pdo = new PDO($dsn, DB_USER, DB_PASS, $options);
+            // Re-apply session-level settings
+            $this->pdo->exec("SET SESSION sql_mode = 'STRICT_TRANS_TABLES,NO_ZERO_DATE,NO_ZERO_IN_DATE,ERROR_FOR_DIVISION_BY_ZERO'");
+            $this->pdo->exec("SET SESSION innodb_lock_wait_timeout = 10");
             error_log("Database reconnected successfully");
         } catch (PDOException $e) {
             error_log("Database reconnection failed: " . $e->getMessage());

@@ -160,6 +160,15 @@
             <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'accounting.php' ? ' active' : '' ?>" href="accounting.php">
                 <i class="bi bi-calculator me-2"></i>Accounting
             </a>
+            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'profit-and-loss.php' ? ' active' : '' ?>" href="reports/profit-and-loss.php">
+                <i class="bi bi-journal-text me-2"></i>Profit &amp; Loss
+            </a>
+            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'balance-sheet.php' ? ' active' : '' ?>" href="reports/balance-sheet.php">
+                <i class="bi bi-clipboard-data me-2"></i>Balance Sheet
+            </a>
+            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'sales-tax-report.php' ? ' active' : '' ?>" href="reports/sales-tax-report.php">
+                <i class="bi bi-file-spreadsheet me-2"></i>Sales Tax Report
+            </a>
             <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'reports.php' ? ' active' : '' ?>" href="reports.php">
                 <i class="bi bi-file-earmark-text me-2"></i>Reports
             </a>
