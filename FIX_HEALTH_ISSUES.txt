@@ -1,0 +1,98 @@
+================================================================================
+  FIX SYSTEM HEALTH ISSUES - QUICK SOLUTION
+================================================================================
+
+PROBLEM:
+--------
+System Health shows "ISSUES DETECTED" with missing tables:
+- suppliers (Missing)
+- stock_movements (Missing)
+- permission_modules (Missing)
+- etc.
+
+ROOT CAUSE:
+-----------
+The database migration hasn't been run yet. These tables are created by the
+migration file we prepared earlier.
+
+SOLUTION (2 MINUTES):
+---------------------
+
+STEP 1: Run the Migration Script
+   Visit: http://localhost/wapos/run-migration.php
+   
+   This will:
+   ✓ Create all missing tables
+   ✓ Add unique constraints
+   ✓ Add new columns
+   ✓ Set up indexes
+
+STEP 2: Verify System Health
+   Visit: http://localhost/wapos/system-health.php
+   
+   All checks should now show ✓ (green)
+
+================================================================================
+
+ALTERNATIVE METHOD (Manual via phpMyAdmin):
+-------------------------------------------
+
+1. Open phpMyAdmin: http://localhost/phpmyadmin
+2. Select "wapos" database
+3. Click "SQL" tab
+4. Click "Import" tab
+5. Choose file: database/migrations/001_add_uniqueness_constraints.sql
+6. Click "Go"
+7. Wait for completion
+8. Check system-health.php again
+
+================================================================================
+
+WHAT TABLES WILL BE CREATED:
+-----------------------------
+
+✓ suppliers - Supplier management
+✓ purchase_orders - Purchase order tracking  
+✓ grn - Goods received notes
+✓ stock_movements - Inventory tracking
+✓ accounts - Chart of accounts
+✓ journal_entries - Accounting journals
+✓ journal_entry_lines - Journal entry details
+✓ accounting_periods - Period close/lock
+✓ migrations - Migration tracking
+
+PLUS: Unique constraints on existing tables to prevent duplicates
+
+================================================================================
+
+WHY THIS IS SAFE:
+-----------------
+
+✓ Migration is IDEMPOTENT - Can run multiple times safely
+✓ Checks before adding - Won't break existing data
+✓ Only adds new tables - Doesn't delete anything
+✓ Adds constraints carefully - Skips if already exist
+
+================================================================================
+
+AFTER RUNNING MIGRATION:
+------------------------
+
+Your system will have:
+✓ All required tables
+✓ Proper unique constraints
+✓ Performance indexes
+✓ Accounting system ready
+✓ Inventory tracking ready
+✓ No more health warnings
+
+================================================================================
+
+QUICK START:
+------------
+
+Just visit: http://localhost/wapos/run-migration.php
+
+Click and wait 30 seconds. Done!
+
+================================================================================

@@ -1,11 +1,23 @@
 <?php
+// Force no caching
+header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+header("Pragma: no-cache");
+header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
+
 require_once 'includes/bootstrap.php';
 $auth->requireRole('admin');
 
-$db = Database::getInstance();
+$db = Database::getInstance()->getConnection();
 
 $pageTitle = 'System Health Check';
 include 'includes/header.php';
+
+// Get ALL tables that actually exist in the database
+$allTables = [];
+$result = $db->query("SHOW TABLES");
+while ($row = $result->fetch(PDO::FETCH_NUM)) {
+    $allTables[] = $row[0];
+}
 
 // System health checks
 $health = [
@@ -17,16 +29,63 @@ $health = [
 
 // Check database connection
 try {
-    $db->fetchOne("SELECT 1");
+    $db->query("SELECT 1");
     $health['database'] = true;
 } catch (Exception $e) {
     $health['database'] = false;
 }
 
-// Check essential tables
+// Check which essential tables exist
 $essentialTables = [
+    'users',
+    'products',
+    'sales',
+    'settings',
+    'suppliers',
+    'accounts',
+    'journal_entries'
+];
+
+$tableStatus = [];
+$allGood = true;
+
+foreach ($essentialTables as $table) {
+    $exists = in_array($table, $allTables);
+    $tableStatus[$table] = $exists;
+    if (!$exists) {
+        $allGood = false;
+    }
+}
+
+// Check database connection
+$dbConnected = true;
+try {
+    $db->query("SELECT 1");
+} catch (Exception $e) {
+    $dbConnected = false;
+    $allGood = false;
+}
+
+// Check files
+$files = [
+    'includes/bootstrap.php',
+    'includes/Database.php',
+    'includes/Auth.php'
+];
+
+$fileStatus = [];
+foreach ($files as $file) {
+    $exists = file_exists($file);
+    $fileStatus[$file] = $exists;
+    if (!$exists) {
+        $allGood = false;
+    }
+}
+
+// Now check the actual tables with proper descriptions
+$tableDescriptions = [
     'users' => 'User Management',
-    'products' => 'Product Catalog', 
+    'products' => 'Product Catalog',
     'sales' => 'Sales Transactions',
     'settings' => 'System Settings',
     'permission_modules' => 'Permission System',
@@ -34,39 +93,35 @@ $essentialTables = [
     'suppliers' => 'Supplier Management'
 ];
 
-foreach ($essentialTables as $table => $description) {
-    try {
-        $result = $db->fetchOne("SHOW TABLES LIKE ?", [$table]);
-        $health['tables'][$table] = [
-            'exists' => !empty($result),
-            'description' => $description
-        ];
-        
-        // If table exists, check if it has data
-        if (!empty($result)) {
-            try {
-                $count = $db->fetchOne("SELECT COUNT(*) as count FROM $table");
-                $health['tables'][$table]['count'] = $count['count'] ?? 0;
-            } catch (Exception $e) {
-                $health['tables'][$table]['count'] = 'Error';
-            }
-        } else {
-            $health['tables'][$table]['count'] = 0;
+$health['tables'] = [];
+
+foreach ($tableDescriptions as $table => $description) {
+    $exists = in_array($table, $allTables);
+    $health['tables'][$table] = [
+        'exists' => $exists,
+        'description' => $description
+    ];
+    
+    // If table exists, check if it has data
+    if ($exists) {
+        try {
+            $stmt = $db->query("SELECT COUNT(*) as count FROM `$table`");
+            $count = $stmt->fetch(PDO::FETCH_ASSOC);
+            $health['tables'][$table]['count'] = $count['count'] ?? 0;
+        } catch (Exception $e) {
+            $health['tables'][$table]['count'] = 'Error';
         }
-    } catch (Exception $e) {
-        $health['tables'][$table] = [
-            'exists' => false,
-            'description' => $description,
-            'count' => 0
-        ];
+    } else {
+        $health['tables'][$table]['count'] = 0;
     }
 }
 
-// Check permissions system (NO SystemManager references)
+// Check permissions system properly
 try {
-    // Check if permission tables exist and have data
-    $modules = $db->fetchOne("SELECT COUNT(*) as count FROM permission_modules WHERE is_active = 1");
-    $actions = $db->fetchOne("SELECT COUNT(*) as count FROM permission_actions WHERE is_active = 1");
+    $stmt = $db->query("SELECT COUNT(*) as count FROM permission_modules WHERE is_active = 1");
+    $modules = $stmt->fetch(PDO::FETCH_ASSOC);
+    $stmt = $db->query("SELECT COUNT(*) as count FROM permission_actions WHERE is_active = 1");
+    $actions = $stmt->fetch(PDO::FETCH_ASSOC);
     $health['permissions'] = (($modules['count'] ?? 0) > 0 && ($actions['count'] ?? 0) > 0);
 } catch (Exception $e) {
     $health['permissions'] = false;

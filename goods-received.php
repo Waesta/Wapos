@@ -466,10 +466,16 @@ function validateGRNForm() {
 }
 
 function receiveFromPO(poId, poNumber) {
+    console.log('Receiving from PO:', poId, poNumber);
+    
     // Load PO items and populate GRN form
     fetch('api/get-po-items.php?po_id=' + poId)
-        .then(response => response.json())
+        .then(response => {
+            console.log('Response received:', response);
+            return response.json();
+        })
         .then(data => {
+            console.log('Data:', data);
             if (data.success) {
                 document.getElementById('poId').value = poId;
                 document.getElementById('supplierId').value = data.supplier_id;
@@ -483,8 +489,23 @@ function receiveFromPO(poId, poNumber) {
                     batch_number: ''
                 }));
                 updateGRNDisplay();
-                new bootstrap.Modal(document.getElementById('grnModal')).show();
+                
+                // Show modal
+                const modalEl = document.getElementById('grnModal');
+                if (modalEl) {
+                    const modal = new bootstrap.Modal(modalEl);
+                    modal.show();
+                } else {
+                    console.error('Modal element not found!');
+                }
+            } else {
+                console.error('API returned error:', data.message);
+                alert('Error loading PO items: ' + (data.message || 'Unknown error'));
             }
+        })
+        .catch(error => {
+            console.error('Fetch error:', error);
+            alert('Error loading PO items. Check console for details.');
         });
 }
 

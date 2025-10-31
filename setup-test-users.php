@@ -91,7 +91,7 @@ try {
     ];
     
     foreach ($testUsers as $user) {
-        $dashboardUrl = "dashboards/{$user['role']}-dashboard.php";
+        $dashboardUrl = "dashboards/{$user['role']}.php";
         echo "<tr>";
         echo "<td><strong>{$user['username']}</strong></td>";
         echo "<td>password</td>";
@@ -107,11 +107,11 @@ try {
     echo "<h2>🚀 Quick Test Links</h2>";
     echo "<p>Direct links to each dashboard (must be logged in):</p>";
     echo "<div style='display:flex;flex-wrap:wrap;gap:10px;'>";
-    echo "<a href='dashboards/accountant-dashboard.php' class='btn'>Accountant Dashboard</a>";
-    echo "<a href='dashboards/cashier-dashboard.php' class='btn'>Cashier Dashboard</a>";
-    echo "<a href='dashboards/waiter-dashboard.php' class='btn'>Waiter Dashboard</a>";
-    echo "<a href='dashboards/manager-dashboard.php' class='btn'>Manager Dashboard</a>";
-    echo "<a href='dashboards/admin-dashboard.php' class='btn'>Admin Dashboard</a>";
+    echo "<a href='dashboards/accountant.php' class='btn'>Accountant Dashboard</a>";
+    echo "<a href='dashboards/cashier.php' class='btn'>Cashier Dashboard</a>";
+    echo "<a href='dashboards/waiter.php' class='btn'>Waiter Dashboard</a>";
+    echo "<a href='dashboards/manager.php' class='btn'>Manager Dashboard</a>";
+    echo "<a href='dashboards/admin.php' class='btn'>Admin Dashboard</a>";
     echo "</div>";
     
     // Testing instructions

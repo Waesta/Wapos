@@ -144,6 +144,14 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
             <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'void-order-management.php' ? ' active' : '' ?>" href="/wapos/void-order-management.php">
                 <i class="bi bi-x-circle me-2"></i>Void Orders
             </a>
+            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'void-reports.php' ? ' active' : '' ?>" href="/wapos/void-reports.php">
+                <i class="bi bi-file-bar-graph me-2"></i>Void Reports
+            </a>
+            <?php if ($userRole === 'admin'): ?>
+            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'void-settings.php' ? ' active' : '' ?>" href="/wapos/void-settings.php">
+                <i class="bi bi-sliders me-2"></i>Void Settings
+            </a>
+            <?php endif; ?>
             <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'rooms.php' ? ' active' : '' ?>" href="/wapos/rooms.php">
                 <i class="bi bi-building me-2"></i>Rooms
             </a>

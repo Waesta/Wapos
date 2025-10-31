@@ -3,26 +3,13 @@
  * Handles comprehensive offline functionality and intelligent caching
  */
 
-const CACHE_VERSION = '2.0';
+const CACHE_VERSION = '2.1';
 const CACHE_NAME = `wapos-v${CACHE_VERSION}`;
 const DATA_CACHE_NAME = `wapos-data-v${CACHE_VERSION}`;
 const OFFLINE_URL = '/wapos/offline.html';
 
-// Core application files to cache (App Shell)
+// Core application files to cache (App Shell) - ONLY STATIC FILES
 const APP_SHELL_FILES = [
-    '/wapos/',
-    '/wapos/index.php',
-    '/wapos/pos.php',
-    '/wapos/restaurant.php',
-    '/wapos/restaurant-order.php',
-    '/wapos/kitchen-display.php',
-    '/wapos/delivery.php',
-    '/wapos/products.php',
-    '/wapos/customers.php',
-    '/wapos/rooms.php',
-    '/wapos/sales.php',
-    '/wapos/reports.php',
-    '/wapos/settings.php',
     '/wapos/offline.html',
     '/wapos/assets/images/logo.png'
 ];
@@ -106,9 +93,15 @@ self.addEventListener('fetch', (event) => {
         return;
     }
     
+    // NEVER cache PHP files - always go to network first
+    if (url.pathname.endsWith('.php')) {
+        event.respondWith(networkFirst(request));
+        return;
+    }
+    
     // Determine caching strategy based on request type
     if (isAppShellRequest(url.pathname)) {
-        // App Shell: Cache First
+        // App Shell: Cache First (only static files)
         event.respondWith(cacheFirst(request));
     } else if (isCacheableApiEndpoint(url.pathname)) {
         // API Data: Network First with cache fallback
@@ -116,9 +109,12 @@ self.addEventListener('fetch', (event) => {
     } else if (isNetworkFirstEndpoint(url.pathname)) {
         // Critical APIs: Network First
         event.respondWith(networkFirst(request));
-    } else {
-        // Default: Cache First with network fallback
+    } else if (isStaticAsset(url.pathname)) {
+        // Static assets: Cache First
         event.respondWith(cacheFirst(request));
+    } else {
+        // Default: Network First (safer for dynamic content)
+        event.respondWith(networkFirst(request));
     }
 });
 
@@ -219,6 +215,11 @@ function isCacheableApiEndpoint(pathname) {
 
 function isNetworkFirstEndpoint(pathname) {
     return NETWORK_FIRST_ENDPOINTS.some(endpoint => pathname.includes(endpoint.replace('/wapos', '')));
+}
+
+function isStaticAsset(pathname) {
+    const staticExtensions = ['.css', '.js', '.jpg', '.jpeg', '.png', '.gif', '.svg', '.woff', '.woff2', '.ttf', '.eot', '.ico'];
+    return staticExtensions.some(ext => pathname.endsWith(ext));
 }
 
 // Background sync events

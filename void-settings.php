@@ -6,7 +6,7 @@ $auth->requireLogin();
 $user = $auth->getUser();
 if (!$user || !in_array($user['role'], ['admin', 'developer'])) {
     $_SESSION['error_message'] = 'You do not have permission to manage void settings. Admin role required.';
-    redirect('dashboard.php');
+    redirect('index.php');
 }
 
 $db = Database::getInstance();

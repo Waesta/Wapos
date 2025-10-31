@@ -17,19 +17,19 @@ if ($auth->isLoggedIn()) {
     
     switch ($role) {
         case 'admin':
-            redirect('dashboards/admin-dashboard.php');
+            redirect('dashboards/admin.php');
             break;
         case 'manager':
-            redirect('dashboards/manager-dashboard.php');
+            redirect('dashboards/manager.php');
             break;
         case 'accountant':
-            redirect('dashboards/accountant-dashboard.php');
+            redirect('dashboards/accountant.php');
             break;
         case 'cashier':
-            redirect('dashboards/cashier-dashboard.php');
+            redirect('dashboards/cashier.php');
             break;
         case 'waiter':
-            redirect('dashboards/waiter-dashboard.php');
+            redirect('dashboards/waiter.php');
             break;
         default:
             redirect('pos.php');

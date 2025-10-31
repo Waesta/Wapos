@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clearing Cache - WAPOS</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-md-6">
+                <div class="card shadow-lg">
+                    <div class="card-body p-5 text-center">
+                        <div class="spinner-border text-primary mb-3" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <h3>Clearing Cache...</h3>
+                        <p class="text-muted">Please wait while we update the system.</p>
+                        <div id="status" class="mt-3"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function clearEverything() {
+            const status = document.getElementById('status');
+            
+            try {
+                // Step 1: Unregister all service workers
+                status.innerHTML += '<p>✓ Unregistering service workers...</p>';
+                if ('serviceWorker' in navigator) {
+                    const registrations = await navigator.serviceWorker.getRegistrations();
+                    for (let registration of registrations) {
+                        await registration.unregister();
+                    }
+                }
+                
+                // Step 2: Clear all caches
+                status.innerHTML += '<p>✓ Clearing caches...</p>';
+                if ('caches' in window) {
+                    const cacheNames = await caches.keys();
+                    await Promise.all(cacheNames.map(name => caches.delete(name)));
+                }
+                
+                // Step 3: Clear IndexedDB
+                status.innerHTML += '<p>✓ Clearing offline database...</p>';
+                if ('indexedDB' in window) {
+                    indexedDB.deleteDatabase('wapos-offline');
+                }
+                
+                // Step 4: Clear localStorage
+                status.innerHTML += '<p>✓ Clearing local storage...</p>';
+                localStorage.clear();
+                sessionStorage.clear();
+                
+                status.innerHTML += '<p class="text-success fw-bold mt-3">✓ All caches cleared successfully!</p>';
+                status.innerHTML += '<p>Redirecting to login in 3 seconds...</p>';
+                
+                // Redirect to login
+                setTimeout(() => {
+                    window.location.href = '/wapos/login.php';
+                }, 3000);
+                
+            } catch (error) {
+                status.innerHTML += `<p class="text-danger">✗ Error: ${error.message}</p>`;
+                status.innerHTML += '<p><a href="/wapos/login.php" class="btn btn-primary mt-3">Go to Login</a></p>';
+            }
+        }
+        
+        // Run on page load
+        clearEverything();
+    </script>
+</body>
+</html>

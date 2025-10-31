@@ -23,12 +23,18 @@ ServerSignature Off
     Header set Cache-Control "public, max-age=3600"
 </FilesMatch>
 
-# Security Headers
+# Security Headers - Enhanced
 <IfModule mod_headers.c>
-    Header set X-Content-Type-Options "nosniff"
-    Header set X-Frame-Options "SAMEORIGIN"
-    Header set X-XSS-Protection "1; mode=block"
-    Header set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set Referrer-Policy "no-referrer-when-downgrade"
+    Header always set X-XSS-Protection "1; mode=block"
+    # Enable after HTTPS:
+    # Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    Header always set Permissions-Policy "geolocation=(), microphone=(), camera=()"
+    
+    # Content Security Policy
+    Header set Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; script-src 'self' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net data:; connect-src 'self'; manifest-src 'self';"
 </IfModule>
 
 # Disable directory browsing
@@ -43,15 +49,44 @@ Options -Indexes
     # RewriteCond %{HTTPS} off
     # RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
     
-    # Prevent access to sensitive files
+    # Prevent access to sensitive files and directories
     RewriteRule ^includes/ - [F,L]
     RewriteRule ^database/ - [F,L]
     RewriteRule ^cache/ - [F,L]
     RewriteRule ^logs/ - [F,L]
+    RewriteRule ^app/ - [F,L]
+    RewriteRule ^config/ - [F,L]
+    RewriteRule ^vendor/ - [F,L]
     RewriteRule \.sql$ - [F,L]
     RewriteRule \.md$ - [F,L]
     RewriteRule \.txt$ - [F,L]
+    RewriteRule ^\.git - [F,L]
 </IfModule>
+
+# Block access to sensitive file types
+<FilesMatch "\\.(sql|md|yml|yaml|ini|log|zip|bak)$">
+    Require all denied
+</FilesMatch>
+
+# Block access to .git directory
+RedirectMatch 404 ^/.git
+
+# Block access to specific directories
+RedirectMatch 404 ^/database
+RedirectMatch 404 ^/cache$
+RedirectMatch 404 ^/cache/
+RedirectMatch 404 ^/app
+RedirectMatch 404 ^/config
+
+# Block access to installation and maintenance scripts (except admin migration tools)
+<FilesMatch "^(install|setup|update|upgrade|emergency|test)-.*\\.php$">
+    Require all denied
+</FilesMatch>
+
+# Allow admin migration scripts (protected by auth in the files themselves)
+<FilesMatch "^(run-migration|run-migration-002|fix-migration-errors|fix-void-reason-codes|create-void-transactions|create-all-void-tables|quick-check-void-tables|FINAL_FIX_VOID_TABLES|add-affects-inventory-column|add-rider-location-columns)\.php$">
+    Require all granted
+</FilesMatch>
 
 # PHP Settings
 <IfModule mod_php.c>

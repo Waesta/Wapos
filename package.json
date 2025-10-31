@@ -1,0 +1,25 @@
+{
+  "name": "wapos",
+  "version": "2.0.0",
+  "description": "WAPOS - Unified Point of Sale System",
+  "scripts": {
+    "test": "npx playwright test",
+    "test:headed": "npx playwright test --headed",
+    "test:debug": "npx playwright test --debug",
+    "test:report": "npx playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0",
+    "@types/node": "^20.10.0"
+  },
+  "keywords": [
+    "pos",
+    "point-of-sale",
+    "retail",
+    "restaurant",
+    "hotel",
+    "delivery"
+  ],
+  "author": "Waesta",
+  "license": "Proprietary"
+}

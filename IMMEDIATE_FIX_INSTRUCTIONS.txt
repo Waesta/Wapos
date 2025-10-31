@@ -1,0 +1,75 @@
+================================================================================
+  IMMEDIATE FIX FOR LOGIN ERR_FAILED ISSUE
+================================================================================
+
+PROBLEM:
+--------
+After login, you get "This site can't be reached - ERR_FAILED" until you 
+press Ctrl+F5 to hard refresh.
+
+QUICK FIX (Do this NOW):
+------------------------
+
+STEP 1: Visit this page in your browser
+   http://localhost/wapos/clear-sw-cache.html
+
+STEP 2: Wait 3 seconds (it will auto-clear everything)
+
+STEP 3: You'll be redirected to login page
+
+STEP 4: Login normally - issue should be FIXED!
+
+================================================================================
+
+WHAT WAS FIXED:
+---------------
+✓ Service worker no longer caches PHP files
+✓ Updated to version 2.1
+✓ Added proper update handling
+✓ PHP files now always fetch from network
+
+FILES CHANGED:
+--------------
+1. service-worker.js (v2.1) - Fixed caching strategy
+2. includes/footer.php - Better SW registration
+3. clear-sw-cache.html - Cache clearing tool (NEW)
+
+================================================================================
+
+IF ISSUE PERSISTS:
+------------------
+
+Try Manual Clear:
+1. Press F12 (open DevTools)
+2. Go to "Application" tab
+3. Click "Clear storage" (left sidebar)
+4. Check ALL boxes
+5. Click "Clear site data"
+6. Close DevTools
+7. Press Ctrl+Shift+R (hard reload)
+8. Try login again
+
+OR
+
+Use Incognito Mode:
+1. Open browser in Incognito/Private mode
+2. Visit: http://localhost/wapos/login.php
+3. Login: admin / admin123
+4. Should work without errors
+
+================================================================================
+
+VERIFICATION:
+-------------
+After fix, check:
+1. F12 → Application → Service Workers
+2. Should show: "wapos-v2.1" (not 2.0)
+3. Network tab should show PHP files from "Fetch" (not "ServiceWorker")
+
+================================================================================
+
+DONE! You should now be able to login without Ctrl+F5!
+
+For more details, see: FIX_SERVICE_WORKER_ISSUE.md
+
+================================================================================
