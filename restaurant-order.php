@@ -183,18 +183,38 @@ include 'includes/header.php';
                 </div>
             </div>
 
-            <!-- Products Grid -->
-            <div id="productsGrid" class="row g-2">
+            <!-- Products List -->
+            <div id="productsList" class="list-group product-list">
                 <?php foreach ($products as $product): ?>
-                <div class="col-md-4 product-item" 
+                <?php
+                $productPayload = json_encode([
+                    'id' => (int)$product['id'],
+                    'name' => $product['name'],
+                    'selling_price' => (float)$product['selling_price'],
+                    'stock_quantity' => (float)$product['stock_quantity'],
+                ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
+                ?>
+                <div class="list-group-item product-item d-flex flex-column flex-md-row align-items-md-center justify-product between gap-2"
                      data-category="<?= $product['category_id'] ?>"
                      data-name="<?= strtolower($product['name']) ?>">
-                    <div class="card product-card" onclick='addToCart(<?= json_encode($product) ?>)'>
-                        <div class="card-body p-2">
-                            <h6 class="mb-1"><?= htmlspecialchars($product['name']) ?></h6>
-                            <p class="text-primary mb-0 fw-bold"><?= formatMoney($product['selling_price'], false) ?></p>
-                            <small class="text-muted">Stock: <?= $product['stock_quantity'] ?></small>
-                        </div>
+                    <div class="product-info">
+                        <h6 class="mb-1"><?= htmlspecialchars($product['name']) ?></h6>
+                        <div class="text-muted small">Stock: <?= $product['stock_quantity'] ?></div>
+                    </div>
+                    <div class="d-flex flex-column flex-sm-row align-items-sm-center gap-2">
+                        <div class="text-primary fw-bold"><?= formatMoney($product['selling_price'], false) ?></div>
+                        <button 
+                            type="button"
+                            class="btn btn-sm btn-primary add-to-cart-btn"
+                            data-product-id="<?= (int)$product['id'] ?>"
+                            data-product-name="<?= htmlspecialchars($product['name'], ENT_QUOTES, 'UTF-8') ?>"
+                            data-product-price="<?= (float)$product['selling_price'] ?>"
+                            data-product-stock="<?= (float)$product['stock_quantity'] ?>"
+                            data-product-json="<?= htmlspecialchars($productPayload, ENT_QUOTES, 'UTF-8') ?>"
+                            onclick="(function(btn){ const product = buildProductFromDataset(btn.dataset); addToCart(product); })(this);"
+                        >
+                            <i class="bi bi-cart-plus me-1"></i>Add
+                        </button>
                     </div>
                 </div>
                 <?php endforeach; ?>
@@ -330,6 +350,9 @@ let cart = [];
 let currentItem = null;
 const TAX_RATE = 16;
 const currencySymbol = '<?= $db->fetchOne("SELECT setting_value FROM settings WHERE setting_key = 'currency'")['setting_value'] ?? '$' ?>';
+const modifierModalEl = document.getElementById('modifierModal');
+const hasModifierOptions = modifierModalEl && modifierModalEl.querySelectorAll('.modifier-check').length > 0;
+let modifierModalInstance = null;
 
 // Search and filter
 document.getElementById('searchProduct').addEventListener('input', filterProducts);
@@ -351,7 +374,29 @@ function filterProducts() {
     });
 }
 
+function buildProductFromDataset(dataset) {
+    if (dataset.productJson) {
+        try {
+            return JSON.parse(dataset.productJson);
+        } catch (error) {
+            console.error('Failed to parse product JSON dataset', error, dataset.productJson);
+        }
+    }
+
+    return {
+        id: Number.parseInt(dataset.productId, 10),
+        name: dataset.productName,
+        selling_price: parseFloat(dataset.productPrice),
+        stock_quantity: parseFloat(dataset.productStock)
+    };
+}
+
 function addToCart(product) {
+    if (!product || !product.name || Number.isNaN(product.id) || Number.isNaN(product.selling_price)) {
+        console.error('Invalid product payload', product);
+        return;
+    }
+
     currentItem = {
         id: product.id,
         name: product.name,
@@ -362,13 +407,24 @@ function addToCart(product) {
         base_price: parseFloat(product.selling_price)
     };
     
+    if (!hasModifierOptions) {
+        currentItem.total = currentItem.price * currentItem.quantity;
+        cart.push({...currentItem});
+        updateCart();
+        currentItem = null;
+        return;
+    }
+
     // Show modifier modal
     document.getElementById('itemName').textContent = product.name;
     document.getElementById('itemPrice').textContent = parseFloat(product.selling_price).toFixed(2);
     document.querySelectorAll('.modifier-check').forEach(cb => cb.checked = false);
     document.getElementById('specialInstructions').value = '';
     
-    new bootstrap.Modal(document.getElementById('modifierModal')).show();
+    if (!modifierModalInstance) {
+        modifierModalInstance = new bootstrap.Modal(modifierModalEl);
+    }
+    modifierModalInstance.show();
 }
 
 function confirmModifiers() {
@@ -394,7 +450,9 @@ function confirmModifiers() {
     cart.push(currentItem);
     updateCart();
     
-    bootstrap.Modal.getInstance(document.getElementById('modifierModal')).hide();
+    if (modifierModalInstance) {
+        modifierModalInstance.hide();
+    }
 }
 
 function updateCart() {
@@ -749,6 +807,45 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Initialize button states
     updateButtonStates();
+
+    const productsList = document.getElementById('productsList');
+    if (productsList) {
+        productsList.addEventListener('click', (event) => {
+            const button = event.target.closest('.add-to-cart-btn');
+            if (!button) {
+                return;
+            }
+            event.preventDefault();
+            const product = buildProductFromDataset(button.dataset);
+            addToCart(product);
+        });
+
+        productsList.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') {
+                return;
+            }
+            const button = event.target.closest('.add-to-cart-btn');
+            if (button) {
+                event.preventDefault();
+                const product = buildProductFromDataset(button.dataset);
+                addToCart(product);
+                return;
+            }
+
+            const item = event.target.closest('.product-item');
+            if (!item) {
+                return;
+            }
+
+            const primaryButton = item.querySelector('.add-to-cart-btn');
+            if (primaryButton) {
+                event.preventDefault();
+                primaryButton.focus();
+                const product = buildProductFromDataset(primaryButton.dataset);
+                addToCart(product);
+            }
+        });
+    }
     
     // Add debug logging for button clicks
     const buttons = ['invoiceBtn', 'paymentBtn', 'kitchenBtn', 'receiptBtn'];

@@ -91,6 +91,14 @@ class Database {
             throw $e;
         }
     }
+
+    /**
+     * Execute a statement and return success boolean.
+     */
+    public function execute($sql, $params = []) {
+        $stmt = $this->query($sql, $params);
+        return $stmt !== false;
+    }
     
     public function fetchAll($sql, $params = []) {
         $cacheKey = $this->getCacheKey($sql, $params) . ':all';

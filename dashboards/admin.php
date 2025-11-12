@@ -116,14 +116,23 @@ include '../includes/header.php';
         <p class="text-muted mb-0">Complete system overview and control</p>
     </div>
     <div class="btn-group">
-        <a href="system-status.php" class="btn btn-outline-primary">
+        <a href="<?= APP_URL ?>/status.php" class="btn btn-outline-primary">
             <i class="bi bi-cpu me-1"></i>System Status
         </a>
-        <a href="permissions.php" class="btn btn-outline-success">
+        <a href="<?= APP_URL ?>/permissions.php" class="btn btn-outline-success">
             <i class="bi bi-shield-check me-1"></i>Permissions
         </a>
-        <a href="users.php" class="btn btn-outline-info">
+        <a href="<?= APP_URL ?>/users.php" class="btn btn-outline-info">
             <i class="bi bi-people me-1"></i>Users
+        </a>
+        <a href="<?= APP_URL ?>/products.php" class="btn btn-outline-secondary">
+            <i class="bi bi-box me-1"></i>Products
+        </a>
+        <a href="<?= APP_URL ?>/locations.php" class="btn btn-outline-warning">
+            <i class="bi bi-geo-alt me-1"></i>Locations
+        </a>
+        <a href="<?= APP_URL ?>/settings.php" class="btn btn-outline-dark">
+            <i class="bi bi-gear me-1"></i>Settings
         </a>
     </div>
 </div>
@@ -191,12 +200,12 @@ include '../includes/header.php';
                 
                 <div class="row g-2">
                     <div class="col-md-6">
-                        <a href="reports.php" class="btn btn-outline-primary w-100">
+                        <a href="<?= APP_URL ?>/reports.php" class="btn btn-outline-primary w-100">
                             <i class="bi bi-bar-chart me-2"></i>Detailed Reports
                         </a>
                     </div>
                     <div class="col-md-6">
-                        <a href="accounting.php" class="btn btn-outline-success w-100">
+                        <a href="<?= APP_URL ?>/accounting.php" class="btn btn-outline-success w-100">
                             <i class="bi bi-calculator me-2"></i>Accounting
                         </a>
                     </div>
@@ -239,7 +248,7 @@ include '../includes/header.php';
                     </div>
                 </div>
                 
-                <a href="system-status.php" class="btn btn-outline-info w-100">
+                <a href="<?= APP_URL ?>/status.php" class="btn btn-outline-info w-100">
                     <i class="bi bi-gear me-2"></i>Full Diagnostics
                 </a>
             </div>
@@ -293,7 +302,7 @@ include '../includes/header.php';
                 <?php endif; ?>
                 
                 <div class="mt-3">
-                    <a href="permissions.php" class="btn btn-outline-warning w-100">
+                    <a href="<?= APP_URL ?>/permissions.php" class="btn btn-outline-warning w-100">
                         <i class="bi bi-eye me-2"></i>View Audit Log
                     </a>
                 </div>
@@ -347,7 +356,7 @@ include '../includes/header.php';
                 <?php endif; ?>
                 
                 <div class="mt-3">
-                    <a href="users.php" class="btn btn-outline-primary w-100">
+                    <a href="<?= APP_URL ?>/users.php" class="btn btn_outline-primary w-100">
                         <i class="bi bi-people me-2"></i>Manage Users
                     </a>
                 </div>
@@ -381,7 +390,7 @@ include '../includes/header.php';
                     <?php endforeach; ?>
                 </div>
                 <div class="mt-3">
-                    <a href="products.php" class="btn btn-outline-danger">
+                    <a href="<?= APP_URL ?>/products.php" class="btn btn-outline-danger">
                         <i class="bi bi-box-seam me-2"></i>Manage Inventory
                     </a>
                 </div>
@@ -401,37 +410,37 @@ include '../includes/header.php';
             <div class="card-body">
                 <div class="row g-2">
                     <div class="col-md-2">
-                        <a href="users.php" class="btn btn-outline-primary w-100">
+                        <a href="<?= APP_URL ?>/users.php" class="btn btn-outline-primary w-100">
                             <i class="bi bi-person-plus d-block fs-4 mb-2"></i>
                             <small>Add User</small>
                         </a>
                     </div>
                     <div class="col-md-2">
-                        <a href="permissions.php" class="btn btn-outline-success w-100">
+                        <a href="<?= APP_URL ?>/permissions.php" class="btn btn-outline-success w-100">
                             <i class="bi bi-shield-plus d-block fs-4 mb-2"></i>
                             <small>Permissions</small>
                         </a>
                     </div>
                     <div class="col-md-2">
-                        <a href="products.php" class="btn btn-outline-info w-100">
+                        <a href="<?= APP_URL ?>/products.php" class="btn btn-outline-info w-100">
                             <i class="bi bi-plus-square d-block fs-4 mb-2"></i>
                             <small>Add Product</small>
                         </a>
                     </div>
                     <div class="col-md-2">
-                        <a href="locations.php" class="btn btn-outline-warning w-100">
+                        <a href="<?= APP_URL ?>/locations.php" class="btn btn-outline-warning w-100">
                             <i class="bi bi-geo-alt-fill d-block fs-4 mb-2"></i>
                             <small>Locations</small>
                         </a>
                     </div>
                     <div class="col-md-2">
-                        <a href="settings.php" class="btn btn-outline-secondary w-100">
+                        <a href="<?= APP_URL ?>/settings.php" class="btn btn-outline-secondary w-100">
                             <i class="bi bi-gear-fill d-block fs-4 mb-2"></i>
                             <small>Settings</small>
                         </a>
                     </div>
                     <div class="col-md-2">
-                        <a href="system-status.php" class="btn btn-outline-danger w-100">
+                        <a href="<?= APP_URL ?>/status.php" class="btn btn-outline-danger w-100">
                             <i class="bi bi-cpu-fill d-block fs-4 mb-2"></i>
                             <small>System</small>
                         </a>

@@ -80,8 +80,8 @@ include 'includes/header.php';
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <p class="text-muted mb-1 small">Active Riders</p>
-                        <h3 class="mb-0 fw-bold">
-                            <?= count(array_filter($riders, fn($r) => $r['status'] === 'available')) ?>
+                        <h3 class="mb-0 fw-bold" id="activeRidersCount">
+                            <?= count(array_filter($riders, fn($r) => ($r['status'] ?? '') === 'available')) ?>
                         </h3>
                     </div>
                     <i class="bi bi-person-check text-success fs-1"></i>
@@ -95,7 +95,7 @@ include 'includes/header.php';
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <p class="text-muted mb-1 small">Pending Orders</p>
-                        <h3 class="mb-0 fw-bold text-warning"><?= count($deliveryOrders) ?></h3>
+                        <h3 class="mb-0 fw-bold text-warning" id="pendingOrdersCount"><?= count($deliveryOrders) ?></h3>
                     </div>
                     <i class="bi bi-clock-history text-warning fs-1"></i>
                 </div>
@@ -108,8 +108,8 @@ include 'includes/header.php';
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <p class="text-muted mb-1 small">In Transit</p>
-                        <h3 class="mb-0 fw-bold text-info">
-                            <?= count(array_filter($pendingDeliveries, fn($d) => $d['status'] === 'in-transit')) ?>
+                        <h3 class="mb-0 fw-bold text-info" id="inTransitCount">
+                            <?= count(array_filter($pendingDeliveries, fn($d) => ($d['status'] ?? '') === 'in-transit')) ?>
                         </h3>
                     </div>
                     <i class="bi bi-truck text-info fs-1"></i>
@@ -123,7 +123,7 @@ include 'includes/header.php';
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <p class="text-muted mb-1 small">Today Delivered</p>
-                        <h3 class="mb-0 fw-bold text-success">
+                        <h3 class="mb-0 fw-bold text-success" id="todayDeliveredCount">
                             <?php 
                             $todayDelivered = $db->fetchOne("
                                 SELECT COUNT(*) as count FROM deliveries 
@@ -149,7 +149,7 @@ include 'includes/header.php';
                 <h6 class="mb-0"><i class="bi bi-people me-2"></i>Available Riders</h6>
             </div>
             <div class="card-body p-0">
-                <div class="list-group list-group-flush">
+                <div class="list-group list-group-flush" id="ridersList">
                     <?php foreach ($riders as $rider): ?>
                     <div class="list-group-item">
                         <div class="d-flex justify-content-between align-items-start">
@@ -164,14 +164,14 @@ include 'includes/header.php';
                                 </p>
                             </div>
                             <div class="text-end">
-                                <span class="badge bg-<?= $rider['status'] === 'available' ? 'success' : ($rider['status'] === 'busy' ? 'warning' : 'secondary') ?>">
-                                    <?= ucfirst($rider['status']) ?>
+                                <span class="badge bg-<?= ($rider['status'] ?? '') === 'available' ? 'success' : (($rider['status'] ?? '') === 'busy' ? 'warning' : 'secondary') ?>">
+                                    <?= ucfirst($rider['status'] ?? 'unknown') ?>
                                 </span>
                                 <p class="mb-0 small text-muted mt-1">
-                                    <?= $rider['total_deliveries'] ?> deliveries
+                                    <?= (int)($rider['total_deliveries'] ?? 0) ?> deliveries
                                 </p>
                                 <p class="mb-0 small">
-                                    <i class="bi bi-star-fill text-warning"></i> <?= number_format($rider['rating'], 1) ?>
+                                    <i class="bi bi-star-fill text-warning"></i> <?= number_format((float)($rider['rating'] ?? 0), 1) ?>
                                 </p>
                             </div>
                         </div>
@@ -207,7 +207,7 @@ include 'includes/header.php';
                                     <th>Action</th>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody id="ordersTableBody">
                                 <?php foreach ($deliveryOrders as $order): ?>
                                 <tr>
                                     <td><?= htmlspecialchars($order['order_number']) ?></td>
@@ -225,14 +225,14 @@ include 'includes/header.php';
                                     </td>
                                     <td>
                                         <span class="badge bg-<?= 
-                                            $order['delivery_status'] === 'delivered' ? 'success' : 
-                                            ($order['delivery_status'] === 'in-transit' ? 'info' : 'warning') 
+                                            ($order['delivery_status'] ?? '') === 'delivered' ? 'success' : 
+                                            (($order['delivery_status'] ?? '') === 'in-transit' ? 'info' : 'warning') 
                                         ?>">
                                             <?= ucfirst(str_replace('-', ' ', $order['delivery_status'] ?? 'pending')) ?>
                                         </span>
                                     </td>
                                     <td>
-                                        <?php if (!$order['rider_id']): ?>
+                                        <?php if (empty($order['rider_id'])): ?>
                                             <button class="btn btn-sm btn-primary" onclick="assignRider(<?= $order['id'] ?>)">
                                                 <i class="bi bi-person-plus"></i> Assign
                                             </button>
@@ -309,7 +309,7 @@ include 'includes/header.php';
                     <label class="form-label">Select Available Rider</label>
                     <select class="form-select" id="selectedRider">
                         <option value="">Choose rider...</option>
-                        <?php foreach (array_filter($riders, fn($r) => $r['status'] === 'available') as $rider): ?>
+                        <?php foreach (array_filter($riders, fn($r) => ($r['status'] ?? '') === 'available') as $rider): ?>
                             <option value="<?= $rider['id'] ?>"><?= htmlspecialchars($rider['name']) ?> - <?= htmlspecialchars($rider['vehicle_type']) ?></option>
                         <?php endforeach; ?>
                     </select>
@@ -354,12 +354,21 @@ include 'includes/header.php';
     </div>
 </div>
 
-<script>
 let currentOrderId = null;
+let latestRiders = <?= json_encode($riders) ?>;
 
 function assignRider(orderId) {
     currentOrderId = orderId;
+    populateRiderSelect();
     new bootstrap.Modal(document.getElementById('assignRiderModal')).show();
+}
+
+function populateRiderSelect() {
+    const select = document.getElementById('selectedRider');
+    const availableRiders = (latestRiders || []).filter(rider => (rider.status || '') === 'available');
+    select.innerHTML = '<option value="">Choose rider...</option>' + availableRiders.map(rider => (
+        `<option value="${rider.id}">${escapeHtml(rider.name)} - ${escapeHtml(rider.vehicle_type || 'N/A')}</option>`
+    )).join('');
 }
 
 async function confirmAssignment() {
@@ -388,7 +397,8 @@ async function confirmAssignment() {
         
         if (result.success) {
             bootstrap.Modal.getInstance(document.getElementById('assignRiderModal')).hide();
-            location.reload();
+            document.getElementById('deliveryNotes').value = '';
+            refreshDeliveryData();
         } else {
             alert('Error: ' + result.message);
         }
@@ -400,6 +410,14 @@ async function confirmAssignment() {
 async function trackDelivery(orderId) {
     const modal = new bootstrap.Modal(document.getElementById('trackingModal'));
     modal.show();
+    document.getElementById('trackingContent').innerHTML = `
+        <div class="text-center py-4">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Loading tracking information...</p>
+        </div>
+    `;
     
     try {
         const response = await fetch(`api/get-delivery-tracking.php?order_id=${orderId}`);
@@ -407,6 +425,7 @@ async function trackDelivery(orderId) {
         
         if (result.success) {
             const tracking = result.data;
+            const timelineHtml = buildTimeline(tracking.timeline || []);
             document.getElementById('trackingContent').innerHTML = `
                 <div class="row">
                     <div class="col-md-6">
@@ -415,35 +434,19 @@ async function trackDelivery(orderId) {
                         <p><strong>Customer:</strong> ${tracking.customer_name || 'N/A'}</p>
                         <p><strong>Phone:</strong> ${tracking.customer_phone || 'N/A'}</p>
                         <p><strong>Address:</strong> ${tracking.delivery_address || 'N/A'}</p>
-                        <p><strong>Amount:</strong> KES ${parseFloat(tracking.total_amount).toFixed(2)}</p>
+                        <p><strong>Amount:</strong> KES ${Number(tracking.total_amount || 0).toFixed(2)}</p>
                     </div>
                     <div class="col-md-6">
                         <h6>Delivery Status</h6>
                         <p><strong>Rider:</strong> ${tracking.rider_name || 'Not assigned'}</p>
-                        <p><strong>Status:</strong> <span class="badge bg-info">${tracking.status}</span></p>
-                        <p><strong>Estimated Time:</strong> ${tracking.estimated_time || 'N/A'}</p>
-                        <p><strong>Order Time:</strong> ${new Date(tracking.created_at).toLocaleString()}</p>
+                        <p><strong>Status:</strong> <span class="badge bg-${getStatusBadgeColor(tracking.status)}">${capitalize(tracking.status)}</span></p>
+                        <p><strong>Estimated Time:</strong> ${formatDateTime(tracking.estimated_time) || 'N/A'}</p>
+                        <p><strong>Order Time:</strong> ${formatDateTime(tracking.created_at) || 'N/A'}</p>
                     </div>
                 </div>
                 <div class="mt-3">
                     <h6>Delivery Timeline</h6>
-                    <div class="timeline">
-                        <div class="timeline-item ${tracking.status === 'pending' ? 'active' : 'completed'}">
-                            <i class="bi bi-clock"></i> Order Placed
-                        </div>
-                        <div class="timeline-item ${tracking.status === 'assigned' ? 'active' : (tracking.status === 'picked-up' || tracking.status === 'in-transit' || tracking.status === 'delivered' ? 'completed' : '')}">
-                            <i class="bi bi-person-check"></i> Rider Assigned
-                        </div>
-                        <div class="timeline-item ${tracking.status === 'picked-up' ? 'active' : (tracking.status === 'in-transit' || tracking.status === 'delivered' ? 'completed' : '')}">
-                            <i class="bi bi-box"></i> Order Picked Up
-                        </div>
-                        <div class="timeline-item ${tracking.status === 'in-transit' ? 'active' : (tracking.status === 'delivered' ? 'completed' : '')}">
-                            <i class="bi bi-truck"></i> In Transit
-                        </div>
-                        <div class="timeline-item ${tracking.status === 'delivered' ? 'completed' : ''}">
-                            <i class="bi bi-check-circle"></i> Delivered
-                        </div>
-                    </div>
+                    ${timelineHtml}
                 </div>
                 ${tracking.status !== 'delivered' && tracking.rider_name ? `
                 <div class="mt-3 text-center">
@@ -469,6 +472,25 @@ async function trackDelivery(orderId) {
     }
 }
 
+function buildTimeline(entries) {
+    if (!entries.length) {
+        return '<div class="alert alert-secondary">No timeline activity recorded yet.</div>';
+    }
+    return `
+        <ul class="list-group">
+            ${entries.map(entry => `
+                <li class="list-group-item d-flex justify-content-between align-items-start">
+                    <div class="ms-2 me-auto">
+                        <div class="fw-semibold">${capitalize(entry.status)}</div>
+                        <small class="text-muted">${entry.notes || 'No notes provided'}</small>
+                    </div>
+                    <span class="badge bg-secondary rounded-pill">${formatDateTime(entry.created_at)}</span>
+                </li>
+            `).join('')}
+        </ul>
+    `;
+}
+
 async function updateDeliveryStatus(orderId, status) {
     try {
         const response = await fetch('api/update-delivery-status.php', {
@@ -484,7 +506,7 @@ async function updateDeliveryStatus(orderId, status) {
         
         if (result.success) {
             bootstrap.Modal.getInstance(document.getElementById('trackingModal')).hide();
-            location.reload();
+            refreshDeliveryData();
         } else {
             alert('Error: ' + result.message);
         }
@@ -493,10 +515,118 @@ async function updateDeliveryStatus(orderId, status) {
     }
 }
 
-// Auto-refresh delivery status every 30 seconds
-setInterval(() => {
-    location.reload();
-}, 30000);
+async function refreshDeliveryData() {
+    try {
+        const response = await fetch('api/get-delivery-status.php');
+        const data = await response.json();
+        if (!data.success) {
+            throw new Error(data.message || 'Failed to fetch delivery data');
+        }
+        latestRiders = data.riders || latestRiders;
+        updateStatsFromApi(data.stats || {});
+        renderRiders(data.riders || []);
+        renderOrders(data.orders || []);
+    } catch (error) {
+        console.error('Refresh error:', error);
+    }
+}
+
+function updateStatsFromApi(stats) {
+    document.getElementById('pendingOrdersCount').textContent = stats.total ?? 0;
+    document.getElementById('inTransitCount').textContent = stats.in_transit ?? 0;
+    document.getElementById('activeRidersCount').textContent = stats.active_riders ?? 0;
+    document.getElementById('todayDeliveredCount').textContent = stats.today_delivered ?? 0;
+}
+
+function renderRiders(riders) {
+    const list = document.getElementById('ridersList');
+    if (!riders.length) {
+        list.innerHTML = '<div class="list-group-item text-muted">No riders found.</div>';
+        return;
+    }
+    list.innerHTML = riders.map(rider => `
+        <div class="list-group-item">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <h6 class="mb-1">${escapeHtml(rider.name)}</h6>
+                    <p class="mb-1 small text-muted"><i class="bi bi-phone me-1"></i>${escapeHtml(rider.phone || 'N/A')}</p>
+                    <p class="mb-0 small text-muted"><i class="bi bi-scooter me-1"></i>${escapeHtml(rider.vehicle_type || 'N/A')} ${escapeHtml(rider.vehicle_number || '')}</p>
+                </div>
+                <div class="text-end">
+                    <span class="badge bg-${(rider.status || '') === 'available' ? 'success' : ((rider.status || '') === 'busy' ? 'warning' : 'secondary')}">
+                        ${capitalize(rider.status || 'unknown')}
+                    </span>
+                    <p class="mb-0 small text-muted mt-1">${Number(rider.total_deliveries || 0)} deliveries</p>
+                    <p class="mb-0 small"><i class="bi bi-star-fill text-warning"></i> ${(Number(rider.rating || 0)).toFixed(1)}</p>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function renderOrders(orders) {
+    const tbody = document.getElementById('ordersTableBody');
+    if (!orders.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4"><i class="bi bi-inbox fs-1"></i><p class="mt-2 mb-0">No delivery orders</p></td></tr>';
+        return;
+    }
+    tbody.innerHTML = orders.map(order => `
+        <tr>
+            <td>${escapeHtml(order.order_number)}</td>
+            <td>
+                ${escapeHtml(order.customer_name || 'N/A')}<br>
+                <small class="text-muted">${escapeHtml(order.customer_phone || '')}</small>
+            </td>
+            <td class="fw-bold">KES ${Number(order.total_amount || 0).toFixed(2)}</td>
+            <td>${order.rider_name ? escapeHtml(order.rider_name) : '<span class="text-muted">Not assigned</span>'}</td>
+            <td>
+                <span class="badge bg-${getStatusBadgeColor(order.delivery_status)}">${capitalize((order.delivery_status || 'pending').replace('-', ' '))}</span>
+            </td>
+            <td>
+                ${order.rider_id ? 
+                    `<button class="btn btn-sm btn-outline-info" onclick="trackDelivery(${order.id})"><i class="bi bi-geo-alt"></i> Track</button>` :
+                    `<button class="btn btn-sm btn-primary" onclick="assignRider(${order.id})"><i class="bi bi-person-plus"></i> Assign</button>`
+                }
+            </td>
+        </tr>
+    `).join('');
+}
+
+function getStatusBadgeColor(status) {
+    switch (status) {
+        case 'delivered': return 'success';
+        case 'in-transit':
+        case 'picked-up': return 'info';
+        case 'assigned': return 'warning';
+        default: return 'secondary';
+    }
+}
+
+function escapeHtml(value) {
+    return (value || '').toString()
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function formatDateTime(value) {
+    if (!value) return null;
+    return new Date(value).toLocaleString();
+}
+
+function capitalize(value) {
+    if (!value) return '';
+    return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+// Auto-refresh delivery status every 30 seconds without full reload
+setInterval(refreshDeliveryData, 30000);
+
+document.addEventListener('DOMContentLoaded', () => {
+    refreshDeliveryData();
+});
 </script>
 
 <style>

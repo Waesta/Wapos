@@ -34,7 +34,7 @@ ServerSignature Off
     Header always set Permissions-Policy "geolocation=(), microphone=(), camera=()"
     
     # Content Security Policy
-    Header set Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; script-src 'self' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net data:; connect-src 'self'; manifest-src 'self';"
+    Header set Content-Security-Policy "default-src 'self'; img-src 'self' data: https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org; style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; font-src 'self' https://cdn.jsdelivr.net data:; connect-src 'self' https://cdn.jsdelivr.net https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org; manifest-src 'self';"
 </IfModule>
 
 # Disable directory browsing

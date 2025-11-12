@@ -291,7 +291,7 @@ try {
     
     // Update existing products with inventory data
     try {
-        $pdo->exec("UPDATE products SET stock_quantity = 100, reorder_level = 20, reorder_quantity = 50, cost_price = price * 0.6, unit = 'pcs' WHERE stock_quantity = 0 OR stock_quantity IS NULL");
+        $pdo->exec("UPDATE products SET stock_quantity = 100, reorder_level = 20, reorder_quantity = 50, cost_price = selling_price * 0.6, unit = 'pcs' WHERE stock_quantity = 0 OR stock_quantity IS NULL");
         echo "<p style='color: green;'>✅ Updated existing products with inventory data</p>";
         $fixes[] = "Product inventory data updated";
     } catch (Exception $e) {

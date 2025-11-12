@@ -174,31 +174,50 @@ include 'includes/header.php';
                 </div>
             </div>
 
-            <!-- Products Grid -->
-            <div id="productsGrid" class="row g-2">
+            <!-- Products List -->
+            <div id="productsList" class="list-group product-list">
                 <?php foreach ($products as $product): ?>
-                <div class="col-md-4 col-lg-3 product-item" 
-                     data-category="<?= $product['category_id'] ?>"
-                     data-name="<?= strtolower($product['name']) ?>"
-                     data-sku="<?= strtolower($product['sku']) ?>"
-                     data-barcode="<?= strtolower($product['barcode']) ?>">
-                    <div class="card product-card" onclick='addToCart(<?= json_encode($product) ?>)'>
-                        <div class="card-body p-2">
-                            <div class="d-flex justify-content-between align-items-start mb-2">
-                                <h6 class="mb-0 small"><?= htmlspecialchars($product['name']) ?></h6>
-                                <?php if ($product['stock_quantity'] <= $product['min_stock_level']): ?>
-                                    <span class="badge bg-warning text-dark">Low</span>
-                                <?php endif; ?>
-                            </div>
-                            <p class="text-muted mb-1 small">SKU: <?= htmlspecialchars($product['sku']) ?></p>
-                            <div class="d-flex justify-content-between align-items-end">
-                                <div>
-                                    <p class="mb-0 fw-bold text-primary"><?= formatMoney($product['selling_price']) ?></p>
-                                    <small class="text-muted">Stock: <?= $product['stock_quantity'] ?></small>
-                                </div>
-                                <i class="bi bi-plus-circle fs-4 text-success"></i>
-                            </div>
+                <?php
+                $productPayload = json_encode([
+                    'id' => (int)$product['id'],
+                    'name' => $product['name'],
+                    'selling_price' => (float)$product['selling_price'],
+                    'stock_quantity' => (float)$product['stock_quantity'],
+                    'tax_rate' => $product['tax_rate'] !== null ? (float)$product['tax_rate'] : null,
+                ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
+                ?>
+                <div class="list-group-item product-item d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-2"
+                     data-category="<?= (int)$product['category_id'] ?>"
+                     data-name="<?= htmlspecialchars(strtolower($product['name']), ENT_QUOTES, 'UTF-8') ?>"
+                     data-sku="<?= htmlspecialchars(strtolower($product['sku'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                     data-barcode="<?= htmlspecialchars(strtolower($product['barcode'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                    <div class="product-info">
+                        <div class="d-flex align-items-center gap-2">
+                            <h6 class="mb-0"><?= htmlspecialchars($product['name']) ?></h6>
+                            <?php if ($product['stock_quantity'] <= $product['min_stock_level']): ?>
+                                <span class="badge bg-warning text-dark">Low</span>
+                            <?php endif; ?>
                         </div>
+                        <div class="text-muted small">SKU: <?= htmlspecialchars($product['sku']) ?></div>
+                    </div>
+                    <div class="text-md-end d-flex flex-column flex-sm-row align-items-sm-center gap-2">
+                        <div class="pe-sm-2 text-muted small">
+                            <div class="fw-bold text-primary"><?= formatMoney($product['selling_price']) ?></div>
+                            <div>Stock: <?= $product['stock_quantity'] ?></div>
+                        </div>
+                        <button 
+                            type="button"
+                            class="btn btn-primary btn-sm add-to-cart-btn"
+                            data-product-id="<?= (int)$product['id'] ?>"
+                            data-product-name="<?= htmlspecialchars($product['name'], ENT_QUOTES, 'UTF-8') ?>"
+                            data-product-price="<?= (float)$product['selling_price'] ?>"
+                            data-product-stock="<?= (float)$product['stock_quantity'] ?>"
+                            data-product-tax="<?= $product['tax_rate'] !== null ? (float)$product['tax_rate'] : '' ?>"
+                            data-product-json="<?= htmlspecialchars($productPayload, ENT_QUOTES, 'UTF-8') ?>"
+                            onclick="addToCartFromElement(this)"
+                        >
+                            <i class="bi bi-cart-plus me-1"></i>Add
+                        </button>
                     </div>
                 </div>
                 <?php endforeach; ?>
@@ -440,19 +459,65 @@ document.getElementById('filterCategory').addEventListener('change', filterProdu
 function filterProducts() {
     const searchTerm = document.getElementById('searchProduct').value.toLowerCase();
     const categoryFilter = document.getElementById('filterCategory').value;
-    const products = document.querySelectorAll('.product-item');
-    
+    const products = document.querySelectorAll('#productsList .product-item');
+
     products.forEach(product => {
         const name = product.dataset.name;
-        const sku = product.dataset.sku;
-        const barcode = product.dataset.barcode;
+        const sku = product.dataset.sku ?? '';
+        const barcode = product.dataset.barcode ?? '';
         const category = product.dataset.category;
-        
+
         const matchesSearch = name.includes(searchTerm) || sku.includes(searchTerm) || barcode.includes(searchTerm);
         const matchesCategory = !categoryFilter || category === categoryFilter;
-        
+
         product.style.display = matchesSearch && matchesCategory ? '' : 'none';
     });
+}
+
+function buildProductFromDataset(dataset) {
+    if (dataset.productJson) {
+        try {
+            return JSON.parse(dataset.productJson);
+        } catch (error) {
+            console.error('Failed to parse product JSON dataset', error, dataset.productJson);
+        }
+    }
+
+    const taxAttr = dataset.productTax ?? '';
+    return {
+        id: Number.parseInt(dataset.productId, 10),
+        name: dataset.productName,
+        selling_price: parseFloat(dataset.productPrice),
+        stock_quantity: parseFloat(dataset.productStock),
+        tax_rate: taxAttr === '' ? null : parseFloat(dataset.productTax)
+    };
+}
+
+function addToCartFromElement(element) {
+    if (!element || !element.dataset) {
+        return;
+    }
+
+    let product = buildProductFromDataset(element.dataset);
+
+    if ((!product || !product.name) && element.getAttribute) {
+        const payload = element.getAttribute('data-product-json');
+        if (payload) {
+            try {
+                product = JSON.parse(payload);
+            } catch (error) {
+                console.error('Failed to parse product payload attribute', error, payload);
+            }
+        }
+    }
+
+    if (!product.name || Number.isNaN(product.id) || Number.isNaN(product.selling_price)) {
+        console.error('Invalid product dataset', element.dataset);
+        return;
+    }
+
+    console.debug('Adding product to cart', product);
+    addToCart(product);
 }
 
 function addToCart(product) {
@@ -833,7 +898,55 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('taxAmount').textContent = formatCurrency(0);
     document.getElementById('total').textContent = formatCurrency(0);
     document.getElementById('changeAmount').textContent = formatCurrency(0);
-    
+
+    const productsList = document.getElementById('productsList');
+    const addButtons = document.querySelectorAll('.add-to-cart-btn');
+
+    if (addButtons.length) {
+        addButtons.forEach(button => {
+            button.addEventListener('click', function(event) {
+                event.preventDefault();
+                addToCartFromElement(this);
+            });
+        });
+    }
+
+    if (productsList) {
+        productsList.addEventListener('click', (event) => {
+            const button = event.target.closest('.add-to-cart-btn');
+            if (!button) {
+                return;
+            }
+            event.preventDefault();
+            addToCartFromElement(button);
+        });
+
+        productsList.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') {
+                return;
+            }
+
+            const button = event.target.closest('.add-to-cart-btn');
+            if (button) {
+                event.preventDefault();
+                addToCartFromElement(button);
+                return;
+            }
+
+            const item = event.target.closest('.product-item');
+            if (!item) {
+                return;
+            }
+
+            const primaryButton = item.querySelector('.add-to-cart-btn');
+            if (primaryButton) {
+                event.preventDefault();
+                primaryButton.focus();
+                addToCartFromElement(primaryButton);
+            }
+        });
+    }
+
     handlePaymentMethodChange(); // Set initial payment method state
     updateHoldOrderButton(); // Initialize hold order button state
 });

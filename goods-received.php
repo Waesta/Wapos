@@ -4,6 +4,71 @@ $auth->requireRole(['admin', 'manager', 'inventory_manager']);
 
 $db = Database::getInstance();
 
+// Ensure GRN tables exist (auto-migration for legacy installs)
+try {
+    $hasGrnTable = $db->fetchOne("SHOW TABLES LIKE 'goods_received_notes'");
+    if (!$hasGrnTable) {
+        $db->query("
+            CREATE TABLE goods_received_notes (
+                id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                grn_number VARCHAR(50) UNIQUE NOT NULL,
+                purchase_order_id INT UNSIGNED,
+                supplier_id INT UNSIGNED,
+                received_date DATE NOT NULL,
+                invoice_number VARCHAR(100),
+                total_amount DECIMAL(15,2) DEFAULT 0,
+                notes TEXT,
+                status ENUM('draft', 'completed', 'cancelled') DEFAULT 'draft',
+                received_by INT UNSIGNED NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_grn_number (grn_number),
+                INDEX idx_po (purchase_order_id),
+                INDEX idx_status (status),
+                INDEX idx_received_date (received_date),
+                CONSTRAINT fk_grn_po FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id) ON DELETE SET NULL,
+                CONSTRAINT fk_grn_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE SET NULL,
+                CONSTRAINT fk_grn_user FOREIGN KEY (received_by) REFERENCES users(id)
+            ) ENGINE=InnoDB
+        ");
+    }
+
+    $hasGrnItemsTable = $db->fetchOne("SHOW TABLES LIKE 'grn_items'");
+    if (!$hasGrnItemsTable) {
+        $db->query("
+            CREATE TABLE grn_items (
+                id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                grn_id INT UNSIGNED NOT NULL,
+                product_id INT UNSIGNED NOT NULL,
+                ordered_quantity DECIMAL(10,2) DEFAULT 0,
+                received_quantity DECIMAL(10,2) NOT NULL,
+                unit_cost DECIMAL(15,2) NOT NULL,
+                subtotal DECIMAL(15,2) NOT NULL,
+                expiry_date DATE,
+                batch_number VARCHAR(50),
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_grn (grn_id),
+                INDEX idx_product (product_id),
+                CONSTRAINT fk_grn_items_grn FOREIGN KEY (grn_id) REFERENCES goods_received_notes(id) ON DELETE CASCADE,
+                CONSTRAINT fk_grn_items_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB
+        ");
+    }
+} catch (Exception $schemaError) {
+    error_log('Failed to verify or create GRN tables: ' . $schemaError->getMessage());
+}
+
+// Ensure schema has invoice_number column to prevent insert failures
+try {
+    $invoiceColumn = $db->fetchOne("SHOW COLUMNS FROM goods_received_notes LIKE 'invoice_number'");
+    if (!$invoiceColumn) {
+        $db->query("ALTER TABLE goods_received_notes ADD COLUMN invoice_number VARCHAR(100) NULL AFTER received_date");
+    }
+} catch (Exception $schemaError) {
+    error_log('Failed to verify or alter goods_received_notes schema: ' . $schemaError->getMessage());
+}
+
 // Handle GRN actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!validateCSRFToken($_POST['csrf_token'] ?? '')) {
@@ -142,6 +207,37 @@ $pendingPOs = $db->fetchAll("
     ORDER BY po.created_at DESC
 ");
 
+$pendingPoItems = [];
+if (!empty($pendingPOs)) {
+    $poIds = array_column($pendingPOs, 'id');
+    if (!empty($poIds)) {
+        $placeholders = implode(',', array_fill(0, count($poIds), '?'));
+        $poItems = $db->fetchAll("
+            SELECT poi.purchase_order_id, poi.product_id, poi.quantity, poi.unit_cost, poi.subtotal,
+                   p.name AS product_name, p.sku
+            FROM purchase_order_items poi
+            JOIN products p ON poi.product_id = p.id
+            WHERE poi.purchase_order_id IN ($placeholders)
+            ORDER BY poi.id
+        ", $poIds);
+
+        foreach ($poItems as $item) {
+            $purchaseOrderId = (int)$item['purchase_order_id'];
+            if (!isset($pendingPoItems[$purchaseOrderId])) {
+                $pendingPoItems[$purchaseOrderId] = [];
+            }
+
+            $pendingPoItems[$purchaseOrderId][] = [
+                'product_id' => (int)$item['product_id'],
+                'product_name' => $item['product_name'],
+                'sku' => $item['sku'],
+                'ordered_quantity' => (float)$item['quantity'],
+                'unit_cost' => (float)$item['unit_cost']
+            ];
+        }
+    }
+}
+
 $suppliers = $db->fetchAll("SELECT * FROM suppliers WHERE is_active = 1 ORDER BY name");
 $products = $db->fetchAll("SELECT id, name, sku, unit FROM products WHERE is_active = 1 ORDER BY name");
 
@@ -269,7 +365,11 @@ include 'includes/header.php';
                                     <span class="badge bg-warning"><?= ucfirst($po['status']) ?></span>
                                 </td>
                                 <td>
-                                    <button class="btn btn-sm btn-success" onclick="receiveFromPO(<?= $po['id'] ?>, '<?= htmlspecialchars($po['po_number']) ?>')">
+                                    <?php
+                                    $poItemPayload = $pendingPoItems[$po['id']] ?? [];
+                                    $encodedItems = htmlspecialchars(json_encode($poItemPayload, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8');
+                                    ?>
+                                    <button class="btn btn-sm btn-success" data-po-id="<?= $po['id'] ?>" data-po-number="<?= htmlspecialchars($po['po_number']) ?>" data-po-items="<?= $encodedItems ?>" onclick="receiveFromPO(this)">
                                         <i class="bi bi-check-circle me-1"></i>Receive Goods
                                     </button>
                                 </td>
@@ -465,39 +565,65 @@ function validateGRNForm() {
     return true;
 }
 
-function receiveFromPO(poId, poNumber) {
-    console.log('Receiving from PO:', poId, poNumber);
-    
-    // Load PO items and populate GRN form
-    fetch('api/get-po-items.php?po_id=' + poId)
-        .then(response => {
-            console.log('Response received:', response);
-            return response.json();
-        })
+function receiveFromPO(buttonEl) {
+    if (!buttonEl) {
+        return;
+    }
+
+    const poId = buttonEl.getAttribute('data-po-id');
+    const poNumber = buttonEl.getAttribute('data-po-number') || '';
+    const supplierId = buttonEl.getAttribute('data-supplier-id');
+    let payloadItems = [];
+
+    const itemsAttr = buttonEl.getAttribute('data-po-items');
+    if (itemsAttr) {
+        try {
+            payloadItems = JSON.parse(itemsAttr);
+        } catch (error) {
+            console.warn('Failed to parse embedded PO items, falling back to API', error);
+        }
+    }
+
+    const handleItems = (poItems, supplierIdValue) => {
+        document.getElementById('poId').value = poId;
+        if (supplierIdValue) {
+            document.getElementById('supplierId').value = supplierIdValue;
+        }
+
+        grnItems = poItems.map(item => ({
+            product_id: item.product_id,
+            product_name: item.product_name,
+            received_quantity: item.ordered_quantity ?? item.quantity ?? item.received_quantity ?? 0,
+            unit_cost: item.unit_cost,
+            ordered_quantity: item.ordered_quantity ?? item.quantity ?? 0,
+            expiry_date: item.expiry_date || '',
+            batch_number: item.batch_number || ''
+        }));
+
+        updateGRNDisplay();
+
+        const modalEl = document.getElementById('grnModal');
+        if (modalEl) {
+            const modal = new bootstrap.Modal(modalEl);
+            modal.show();
+        } else {
+            console.error('Modal element not found!');
+        }
+    };
+
+    if (payloadItems.length > 0) {
+        console.debug('Using embedded PO items for PO', poId, payloadItems);
+        handleItems(payloadItems, supplierId);
+        return;
+    }
+
+    // Fallback to API fetch if no embedded payload
+    console.debug('Fetching PO items for PO', poId, poNumber);
+    fetch('api/get-po-items.php?po_id=' + encodeURIComponent(poId))
+        .then(response => response.json())
         .then(data => {
-            console.log('Data:', data);
             if (data.success) {
-                document.getElementById('poId').value = poId;
-                document.getElementById('supplierId').value = data.supplier_id;
-                grnItems = data.items.map(item => ({
-                    product_id: item.product_id,
-                    product_name: item.product_name,
-                    received_quantity: item.quantity,
-                    unit_cost: item.unit_cost,
-                    ordered_quantity: item.quantity,
-                    expiry_date: '',
-                    batch_number: ''
-                }));
-                updateGRNDisplay();
-                
-                // Show modal
-                const modalEl = document.getElementById('grnModal');
-                if (modalEl) {
-                    const modal = new bootstrap.Modal(modalEl);
-                    modal.show();
-                } else {
-                    console.error('Modal element not found!');
-                }
+                handleItems(data.items, data.supplier_id);
             } else {
                 console.error('API returned error:', data.message);
                 alert('Error loading PO items: ' + (data.message || 'Unknown error'));
