@@ -1,8 +1,15 @@
 <?php
 require_once 'includes/bootstrap.php';
+
+use App\Services\AccountingService;
+use App\Services\LedgerDataService;
+
 $auth->requireLogin();
 
 $db = Database::getInstance();
+$pdo = $db->getConnection();
+$accountingService = new AccountingService($pdo);
+$ledgerDataService = new LedgerDataService($pdo, $accountingService);
 
 // Get date range
 $dateFrom = $_GET['date_from'] ?? date('Y-m-d', strtotime('-30 days'));
@@ -56,6 +63,18 @@ $dailySales = $db->fetchAll("
     ORDER BY sale_date
 ", [$dateFrom, $dateTo]);
 
+// Ledger-backed financial insights
+$financialSummary = $ledgerDataService->getFinancialSummary($dateFrom, $dateTo);
+$vatSummary = $ledgerDataService->getVatSummary($dateFrom, $dateTo);
+
+$totalSalesCount = (int) ($salesSummary['total_sales'] ?? 0);
+$postedRevenue = $financialSummary['revenue_total'];
+$outputVat = $vatSummary['output_tax'] ?? 0;
+$netVat = $vatSummary['net_tax'] ?? 0;
+$averageSale = $totalSalesCount > 0 ? $postedRevenue / $totalSalesCount : 0;
+
+$netVatClass = $netVat >= 0 ? 'text-danger' : 'text-success';
+
 $pageTitle = 'Reports';
 include 'includes/header.php';
 ?>
@@ -91,8 +110,8 @@ include 'includes/header.php';
         <div class="card border-0 shadow-sm">
             <div class="card-body text-center">
                 <i class="bi bi-cart-check text-primary fs-1 mb-2"></i>
-                <h3 class="mb-0"><?= $salesSummary['total_sales'] ?? 0 ?></h3>
-                <p class="text-muted small mb-0">Total Sales</p>
+                <h3 class="mb-0"><?= $totalSalesCount ?></h3>
+                <p class="text-muted small mb-0">Recorded Sales</p>
             </div>
         </div>
     </div>
@@ -100,8 +119,8 @@ include 'includes/header.php';
         <div class="card border-0 shadow-sm">
             <div class="card-body text-center">
                 <i class="bi bi-cash-stack text-success fs-1 mb-2"></i>
-                <h3 class="mb-0">KES <?= formatMoney($salesSummary['total_revenue'] ?? 0) ?></h3>
-                <p class="text-muted small mb-0">Total Revenue</p>
+                <h3 class="mb-0">KES <?= formatMoney($postedRevenue) ?></h3>
+                <p class="text-muted small mb-0">Posted Revenue (Ledger)</p>
             </div>
         </div>
     </div>
@@ -109,18 +128,27 @@ include 'includes/header.php';
         <div class="card border-0 shadow-sm">
             <div class="card-body text-center">
                 <i class="bi bi-receipt text-info fs-1 mb-2"></i>
-                <h3 class="mb-0">KES <?= formatMoney($salesSummary['total_tax'] ?? 0) ?></h3>
-                <p class="text-muted small mb-0">Total Tax</p>
+                <h3 class="mb-0">KES <?= formatMoney($outputVat) ?></h3>
+                <p class="text-muted small mb-0">Output VAT</p>
             </div>
         </div>
     </div>
     <div class="col-md-3">
         <div class="card border-0 shadow-sm">
             <div class="card-body text-center">
-                <i class="bi bi-graph-up-arrow text-warning fs-1 mb-2"></i>
-                <h3 class="mb-0">KES <?= formatMoney($salesSummary['avg_sale'] ?? 0) ?></h3>
-                <p class="text-muted small mb-0">Average Sale</p>
+                <i class="bi bi-balance-scale text-warning fs-1 mb-2"></i>
+                <h3 class="mb-0 <?= $netVatClass ?>">KES <?= formatMoney($netVat) ?></h3>
+                <p class="text-muted small mb-0">Net VAT <?= $netVat >= 0 ? 'Payable' : 'Recoverable' ?></p>
             </div>
+        </div>
+    </div>
+</div>
+
+<div class="alert alert-light border-start border-4 border-primary mb-4">
+    <div class="d-flex align-items-center">
+        <i class="bi bi-info-circle me-2 text-primary"></i>
+        <div>
+            Ledger figures above reflect posted journal entries, ensuring IFRS-aligned revenue and tax reporting.
         </div>
     </div>
 </div>

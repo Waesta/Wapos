@@ -1,36 +1,15 @@
 <?php
 require_once 'includes/bootstrap.php';
+
+use App\Services\AccountingService;
+use App\Services\LedgerDataService;
+
 $auth->requireRole(['admin', 'manager']);
 
 $db = Database::getInstance();
-
-// Helpers
-function getAccountBalance(Database $db, $accountId, $asOfDate) {
-    try {
-        $row = $db->fetchOne(
-            "SELECT COALESCE(SUM(debit_amount - credit_amount), 0) AS balance
-             FROM journal_lines
-             WHERE account_id = ? AND DATE(created_at) <= ?",
-            [$accountId, $asOfDate]
-        );
-        return $row['balance'] ?? 0;
-    } catch (Exception $e) {
-        return 0;
-    }
-}
-
-function getAccountIdByCode(Database $db, string $code): int {
-    $acct = $db->fetchOne("SELECT id FROM accounts WHERE code = ?", [$code]);
-    if ($acct && isset($acct['id'])) { return (int)$acct['id']; }
-    $db->insert('accounts', [
-        'code' => $code,
-        'name' => $code,
-        'type' => in_array($code, ['1000','1100','1200','1300']) ? 'ASSET' : (in_array($code,['2000','2100']) ? 'LIABILITY' : (in_array($code,['4000','4100']) ? 'REVENUE' : 'EXPENSE')),
-        'is_active' => 1
-    ]);
-    $acct = $db->fetchOne("SELECT id FROM accounts WHERE code = ?", [$code]);
-    return (int)($acct['id'] ?? 0);
-}
+$pdo = $db->getConnection();
+$accountingService = new AccountingService($pdo);
+$ledgerDataService = new LedgerDataService($pdo, $accountingService);
 
 // Handle accounting actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -38,127 +17,137 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!validateCSRFToken($_POST['csrf_token'] ?? '')) {
         showAlert('Invalid request. Please try again.', 'error');
     } else {
-    $action = $_POST['action'] ?? '';
-    
-    try {
-        if ($action === 'add_expense') {
-            $data = [
-                'amount' => $_POST['amount'],
-                'category_id' => $_POST['category_id'],
-                'description' => sanitizeInput($_POST['description']),
-                'expense_date' => $_POST['expense_date'],
-                'payment_method' => $_POST['payment_method'],
-                'reference' => sanitizeInput($_POST['reference'] ?? ''),
-                'user_id' => $auth->getUserId(),
-                'location_id' => $_POST['location_id'] ?: null
-            ];
-            
-            if ($db->insert('expenses', $data)) {
-                // Post journal: Dr Operating Expense (6000), Cr Cash/Bank
-                $journalId = $db->insert('journal_entries', [
-                    'reference' => $data['reference'] ?? null,
-                    'description' => 'Expense: ' . $data['description'],
-                    'entry_date' => $data['expense_date'],
-                    'total_amount' => $data['amount'],
-                    'created_by' => $auth->getUserId(),
+        $action = $_POST['action'] ?? '';
+
+        try {
+            if ($action === 'add_expense') {
+                $db->beginTransaction();
+
+                $expensePayload = [
+                    'amount' => (float) $_POST['amount'],
+                    'tax_amount' => isset($_POST['tax_amount']) ? (float) $_POST['tax_amount'] : 0,
+                    'category_id' => !empty($_POST['category_id']) ? (int) $_POST['category_id'] : null,
+                    'description' => sanitizeInput($_POST['description'] ?? ''),
+                    'expense_date' => $_POST['expense_date'] ?? date('Y-m-d'),
+                    'payment_method' => $_POST['payment_method'] ?? 'cash',
+                    'reference' => sanitizeInput($_POST['reference'] ?? ''),
+                    'user_id' => $auth->getUserId(),
+                    'location_id' => !empty($_POST['location_id']) ? (int) $_POST['location_id'] : null
+                ];
+
+                $expenseId = $db->insert('expenses', [
+                    'user_id' => $expensePayload['user_id'],
+                    'category_id' => $expensePayload['category_id'],
+                    'description' => $expensePayload['description'],
+                    'amount' => $expensePayload['amount'],
+                    'payment_method' => $expensePayload['payment_method'],
+                    'reference' => $expensePayload['reference'],
+                    'expense_date' => $expensePayload['expense_date'],
+                    'location_id' => $expensePayload['location_id'],
                     'created_at' => date('Y-m-d H:i:s')
                 ]);
 
-                $tender = strtolower($data['payment_method'] ?? 'cash');
-                $cashAcct = ($tender === 'cash') ? '1000' : '1100';
-
-                // Dr Expense
-                $db->insert('journal_lines', [
-                    'journal_entry_id' => $journalId,
-                    'account_id' => getAccountIdByCode($db, '6000'),
-                    'debit_amount' => $data['amount'],
-                    'credit_amount' => 0,
-                    'description' => 'Operating expense'
-                ]);
-                // Cr Cash/Bank
-                $db->insert('journal_lines', [
-                    'journal_entry_id' => $journalId,
-                    'account_id' => getAccountIdByCode($db, $cashAcct),
-                    'debit_amount' => 0,
-                    'credit_amount' => $data['amount'],
-                    'description' => 'Payment of expense'
-                ]);
-
-                showAlert('Expense added successfully', 'success');
-            }
-            
-        } elseif ($action === 'add_journal_entry') {
-            $entries = json_decode($_POST['entries'], true);
-            $description = sanitizeInput($_POST['description']);
-            $reference = sanitizeInput($_POST['reference']);
-            
-            $totalDebits = 0;
-            $totalCredits = 0;
-            
-            // Validate entries balance
-            foreach ($entries as $entry) {
-                $totalDebits += $entry['debit'] ?? 0;
-                $totalCredits += $entry['credit'] ?? 0;
-            }
-            
-            if (abs($totalDebits - $totalCredits) > 0.01) {
-                throw new Exception('Journal entry must balance. Debits: ' . $totalDebits . ', Credits: ' . $totalCredits);
-            }
-            
-            // Create journal entry
-            $journalId = $db->insert('journal_entries', [
-                'reference' => $reference,
-                'description' => $description,
-                'entry_date' => $_POST['entry_date'],
-                'total_amount' => $totalDebits,
-                'created_by' => $auth->getUserId(),
-                'created_at' => date('Y-m-d H:i:s')
-            ]);
-            
-            // Add journal lines
-            foreach ($entries as $entry) {
-                if (($entry['debit'] ?? 0) > 0 || ($entry['credit'] ?? 0) > 0) {
-                    $db->insert('journal_lines', [
-                        'journal_entry_id' => $journalId,
-                        'account_id' => $entry['account_id'],
-                        'debit_amount' => $entry['debit'] ?? 0,
-                        'credit_amount' => $entry['credit'] ?? 0,
-                        'description' => $entry['description'] ?? $description
-                    ]);
+                if (!$expenseId) {
+                    throw new Exception('Failed to save expense');
                 }
+
+                $accountingService->postExpense((int) $expenseId, $expensePayload);
+
+                $db->commit();
+                showAlert('Expense added successfully', 'success');
+
+            } elseif ($action === 'add_journal_entry') {
+                $entries = json_decode($_POST['entries'] ?? '[]', true, 512, JSON_THROW_ON_ERROR);
+                if (!is_array($entries) || empty($entries)) {
+                    throw new Exception('No journal lines provided');
+                }
+
+                $description = sanitizeInput($_POST['description'] ?? 'Manual journal entry');
+                $reference = sanitizeInput($_POST['reference'] ?? '');
+                $entryDate = $_POST['entry_date'] ?? date('Y-m-d');
+
+                if ($accountingService->isPeriodLocked($entryDate)) {
+                    throw new Exception('Accounting period locked for ' . $entryDate);
+                }
+
+                $totalDebits = 0;
+                $totalCredits = 0;
+
+                foreach ($entries as $entry) {
+                    $totalDebits += (float) ($entry['debit'] ?? 0);
+                    $totalCredits += (float) ($entry['credit'] ?? 0);
+                }
+
+                if (abs($totalDebits - $totalCredits) > 0.01) {
+                    throw new Exception('Journal entry must balance. Debits: ' . $totalDebits . ', Credits: ' . $totalCredits);
+                }
+
+                $db->beginTransaction();
+                $journalId = $accountingService->createJournalEntry([
+                    'entry_number' => $accountingService->generateEntryNumber(),
+                    'source' => 'manual',
+                    'source_id' => null,
+                    'reference_no' => $reference ?: 'MANUAL-' . uniqid(),
+                    'entry_date' => $entryDate,
+                    'description' => $description,
+                    'total_debit' => $totalDebits,
+                    'total_credit' => $totalCredits,
+                    'period_id' => $accountingService->resolvePeriod($entryDate),
+                    'status' => 'draft'
+                ]);
+
+                $lines = [];
+                foreach ($entries as $entry) {
+                    $lines[] = [
+                        'account_id' => (int) $entry['account_id'],
+                        'debit' => (float) ($entry['debit'] ?? 0),
+                        'credit' => (float) ($entry['credit'] ?? 0),
+                        'description' => $entry['description'] ?? $description
+                    ];
+                }
+
+                $accountingService->storeJournalLines($journalId, $lines);
+                $accountingService->markAsPosted($journalId);
+
+                $db->commit();
+                showAlert('Journal entry created successfully', 'success');
+
+            } elseif ($action === 'reconcile_account') {
+                $accountId = (int) $_POST['account_id'];
+                $statementBalance = (float) $_POST['statement_balance'];
+                $reconciliationDate = $_POST['reconciliation_date'] ?? date('Y-m-d');
+
+                $selectedTransactions = array_map('intval', $_POST['reconciled_transactions'] ?? []);
+
+                $db->beginTransaction();
+
+                if (!empty($selectedTransactions)) {
+                    $placeholders = implode(',', array_fill(0, count($selectedTransactions), '?'));
+                    $params = array_merge([$reconciliationDate], $selectedTransactions);
+                    $db->query("UPDATE journal_entry_lines SET is_reconciled = 1, reconciled_date = ? WHERE id IN ({$placeholders})", $params);
+                }
+
+                $journalBalance = $accountingService->sumAsOfByAccountIds([$accountId], $reconciliationDate, false);
+
+                $db->insert('account_reconciliations', [
+                    'account_id' => $accountId,
+                    'reconciliation_date' => $reconciliationDate,
+                    'statement_balance' => $statementBalance,
+                    'book_balance' => $journalBalance,
+                    'reconciled_by' => $auth->getUserId(),
+                    'created_at' => date('Y-m-d H:i:s')
+                ]);
+
+                $db->commit();
+                showAlert('Account reconciled successfully', 'success');
             }
-            
-            showAlert('Journal entry created successfully', 'success');
-            
-        } elseif ($action === 'reconcile_account') {
-            $accountId = $_POST['account_id'];
-            $statementBalance = $_POST['statement_balance'];
-            $reconciliationDate = $_POST['reconciliation_date'];
-            
-            // Mark transactions as reconciled
-            $selectedTransactions = $_POST['reconciled_transactions'] ?? [];
-            if (!empty($selectedTransactions)) {
-                $placeholders = str_repeat('?,', count($selectedTransactions) - 1) . '?';
-                $db->query("UPDATE journal_lines SET is_reconciled = 1, reconciled_date = ? WHERE id IN ($placeholders)", 
-                    array_merge([$reconciliationDate], $selectedTransactions));
+
+        } catch (Exception $e) {
+            if ($db->getConnection()->inTransaction()) {
+                $db->rollback();
             }
-            
-            // Create reconciliation record
-            $db->insert('account_reconciliations', [
-                'account_id' => $accountId,
-                'reconciliation_date' => $reconciliationDate,
-                'statement_balance' => $statementBalance,
-                'book_balance' => getAccountBalance($db, $accountId, $reconciliationDate),
-                'reconciled_by' => $auth->getUserId(),
-                'created_at' => date('Y-m-d H:i:s')
-            ]);
-            
-            showAlert('Account reconciled successfully', 'success');
+            showAlert('Error: ' . $e->getMessage(), 'error');
         }
-        
-    } catch (Exception $e) {
-        showAlert('Error: ' . $e->getMessage(), 'error');
-    }
     }
 }
 
@@ -166,45 +155,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $startDate = $_GET['start_date'] ?? date('Y-m-01');
 $endDate = $_GET['end_date'] ?? date('Y-m-d');
 
-// Get financial summary
-$revenue = $db->fetchOne("
-    SELECT COALESCE(SUM(total_amount), 0) as total 
-    FROM sales 
-    WHERE DATE(created_at) BETWEEN ? AND ?
-", [$startDate, $endDate]);
+// Ledger-backed financial summary
+$financialSummary = $ledgerDataService->getFinancialSummary($startDate, $endDate);
+$revenueTotal = $financialSummary['revenue_total'];
+$cogsTotal = $financialSummary['cogs_total'];
+$expenseTotal = $financialSummary['total_expense'];
+$grossProfit = $financialSummary['gross_profit'];
+$netProfit = $financialSummary['net_profit'];
+$profitMargin = $financialSummary['profit_margin'];
 
-$expenses = $db->fetchOne("
-    SELECT COALESCE(SUM(amount), 0) as total 
-    FROM expenses 
-    WHERE DATE(expense_date) BETWEEN ? AND ?
-", [$startDate, $endDate]);
-
-$profit = $revenue['total'] - $expenses['total'];
-
-// Get expense breakdown by category
-$expensesByCategory = $db->fetchAll("
-    SELECT 
-        ec.name as category_name,
-        COALESCE(SUM(e.amount), 0) as total
-    FROM expense_categories ec
-    LEFT JOIN expenses e ON ec.id = e.category_id 
-        AND DATE(e.expense_date) BETWEEN ? AND ?
-    WHERE ec.is_active = 1
-    GROUP BY ec.id, ec.name
-    ORDER BY total DESC
-", [$startDate, $endDate]);
-
-// Get recent expenses
-$recentExpenses = $db->fetchAll("
-    SELECT e.*, ec.name as category_name, u.full_name as added_by, l.name as location_name
-    FROM expenses e
-    LEFT JOIN expense_categories ec ON e.category_id = ec.id
-    LEFT JOIN users u ON e.user_id = u.id
-    LEFT JOIN locations l ON e.location_id = l.id
-    WHERE DATE(e.expense_date) BETWEEN ? AND ?
-    ORDER BY e.expense_date DESC, e.created_at DESC
-    LIMIT 50
-", [$startDate, $endDate]);
+// Expense breakdown and recent ledger movement
+$expenseChart = $ledgerDataService->getExpenseChartData($startDate, $endDate);
+$expensesByCategory = $expenseChart['raw'];
+$recentExpenses = $ledgerDataService->getRecentExpenseEntries($startDate, $endDate);
 
 // Get categories and locations for form
 $categories = $db->fetchAll("SELECT * FROM expense_categories WHERE is_active = 1 ORDER BY name");
@@ -255,7 +218,7 @@ include 'includes/header.php';
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <p class="text-muted mb-1 small">Total Revenue</p>
-                        <h3 class="mb-0 fw-bold text-success"><?= formatMoney($revenue['total']) ?></h3>
+                        <h3 class="mb-0 fw-bold text-success"><?= formatMoney($revenueTotal) ?></h3>
                     </div>
                     <i class="bi bi-arrow-up-circle text-success fs-1"></i>
                 </div>
@@ -268,7 +231,7 @@ include 'includes/header.php';
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <p class="text-muted mb-1 small">Total Expenses</p>
-                        <h3 class="mb-0 fw-bold text-danger"><?= formatMoney($expenses['total']) ?></h3>
+                        <h3 class="mb-0 fw-bold text-danger"><?= formatMoney($expenseTotal + $cogsTotal) ?></h3>
                     </div>
                     <i class="bi bi-arrow-down-circle text-danger fs-1"></i>
                 </div>
@@ -281,7 +244,7 @@ include 'includes/header.php';
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <p class="text-muted mb-1 small">Net Profit</p>
-                        <h3 class="mb-0 fw-bold text-<?= $profit >= 0 ? 'primary' : 'danger' ?>"><?= formatMoney($profit) ?></h3>
+                        <h3 class="mb-0 fw-bold text-<?= $netProfit >= 0 ? 'primary' : 'danger' ?>"><?= formatMoney($netProfit) ?></h3>
                     </div>
                     <i class="bi bi-graph-up text-primary fs-1"></i>
                 </div>
@@ -295,10 +258,7 @@ include 'includes/header.php';
                     <div>
                         <p class="text-muted mb-1 small">Profit Margin</p>
                         <h3 class="mb-0 fw-bold text-info">
-                            <?php 
-                            $margin = $revenue['total'] > 0 ? ($profit / $revenue['total']) * 100 : 0;
-                            echo number_format($margin, 1) . '%';
-                            ?>
+                            <?= number_format($profitMargin, 1) ?>%
                         </h3>
                     </div>
                     <i class="bi bi-percent text-info fs-1"></i>
@@ -328,7 +288,7 @@ include 'includes/header.php';
             <div class="card-body">
                 <?php foreach ($expensesByCategory as $cat): ?>
                 <div class="d-flex justify-content-between align-items-center mb-2">
-                    <span><?= htmlspecialchars($cat['category_name']) ?></span>
+                    <span><?= htmlspecialchars("{$cat['account_code']} - {$cat['account_name']}") ?></span>
                     <strong><?= formatMoney($cat['total']) ?></strong>
                 </div>
                 <?php endforeach; ?>
@@ -347,25 +307,21 @@ include 'includes/header.php';
             <table class="table table-hover">
                 <thead class="table-light">
                     <tr>
-                        <th>Date</th>
-                        <th>Category</th>
+                        <th>Entry Date</th>
+                        <th>Account</th>
                         <th>Description</th>
-                        <th>Payment Method</th>
-                        <th>Location</th>
-                        <th>Amount</th>
-                        <th>Added By</th>
+                        <th>Debit</th>
+                        <th>Credit</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php foreach ($recentExpenses as $expense): ?>
                     <tr>
-                        <td><?= formatDate($expense['expense_date'], 'd/m/Y') ?></td>
-                        <td><span class="badge bg-secondary"><?= htmlspecialchars($expense['category_name']) ?></span></td>
+                        <td><?= formatDate($expense['entry_date'], 'd/m/Y') ?></td>
+                        <td><span class="badge bg-secondary"><?= htmlspecialchars("{$expense['account_code']} - {$expense['account_name']}") ?></span></td>
                         <td><?= htmlspecialchars($expense['description']) ?></td>
-                        <td><?= ucfirst(str_replace('_', ' ', $expense['payment_method'])) ?></td>
-                        <td><?= htmlspecialchars($expense['location_name'] ?? 'All') ?></td>
-                        <td class="fw-bold text-danger"><?= formatMoney($expense['amount']) ?></td>
-                        <td><small class="text-muted"><?= htmlspecialchars($expense['added_by']) ?></small></td>
+                        <td class="text-danger fw-semibold"><?= formatMoney($expense['debit_amount']) ?></td>
+                        <td class="text-success fw-semibold"><?= formatMoney($expense['credit_amount']) ?></td>
                     </tr>
                     <?php endforeach; ?>
                 </tbody>
@@ -397,8 +353,13 @@ include 'includes/header.php';
                     </div>
                     
                     <div class="mb-3">
-                        <label class="form-label">Amount *</label>
+                        <label class="form-label">Amount (Gross) *</label>
                         <input type="number" step="0.01" class="form-control" name="amount" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Tax (Input VAT)</label>
+                        <input type="number" step="0.01" class="form-control" name="tax_amount" placeholder="0.00">
                     </div>
                     
                     <div class="mb-3">
@@ -453,7 +414,9 @@ const ctx = document.getElementById('expenseChart').getContext('2d');
 new Chart(ctx, {
     type: 'doughnut',
     data: {
-        labels: <?= json_encode(array_column($expensesByCategory, 'category_name')) ?>,
+        labels: <?= json_encode(array_map(function ($row) {
+            return $row['account_code'] . ' - ' . $row['account_name'];
+        }, $expensesByCategory)) ?>,
         datasets: [{
             data: <?= json_encode(array_column($expensesByCategory, 'total')) ?>,
             backgroundColor: [

@@ -22,7 +22,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'tax_rate' => $_POST['tax_rate'],
             'currency' => sanitizeInput($_POST['currency']),
             'receipt_header' => sanitizeInput($_POST['receipt_header']),
-            'receipt_footer' => sanitizeInput($_POST['receipt_footer'])
+            'receipt_footer' => sanitizeInput($_POST['receipt_footer']),
+            'business_latitude' => sanitizeInput($_POST['business_latitude'] ?? ''),
+            'business_longitude' => sanitizeInput($_POST['business_longitude'] ?? ''),
+            'delivery_base_fee' => sanitizeInput($_POST['delivery_base_fee'] ?? ''),
+            'delivery_per_km_rate' => sanitizeInput($_POST['delivery_per_km_rate'] ?? '')
         ];
         
         foreach ($settings as $key => $value) {
@@ -116,7 +120,41 @@ include 'includes/header.php';
                         <input type="text" class="form-control" name="receipt_footer" 
                                value="<?= htmlspecialchars($settings['receipt_footer'] ?? '') ?>">
                     </div>
-                    
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Business Latitude</label>
+                            <input type="number" step="0.000001" class="form-control" name="business_latitude"
+                                   value="<?= htmlspecialchars($settings['business_latitude'] ?? '') ?>"
+                                   placeholder="e.g. -1.292066">
+                            <small class="text-muted">Origin latitude used for delivery distance calculations.</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Business Longitude</label>
+                            <input type="number" step="0.000001" class="form-control" name="business_longitude"
+                                   value="<?= htmlspecialchars($settings['business_longitude'] ?? '') ?>"
+                                   placeholder="e.g. 36.821946">
+                            <small class="text-muted">Origin longitude used for delivery distance calculations.</small>
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Default Base Delivery Fee</label>
+                            <input type="number" step="0.01" class="form-control" name="delivery_base_fee"
+                                   value="<?= htmlspecialchars($settings['delivery_base_fee'] ?? '') ?>"
+                                   placeholder="e.g. 50">
+                            <small class="text-muted">Applied before distance when no zone configuration exists.</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Default Per-Kilometer Rate</label>
+                            <input type="number" step="0.01" class="form-control" name="delivery_per_km_rate"
+                                   value="<?= htmlspecialchars($settings['delivery_per_km_rate'] ?? '') ?>"
+                                   placeholder="e.g. 10">
+                            <small class="text-muted">Rate per kilometer outside the base distance.</small>
+                        </div>
+                    </div>
+
                     <button type="submit" class="btn btn-primary">
                         <i class="bi bi-check-circle me-2"></i>Save Settings
                     </button>

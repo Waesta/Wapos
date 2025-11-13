@@ -24,6 +24,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // Get riders
 $riders = $db->fetchAll("SELECT * FROM riders WHERE is_active = 1 ORDER BY name");
 
+$currencyConfig = CurrencyManager::getInstance()->getJavaScriptConfig();
+
 // Get delivery orders
 $deliveryOrders = $db->fetchAll("
     SELECT 
@@ -96,6 +98,7 @@ include 'includes/header.php';
                     <div>
                         <p class="text-muted mb-1 small">Pending Orders</p>
                         <h3 class="mb-0 fw-bold text-warning" id="pendingOrdersCount"><?= count($deliveryOrders) ?></h3>
+                        <p class="mb-0 small text-muted" id="pendingBreakdown"></p>
                     </div>
                     <i class="bi bi-clock-history text-warning fs-1"></i>
                 </div>
@@ -111,6 +114,7 @@ include 'includes/header.php';
                         <h3 class="mb-0 fw-bold text-info" id="inTransitCount">
                             <?= count(array_filter($pendingDeliveries, fn($d) => ($d['status'] ?? '') === 'in-transit')) ?>
                         </h3>
+                        <p class="mb-0 small text-muted" id="distanceSummary"></p>
                     </div>
                     <i class="bi bi-truck text-info fs-1"></i>
                 </div>
@@ -201,6 +205,8 @@ include 'includes/header.php';
                                 <tr>
                                     <th>Order #</th>
                                     <th>Customer</th>
+                                    <th>Distance</th>
+                                    <th>Zone</th>
                                     <th>Amount</th>
                                     <th>Rider</th>
                                     <th>Status</th>
@@ -215,7 +221,23 @@ include 'includes/header.php';
                                         <?= htmlspecialchars($order['customer_name'] ?? 'N/A') ?><br>
                                         <small class="text-muted"><?= htmlspecialchars($order['customer_phone'] ?? '') ?></small>
                                     </td>
-                                    <td class="fw-bold">KES <?= formatMoney($order['total_amount']) ?></td>
+                                    <td>
+                                        <?php if (isset($order['estimated_distance_km'])): ?>
+                                            <?= number_format((float)$order['estimated_distance_km'], 2) ?> km
+                                        <?php else: ?>
+                                            <span class="text-muted">N/A</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php if (!empty($order['delivery_zone_name'])): ?>
+                                            <?= htmlspecialchars($order['delivery_zone_name']) ?>
+                                        <?php elseif (!empty($order['delivery_zone_id'])): ?>
+                                            Zone #<?= htmlspecialchars($order['delivery_zone_id']) ?>
+                                        <?php else: ?>
+                                            <span class="text-muted">N/A</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td class="fw-bold"><?= formatMoney($order['total_amount'], true) ?></td>
                                     <td>
                                         <?php if ($order['rider_name']): ?>
                                             <?= htmlspecialchars($order['rider_name']) ?>
@@ -352,10 +374,27 @@ include 'includes/header.php';
             </div>
         </div>
     </div>
-</div>
-
+<script>
 let currentOrderId = null;
 let latestRiders = <?= json_encode($riders) ?>;
+let supportsDeliveryMetrics = false;
+const currencyConfig = <?= json_encode($currencyConfig) ?>;
+
+function formatCurrencyValue(value, withSymbol = true) {
+    const amount = Number(value || 0);
+    const decimals = Number(currencyConfig.decimal_places ?? 2);
+    const formatted = amount.toLocaleString(undefined, {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals
+    });
+
+    if (!withSymbol || !currencyConfig.symbol) {
+        return formatted;
+    }
+
+    const symbol = currencyConfig.symbol;
+    return (currencyConfig.position === 'after') ? `${formatted} ${symbol}` : `${symbol} ${formatted}`;
+}
 
 function assignRider(orderId) {
     currentOrderId = orderId;
@@ -434,7 +473,7 @@ async function trackDelivery(orderId) {
                         <p><strong>Customer:</strong> ${tracking.customer_name || 'N/A'}</p>
                         <p><strong>Phone:</strong> ${tracking.customer_phone || 'N/A'}</p>
                         <p><strong>Address:</strong> ${tracking.delivery_address || 'N/A'}</p>
-                        <p><strong>Amount:</strong> KES ${Number(tracking.total_amount || 0).toFixed(2)}</p>
+                        <p><strong>Amount:</strong> ${formatCurrencyValue(tracking.total_amount, true)}</p>
                     </div>
                     <div class="col-md-6">
                         <h6>Delivery Status</h6>
@@ -459,14 +498,14 @@ async function trackDelivery(orderId) {
         } else {
             document.getElementById('trackingContent').innerHTML = `
                 <div class="alert alert-danger">
-                    Error loading tracking information: ${result.message}
+                    Error loading tracking information: ${escapeHtml(result.message)}
                 </div>
             `;
         }
     } catch (error) {
         document.getElementById('trackingContent').innerHTML = `
             <div class="alert alert-danger">
-                Error: ${error.message}
+                Error: ${escapeHtml(error.message)}
             </div>
         `;
     }
@@ -482,7 +521,7 @@ function buildTimeline(entries) {
                 <li class="list-group-item d-flex justify-content-between align-items-start">
                     <div class="ms-2 me-auto">
                         <div class="fw-semibold">${capitalize(entry.status)}</div>
-                        <small class="text-muted">${entry.notes || 'No notes provided'}</small>
+                        <small class="text-muted">${escapeHtml(entry.notes || 'No notes provided')}</small>
                     </div>
                     <span class="badge bg-secondary rounded-pill">${formatDateTime(entry.created_at)}</span>
                 </li>
@@ -517,25 +556,53 @@ async function updateDeliveryStatus(orderId, status) {
 
 async function refreshDeliveryData() {
     try {
-        const response = await fetch('api/get-delivery-status.php');
+        const response = await fetch('api/get-delivery-dashboard-data.php');
         const data = await response.json();
         if (!data.success) {
             throw new Error(data.message || 'Failed to fetch delivery data');
         }
+        supportsDeliveryMetrics = Boolean(data.supportsDeliveryMetrics);
         latestRiders = data.riders || latestRiders;
         updateStatsFromApi(data.stats || {});
         renderRiders(data.riders || []);
-        renderOrders(data.orders || []);
+        renderOrders((data.deliveries || data.orders || []).map(delivery => ({
+            ...delivery,
+            delivery_status: delivery.delivery_status ?? delivery.status ?? 'pending'
+        })));
     } catch (error) {
         console.error('Refresh error:', error);
     }
 }
 
 function updateStatsFromApi(stats) {
-    document.getElementById('pendingOrdersCount').textContent = stats.total ?? 0;
-    document.getElementById('inTransitCount').textContent = stats.in_transit ?? 0;
+    const pendingOrders = stats.pending_deliveries ?? stats.pending_active ?? stats.active_deliveries_current ?? 0;
+    document.getElementById('pendingOrdersCount').textContent = pendingOrders;
+    const pendingBreakdown = document.getElementById('pendingBreakdown');
+    if (pendingBreakdown) {
+        const activeQueue = stats.active_deliveries_current ?? null;
+        const pendingOnly = stats.pending_active ?? null;
+        if (pendingOnly !== null && activeQueue !== null) {
+            pendingBreakdown.textContent = `Queue: ${pendingOnly} pending / ${activeQueue} active`;
+        } else if (activeQueue !== null) {
+            pendingBreakdown.textContent = `Active deliveries: ${activeQueue}`;
+        } else {
+            pendingBreakdown.textContent = '';
+        }
+    }
+
+    const inTransit = stats.in_transit_active ?? stats.in_transit ?? 0;
+    document.getElementById('inTransitCount').textContent = inTransit;
+    const distanceSummary = document.getElementById('distanceSummary');
+    if (distanceSummary) {
+        if (supportsDeliveryMetrics && typeof stats.average_distance_km !== 'undefined') {
+            distanceSummary.textContent = `Avg distance: ${Number(stats.average_distance_km).toFixed(2)} km`;
+        } else {
+            distanceSummary.textContent = '';
+        }
+    }
+
     document.getElementById('activeRidersCount').textContent = stats.active_riders ?? 0;
-    document.getElementById('todayDeliveredCount').textContent = stats.today_delivered ?? 0;
+    document.getElementById('todayDeliveredCount').textContent = stats.completed_today ?? stats.today_delivered ?? 0;
 }
 
 function renderRiders(riders) {
@@ -567,7 +634,7 @@ function renderRiders(riders) {
 function renderOrders(orders) {
     const tbody = document.getElementById('ordersTableBody');
     if (!orders.length) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4"><i class="bi bi-inbox fs-1"></i><p class="mt-2 mb-0">No delivery orders</p></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4"><i class="bi bi-inbox fs-1"></i><p class="mt-2 mb-0">No delivery orders</p></td></tr>';
         return;
     }
     tbody.innerHTML = orders.map(order => `
@@ -577,19 +644,43 @@ function renderOrders(orders) {
                 ${escapeHtml(order.customer_name || 'N/A')}<br>
                 <small class="text-muted">${escapeHtml(order.customer_phone || '')}</small>
             </td>
-            <td class="fw-bold">KES ${Number(order.total_amount || 0).toFixed(2)}</td>
+            <td>${formatDistanceDisplay(order)}</td>
+            <td>${formatZoneDisplay(order)}</td>
+            <td class="fw-bold">${formatCurrencyValue(order.total_amount, true)}</td>
             <td>${order.rider_name ? escapeHtml(order.rider_name) : '<span class="text-muted">Not assigned</span>'}</td>
             <td>
                 <span class="badge bg-${getStatusBadgeColor(order.delivery_status)}">${capitalize((order.delivery_status || 'pending').replace('-', ' '))}</span>
             </td>
             <td>
                 ${order.rider_id ? 
-                    `<button class="btn btn-sm btn-outline-info" onclick="trackDelivery(${order.id})"><i class="bi bi-geo-alt"></i> Track</button>` :
-                    `<button class="btn btn-sm btn-primary" onclick="assignRider(${order.id})"><i class="bi bi-person-plus"></i> Assign</button>`
+                    `<button class="btn btn-sm btn-outline-info" onclick="trackDelivery(${order.order_id || order.id})"><i class="bi bi-geo-alt"></i> Track</button>` :
+                    `<button class="btn btn-sm btn-primary" onclick="assignRider(${order.order_id || order.id})"><i class="bi bi-person-plus"></i> Assign</button>`
                 }
             </td>
         </tr>
     `).join('');
+}
+
+function formatDistanceDisplay(order) {
+    if (!supportsDeliveryMetrics) {
+        return '<span class="text-muted">N/A</span>';
+    }
+    const distance = order.estimated_distance_km;
+    if (distance === null || typeof distance === 'undefined' || Number.isNaN(Number(distance))) {
+        return '<span class="text-muted">N/A</span>';
+    }
+    return `${Number(distance).toFixed(2)} km`;
+}
+
+function formatZoneDisplay(order) {
+    if (!supportsDeliveryMetrics) {
+        return '<span class="text-muted">N/A</span>';
+    }
+    const zone = order.delivery_zone_name || order.delivery_zone_code || order.delivery_zone_id;
+    if (!zone) {
+        return '<span class="text-muted">N/A</span>';
+    }
+    return escapeHtml(zone.toString());
 }
 
 function getStatusBadgeColor(status) {
@@ -608,7 +699,7 @@ function escapeHtml(value) {
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
+        .replace(/'/g, '&#039;');
 }
 
 function formatDateTime(value) {

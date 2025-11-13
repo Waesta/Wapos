@@ -55,23 +55,56 @@ function placeOrder($db, $data, $auth) {
     $db->beginTransaction();
     
     try {
+        $orderType = $data['order_type'] ?? 'dine-in';
+        $deliveryLat = (isset($data['delivery_latitude']) && is_numeric($data['delivery_latitude']))
+            ? (float)$data['delivery_latitude']
+            : null;
+        $deliveryLng = (isset($data['delivery_longitude']) && is_numeric($data['delivery_longitude']))
+            ? (float)$data['delivery_longitude']
+            : null;
+
+        $subtotal = (float)$data['subtotal'];
+        $taxAmount = (float)$data['tax_amount'];
+        $discountAmount = (float)($data['discount_amount'] ?? 0);
+        $manualDeliveryFee = array_key_exists('delivery_fee', $data) && $data['delivery_fee'] !== ''
+            ? (float)$data['delivery_fee']
+            : null;
+        $deliveryFee = $manualDeliveryFee ?? 0.0;
+        $deliveryPricing = [
+            'distance_km' => null,
+            'base_fee' => null,
+            'calculated_fee' => null,
+            'zone' => null,
+        ];
+
+        if ($orderType === 'delivery') {
+            $pricingService = new \App\Services\DeliveryPricingService($db);
+            $deliveryPricing = $pricingService->calculateFee($data, $deliveryLat, $deliveryLng);
+
+            if ($deliveryPricing['calculated_fee'] !== null) {
+                $deliveryFee = $manualDeliveryFee !== null ? $manualDeliveryFee : (float)$deliveryPricing['calculated_fee'];
+            }
+        }
+
+        $totalAmount = max(0, round($subtotal + $taxAmount + $deliveryFee - $discountAmount, 2));
+
         // Generate order number
         $orderNumber = generateOrderNumber();
         
         // Insert order record
         $orderId = $db->insert('orders', [
             'order_number' => $orderNumber,
-            'order_type' => $data['order_type'] ?? 'dine-in',
+            'order_type' => $orderType,
             'table_id' => $data['table_id'] ?? null,
             'customer_name' => $data['customer_name'] ?? null,
             'customer_phone' => $data['customer_phone'] ?? null,
             'delivery_address' => $data['delivery_address'] ?? null,
             'delivery_instructions' => $data['delivery_instructions'] ?? null,
-            'subtotal' => $data['subtotal'],
-            'tax_amount' => $data['tax_amount'],
-            'discount_amount' => $data['discount_amount'] ?? 0,
-            'delivery_fee' => $data['delivery_fee'] ?? 0,
-            'total_amount' => $data['total_amount'],
+            'subtotal' => $subtotal,
+            'tax_amount' => $taxAmount,
+            'discount_amount' => $discountAmount,
+            'delivery_fee' => $deliveryFee,
+            'total_amount' => $totalAmount,
             'payment_method' => $data['payment_method'] ?? null,
             'payment_status' => 'pending',
             'user_id' => $auth->getUserId(),
@@ -96,9 +129,13 @@ function placeOrder($db, $data, $auth) {
                 'total_price' => $item['total']
             ]);
         }
+
+        if ($orderType === 'delivery') {
+            ensureDeliveryRecord($db, $orderId, $data, $deliveryPricing, $deliveryLat, $deliveryLng, $deliveryFee);
+        }
         
         // Update table status if dine-in
-        if ($data['order_type'] === 'dine-in' && !empty($data['table_id'])) {
+        if ($orderType === 'dine-in' && !empty($data['table_id'])) {
             $db->query("UPDATE restaurant_tables SET status = 'occupied' WHERE id = ?", [$data['table_id']]);
         }
         
@@ -112,7 +149,10 @@ function placeOrder($db, $data, $auth) {
             'order_id' => $orderId,
             'order_number' => $orderNumber,
             'message' => 'Order placed successfully',
-            'print_results' => $printResults
+            'print_results' => $printResults,
+            'delivery_fee' => $deliveryFee,
+            'total_amount' => $totalAmount,
+            'delivery_pricing' => $deliveryPricing,
         ];
         
     } catch (Exception $e) {
@@ -423,6 +463,85 @@ function getSettings($db) {
         $settings[$setting['setting_key']] = $setting['setting_value'];
     }
     return $settings;
+}
+
+function ensureDeliveryRecord($db, int $orderId, array $payload, array $pricing, ?float $lat, ?float $lng, float $deliveryFee): void
+{
+    if (!deliveryTableExists($db)) {
+        return;
+    }
+
+    $record = $db->fetchOne("SELECT id FROM deliveries WHERE order_id = ?", [$orderId]);
+    $data = [
+        'delivery_address' => $payload['delivery_address'] ?? null,
+        'delivery_instructions' => $payload['delivery_instructions'] ?? null,
+        'status' => 'pending'
+    ];
+
+    if (deliveryColumnExists($db, 'delivery_fee')) {
+        $data['delivery_fee'] = $deliveryFee;
+    }
+
+    if ($pricing['distance_km'] !== null && deliveryColumnExists($db, 'estimated_distance_km')) {
+        $data['estimated_distance_km'] = $pricing['distance_km'];
+    }
+
+    if ($lat !== null && deliveryColumnExists($db, 'delivery_latitude')) {
+        $data['delivery_latitude'] = $lat;
+    }
+
+    if ($lng !== null && deliveryColumnExists($db, 'delivery_longitude')) {
+        $data['delivery_longitude'] = $lng;
+    }
+
+    if (!empty($pricing['zone']['id']) && deliveryColumnExists($db, 'delivery_zone_id')) {
+        $data['delivery_zone_id'] = $pricing['zone']['id'];
+    }
+
+    if ($record) {
+        if (deliveryColumnExists($db, 'updated_at')) {
+            $data['updated_at'] = date('Y-m-d H:i:s');
+        }
+        $db->update('deliveries', $data, 'id = :id', ['id' => $record['id']]);
+    } else {
+        $data['order_id'] = $orderId;
+        if (!isset($data['status'])) {
+            $data['status'] = 'pending';
+        }
+        if (deliveryColumnExists($db, 'created_at')) {
+            $data['created_at'] = date('Y-m-d H:i:s');
+        }
+        $db->insert('deliveries', $data);
+    }
+}
+
+function deliveryTableExists($db): bool
+{
+    static $cache;
+    if ($cache !== null) {
+        return $cache;
+    }
+
+    $result = $db->fetchOne("SHOW TABLES LIKE ?", ['deliveries']);
+    $cache = (bool)$result;
+    return $cache;
+}
+
+function deliveryColumnExists($db, string $column): bool
+{
+    static $cache = [];
+    if (array_key_exists($column, $cache)) {
+        return $cache[$column];
+    }
+
+    if (!deliveryTableExists($db)) {
+        $cache[$column] = false;
+        return false;
+    }
+
+    $result = $db->fetchOne("SHOW COLUMNS FROM deliveries LIKE ?", [$column]);
+    $cache[$column] = (bool)$result;
+    return $cache[$column];
 }
 
 function generateOrderNumber() {

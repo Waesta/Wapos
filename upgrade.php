@@ -8,65 +8,114 @@ require_once 'config.php';
 
 $message = '';
 $success = false;
+$upgradeSummary = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $dsn = "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET;
         $pdo = new PDO($dsn, DB_USER, DB_PASS);
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        
-        // Read and execute Phase 2 SQL
-        $sql = file_get_contents(__DIR__ . '/database/phase2-schema.sql');
-        
-        // Split and execute statements
-        $statements = array_filter(array_map('trim', explode(';', $sql)));
-        
-        $executed = 0;
+
+        $scripts = [
+            [
+                'label' => 'Phase 2 core upgrade',
+                'path' => __DIR__ . '/database/phase2-schema.sql',
+                'optional' => false,
+            ],
+            [
+                'label' => 'Complete system features',
+                'path' => __DIR__ . '/database/complete-system.sql',
+                'optional' => true,
+            ],
+            [
+                'label' => 'Accounting core schema',
+                'path' => __DIR__ . '/database/accounting-schema.sql',
+                'optional' => false,
+            ],
+            [
+                'label' => 'Accounting base data',
+                'path' => __DIR__ . '/database/accounting-simple.sql',
+                'optional' => false,
+            ],
+            [
+                'label' => 'Accounting IFRS seed data',
+                'path' => __DIR__ . '/database/accounting-seed.sql',
+                'optional' => false,
+            ],
+            [
+                'label' => 'Accounting IFRS upgrade',
+                'path' => __DIR__ . '/database/fix-accounting-module.sql',
+                'optional' => false,
+            ],
+        ];
+
+        $totalExecuted = 0;
+        $totalSkipped = 0;
         $errors = [];
-        
-        foreach ($statements as $statement) {
-            if (!empty($statement)) {
+
+        foreach ($scripts as $script) {
+            if (!file_exists($script['path'])) {
+                if (!empty($script['optional'])) {
+                    continue;
+                }
+                throw new Exception('Required upgrade file missing: ' . basename($script['path']));
+            }
+
+            $sql = file_get_contents($script['path']);
+            $statements = array_filter(
+                array_map('trim', explode(';', $sql)),
+                function ($stmt) {
+                    if ($stmt === '') {
+                        return false;
+                    }
+                    $stripped = ltrim($stmt);
+                    return !str_starts_with($stripped, '--') && !str_starts_with($stripped, '/*');
+                }
+            );
+
+            $executed = 0;
+            $skipped = 0;
+
+            foreach ($statements as $statement) {
+                if ($statement === '') {
+                    continue;
+                }
+
                 try {
                     $pdo->exec($statement);
                     $executed++;
+                    $totalExecuted++;
                 } catch (PDOException $e) {
-                    // Ignore "already exists" errors
-                    if (strpos($e->getMessage(), 'already exists') === false &&
-                        strpos($e->getMessage(), 'Duplicate') === false) {
-                        $errors[] = $e->getMessage();
+                    if (strpos($e->getMessage(), 'already exists') !== false ||
+                        strpos($e->getMessage(), 'Duplicate') !== false ||
+                        strpos($e->getMessage(), 'Unknown column') !== false) {
+                        $skipped++;
+                        $totalSkipped++;
+                        continue;
                     }
+
+                    $errors[] = $script['label'] . ': ' . $e->getMessage();
                 }
             }
+
+            $upgradeSummary[] = [
+                'label' => $script['label'],
+                'executed' => $executed,
+                'skipped' => $skipped,
+            ];
         }
-        
-        // Run complete system schema (100% features)
-        if (file_exists(__DIR__ . '/database/complete-system.sql')) {
-            $completeSql = file_get_contents(__DIR__ . '/database/complete-system.sql');
-            $completeStatements = array_filter(array_map('trim', explode(';', $completeSql)));
-            
-            foreach ($completeStatements as $statement) {
-                if (!empty($statement)) {
-                    try {
-                        $pdo->exec($statement);
-                        $executed++;
-                    } catch (PDOException $e) {
-                        if (strpos($e->getMessage(), 'already exists') === false &&
-                            strpos($e->getMessage(), 'Duplicate') === false) {
-                            $errors[] = $e->getMessage();
-                        }
-                    }
-                }
-            }
-        }
-        
-        $success = true;
-        $message = "Upgrade completed to 100%! Executed {$executed} statements.";
-        
+
+        $success = empty($errors);
+        $message = $success
+            ? "Upgrade completed! Executed {$totalExecuted} statements (skipped {$totalSkipped})."
+            : "Upgrade completed with warnings. Executed {$totalExecuted} statements (skipped {$totalSkipped}).";
+
         if (!empty($errors)) {
-            $message .= " Some errors occurred: " . implode(', ', array_slice($errors, 0, 3));
+            $message .= ' Review the following issues: ' . implode(' | ', array_slice($errors, 0, 3));
         }
-        
-    } catch (PDOException $e) {
+
+    } catch (Throwable $e) {
+        $success = false;
         $message = 'Upgrade failed: ' . $e->getMessage();
     }
 }
@@ -125,12 +174,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         <li>✅ Inventory Management (Reorder alerts, Stock transfers)</li>
                                         <li>✅ Payment Processing (Multiple methods, Partial payments)</li>
                                         <li>✅ Accounting & Reports (Export ready, Financial analysis)</li>
+                                        <li>✅ IFRS for SMEs Accounting Schema & Chart of Accounts</li>
                                         <li>✅ Offline Mode (PWA with auto-sync)</li>
                                         <li>✅ Security & Backup (Audit trails, Automated backups)</li>
                                         <li>✅ Multi-location (Stock transfers, Consolidated reporting)</li>
                                     </ul>
                                 </div>
                             </div>
+
+                            <?php if (!empty($upgradeSummary)): ?>
+                                <div class="card border-success mb-4">
+                                    <div class="card-body">
+                                        <h6 class="card-title text-success"><i class="bi bi-journal-check me-2"></i>What was applied</h6>
+                                        <ul class="mb-0 small">
+                                            <?php foreach ($upgradeSummary as $item): ?>
+                                                <li>
+                                                    <strong><?= htmlspecialchars($item['label']) ?>:</strong>
+                                                    <?= (int) $item['executed'] ?> executed,
+                                                    <?= (int) $item['skipped'] ?> skipped duplicates
+                                                </li>
+                                            <?php endforeach; ?>
+                                        </ul>
+                                    </div>
+                                </div>
+                            <?php endif; ?>
 
                             <div class="d-grid gap-2">
                                 <a href="index.php" class="btn btn-primary btn-lg">

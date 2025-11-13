@@ -286,23 +286,31 @@ DEALLOCATE PREPARE stmt;
 -- ACCOUNTING
 -- =====================================================
 
--- Create accounts table if not exists
 CREATE TABLE IF NOT EXISTS accounts (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     code VARCHAR(20) NOT NULL,
-    name VARCHAR(200) NOT NULL,
-    account_type ENUM('asset', 'liability', 'equity', 'revenue', 'expense', 'cogs') NOT NULL,
-    parent_id INT UNSIGNED NULL,
-    balance DECIMAL(15,2) DEFAULT 0,
+    name VARCHAR(150) NOT NULL,
+    type ENUM('ASSET','LIABILITY','EQUITY','REVENUE','EXPENSE','CONTRA_REVENUE','COST_OF_SALES','OTHER_INCOME','OTHER_EXPENSE') NOT NULL,
+    classification ENUM(
+        'CURRENT_ASSET','NON_CURRENT_ASSET','CONTRA_ASSET',
+        'CURRENT_LIABILITY','NON_CURRENT_LIABILITY','CONTRA_LIABILITY',
+        'EQUITY','CONTRA_EQUITY',
+        'REVENUE','CONTRA_REVENUE','OTHER_INCOME',
+        'COST_OF_SALES','OPERATING_EXPENSE','NON_OPERATING_EXPENSE','OTHER_EXPENSE'
+    ) NOT NULL,
+    statement_section ENUM('BALANCE_SHEET','PROFIT_AND_LOSS','CASH_FLOW','EQUITY') NOT NULL DEFAULT 'PROFIT_AND_LOSS',
+    reporting_order INT UNSIGNED NOT NULL DEFAULT 0,
+    parent_code VARCHAR(20) NULL,
+    ifrs_reference VARCHAR(50) NULL,
     is_active TINYINT(1) DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY ux_accounts_code (code),
-    INDEX idx_type (account_type),
-    INDEX idx_parent (parent_id)
+    INDEX idx_accounts_classification (classification),
+    INDEX idx_accounts_section (statement_section),
+    INDEX idx_accounts_parent (parent_code)
 ) ENGINE=InnoDB;
 
--- Create journal_entries table if not exists
 CREATE TABLE IF NOT EXISTS journal_entries (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     entry_number VARCHAR(50) NOT NULL,
@@ -313,16 +321,20 @@ CREATE TABLE IF NOT EXISTS journal_entries (
     description TEXT,
     total_debit DECIMAL(15,2) DEFAULT 0,
     total_credit DECIMAL(15,2) DEFAULT 0,
-    is_posted TINYINT(1) DEFAULT 0,
+    status ENUM('draft','posted','voided') DEFAULT 'draft',
+    period_id INT UNSIGNED NULL,
     posted_by INT UNSIGNED,
     posted_at TIMESTAMP NULL,
+    locked_at TIMESTAMP NULL,
+    locked_by INT UNSIGNED NULL,
     created_by INT UNSIGNED,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY ux_journal_source_ref (source, source_id, reference_no),
     INDEX idx_entry_number (entry_number),
     INDEX idx_source (source, source_id),
     INDEX idx_date (entry_date),
-    INDEX idx_posted (is_posted)
+    INDEX idx_status (status),
+    INDEX idx_period (period_id)
 ) ENGINE=InnoDB;
 
 -- Create journal_entry_lines table if not exists

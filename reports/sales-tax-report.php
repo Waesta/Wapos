@@ -1,21 +1,25 @@
 <?php
 require_once '../includes/bootstrap.php';
+
+use App\Services\AccountingService;
+use App\Services\LedgerDataService;
+
 $auth->requireRole(['admin', 'manager', 'accountant']);
 
 $db = Database::getInstance();
+$pdo = $db->getConnection();
+$accountingService = new AccountingService($pdo);
+$ledgerDataService = new LedgerDataService($pdo, $accountingService);
 
 $startDate = $_GET['start_date'] ?? date('Y-m-01');
 $endDate = $_GET['end_date'] ?? date('Y-m-d');
 
-// Output tax: credit postings to Sales Tax Payable (2100)
-$row = $db->fetchOne(
-    "SELECT COALESCE(SUM(jl.credit_amount - jl.debit_amount), 0) AS output_tax
-     FROM journal_lines jl
-     JOIN accounts a ON a.id = jl.account_id
-     WHERE DATE(jl.created_at) BETWEEN ? AND ? AND a.code = '2100'",
-    [$startDate, $endDate]
-);
-$outputTax = (float)($row['output_tax'] ?? 0);
+$vatSummary = $ledgerDataService->getVatSummary($startDate, $endDate);
+
+$outputTax = $vatSummary['output_tax'] ?? 0;
+$inputTax = $vatSummary['input_tax'] ?? 0;
+$netTax = $vatSummary['net_tax'] ?? 0;
+$netClass = $netTax >= 0 ? 'text-danger' : 'text-success';
 
 $pageTitle = 'Sales Tax (VAT) Report';
 include '../includes/header.php';
@@ -46,10 +50,26 @@ include '../includes/header.php';
 
 <div class="card border-0 shadow-sm">
     <div class="card-body">
-        <div class="d-flex justify-content-between">
+        <div class="d-flex justify-content-between mb-2">
             <div><strong>Output Tax (Sales Tax Payable)</strong></div>
             <div><?= formatMoney($outputTax) ?></div>
         </div>
+        <div class="d-flex justify-content-between mb-2">
+            <div><strong>Input Tax (VAT Recoverable)</strong></div>
+            <div><?= formatMoney($inputTax) ?></div>
+        </div>
+        <hr>
+        <div class="d-flex justify-content-between">
+            <div><strong>Net VAT <?= $netTax >= 0 ? 'Payable' : 'Recoverable' ?></strong></div>
+            <div class="fw-bold <?= $netClass ?>"><?= formatMoney($netTax) ?></div>
+        </div>
+    </div>
+</div>
+
+<div class="alert alert-light border-start border-4 border-primary mt-3">
+    <div class="d-flex align-items-center">
+        <i class="bi bi-info-circle me-2 text-primary"></i>
+        <div>VAT figures are derived from posted ledger entries between <?= htmlspecialchars($startDate) ?> and <?= htmlspecialchars($endDate) ?>, separating output and input tax per IFRS guidance.</div>
     </div>
 </div>
 

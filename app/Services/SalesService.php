@@ -97,13 +97,15 @@ class SalesService
             // Update inventory
             $this->updateInventory($data['items']);
 
-            // Post to accounting
+            // Post to accounting (idempotent)
             $this->accountingService->postSale($saleId, [
                 'subtotal' => $subtotal,
                 'tax' => $taxAmount,
                 'discount' => $discountAmount,
                 'total' => $grandTotal,
-                'payment_method' => $data['payment_method'] ?? 'cash'
+                'payment_method' => $data['payment_method'] ?? 'cash',
+                'amount_paid' => $data['amount_paid'] ?? $grandTotal,
+                'change_amount' => $data['change_amount'] ?? 0,
             ]);
 
             $this->db->commit();

@@ -28,6 +28,28 @@ require_once ROOT_PATH . '/includes/currency-helper.php';
 require_once __DIR__ . "/Database.php";
 require_once __DIR__ . "/Auth.php";
 require_once __DIR__ . "/currency-config.php";
+require_once __DIR__ . "/accounting-helpers.php";
+
+// Autoload application namespaces if vendor autoloader exists
+$composerAutoload = ROOT_PATH . '/vendor/autoload.php';
+if (file_exists($composerAutoload)) {
+    require_once $composerAutoload;
+}
+
+// Fallback autoloader for App namespace if composer autoload not available
+spl_autoload_register(function ($class) {
+    $prefix = 'App\\';
+    if (strpos($class, $prefix) !== 0) {
+        return;
+    }
+
+    $relativeClass = substr($class, strlen($prefix));
+    $file = ROOT_PATH . '/app/' . str_replace('\\', '/', $relativeClass) . '.php';
+
+    if (file_exists($file)) {
+        require_once $file;
+    }
+});
 
 // Initialize core instances
 try {

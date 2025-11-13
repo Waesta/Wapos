@@ -27,6 +27,9 @@ if ($orderId) {
     $existingItems = $db->fetchAll("SELECT * FROM order_items WHERE order_id = ?", [$orderId]);
 }
 
+$currencySetting = $db->fetchOne("SELECT setting_value FROM settings WHERE setting_key = 'currency'");
+$currencySymbol = $currencySetting['setting_value'] ?? '$';
+
 $pageTitle = $orderType === 'dine-in' ? 'Dine-In Order' : 'Takeout Order';
 include 'includes/header.php';
 ?>
@@ -211,7 +214,6 @@ include 'includes/header.php';
                             data-product-price="<?= (float)$product['selling_price'] ?>"
                             data-product-stock="<?= (float)$product['stock_quantity'] ?>"
                             data-product-json="<?= htmlspecialchars($productPayload, ENT_QUOTES, 'UTF-8') ?>"
-                            onclick="(function(btn){ const product = buildProductFromDataset(btn.dataset); addToCart(product); })(this);"
                         >
                             <i class="bi bi-cart-plus me-1"></i>Add
                         </button>
@@ -230,7 +232,17 @@ include 'includes/header.php';
                 <?php if ($orderType !== 'dine-in'): ?>
                 <div class="mb-3">
                     <input type="text" id="customerName" class="form-control form-control-sm mb-2" placeholder="Customer Name (Optional)">
-                    <input type="tel" id="customerPhone" class="form-control form-control-sm" placeholder="Customer Phone (Optional)">
+                    <input type="tel" id="customerPhone" class="form-control form-control-sm mb-2" placeholder="Customer Phone (Optional)">
+                    <textarea id="deliveryAddress" class="form-control form-control-sm mb-2" rows="2" placeholder="Delivery Address"></textarea>
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <input type="number" step="0.000001" id="deliveryLatitude" class="form-control form-control-sm" placeholder="Latitude">
+                        </div>
+                        <div class="col-6">
+                            <input type="number" step="0.000001" id="deliveryLongitude" class="form-control form-control-sm" placeholder="Longitude">
+                        </div>
+                    </div>
+                    <div class="form-text">Provide coordinates for accurate delivery fee calculation. Use decimal degrees.</div>
                 </div>
                 <?php endif; ?>
 
@@ -252,6 +264,27 @@ include 'includes/header.php';
                         <span>Tax (16%):</span>
                         <span id="taxAmount"><?= formatMoney(0, false) ?></span>
                     </div>
+                    <?php if ($orderType !== 'dine-in'): ?>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span>Delivery Fee:</span>
+                        <div class="d-flex align-items-center gap-2">
+                            <span id="deliveryFeeDisplay">0.00</span>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleDeliveryFeeEdit()" id="editDeliveryFeeBtn">Edit</button>
+                        </div>
+                    </div>
+                    <div class="mb-2" id="deliveryFeeEdit" style="display: none;">
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text">Fee</span>
+                            <input type="number" step="0.01" class="form-control" id="deliveryFeeInput" placeholder="0.00">
+                            <button class="btn btn-outline-primary" type="button" onclick="applyManualDeliveryFee()">Apply</button>
+                        </div>
+                        <div class="form-text">Leave blank to use the calculated fee.</div>
+                    </div>
+                    <div class="mb-2">
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="calculateDeliveryFee()" id="recalculateDeliveryBtn">Calculate Delivery Fee</button>
+                        <div class="small text-muted" id="deliveryFeeMeta"></div>
+                    </div>
+                    <?php endif; ?>
                     <div class="d-flex justify-content-between mb-3">
                         <strong>Total:</strong>
                         <strong class="text-primary fs-4" id="total"><?= formatMoney(0, false) ?></strong>
@@ -349,14 +382,231 @@ include 'includes/header.php';
 let cart = [];
 let currentItem = null;
 const TAX_RATE = 16;
-const currencySymbol = '<?= $db->fetchOne("SELECT setting_value FROM settings WHERE setting_key = 'currency'")['setting_value'] ?? '$' ?>';
+const currencySymbol = <?= json_encode($currencySymbol) ?>;
+const orderType = '<?= $orderType ?>';
 const modifierModalEl = document.getElementById('modifierModal');
 const hasModifierOptions = modifierModalEl && modifierModalEl.querySelectorAll('.modifier-check').length > 0;
 let modifierModalInstance = null;
+let deliveryPricingState = {
+    distance: null,
+    fee: 0,
+    baseFee: null,
+    zone: null,
+    manual: false,
+    lastCalculatedAt: null,
+    calculatedFee: null
+};
 
-// Search and filter
-document.getElementById('searchProduct').addEventListener('input', filterProducts);
-document.getElementById('filterCategory').addEventListener('change', filterProducts);
+function getDeliveryFeeValue() {
+    if (orderType === 'dine-in') {
+        return 0;
+    }
+
+    let fee = deliveryPricingState.fee;
+    if (typeof fee !== 'number') {
+        fee = parseFloat(fee);
+    }
+
+    if (Number.isNaN(fee) || !Number.isFinite(fee)) {
+        return 0;
+    }
+
+    return Math.max(0, fee);
+}
+
+function refreshDeliveryFeeMeta(customMessage) {
+    if (orderType === 'dine-in') {
+        return;
+    }
+
+    const metaEl = document.getElementById('deliveryFeeMeta');
+    if (!metaEl) {
+        return;
+    }
+
+    if (typeof customMessage === 'string') {
+        metaEl.textContent = customMessage;
+        return;
+    }
+
+    const segments = [];
+
+    if (deliveryPricingState.manual) {
+        segments.push('Manual fee applied');
+    } else if (deliveryPricingState.calculatedFee !== null && !Number.isNaN(deliveryPricingState.calculatedFee)) {
+        segments.push('Calculated automatically');
+    }
+
+    if (deliveryPricingState.distance !== null && !Number.isNaN(deliveryPricingState.distance)) {
+        segments.push('Distance: ' + deliveryPricingState.distance.toFixed(2) + ' km');
+    }
+
+    if (deliveryPricingState.zone && deliveryPricingState.zone.name) {
+        segments.push('Zone: ' + deliveryPricingState.zone.name);
+    }
+
+    if (deliveryPricingState.lastCalculatedAt instanceof Date) {
+        segments.push('Updated ' + deliveryPricingState.lastCalculatedAt.toLocaleTimeString());
+    }
+
+    metaEl.textContent = segments.join(' • ');
+}
+
+function toggleDeliveryFeeEdit(forceOpen) {
+    if (orderType === 'dine-in') {
+        return;
+    }
+
+    const editEl = document.getElementById('deliveryFeeEdit');
+    const button = document.getElementById('editDeliveryFeeBtn');
+    if (!editEl) {
+        return;
+    }
+
+    let shouldShow;
+    if (typeof forceOpen === 'boolean') {
+        shouldShow = forceOpen;
+    } else {
+        shouldShow = editEl.style.display === 'none' || editEl.style.display === '';
+    }
+
+    editEl.style.display = shouldShow ? 'block' : 'none';
+
+    if (button) {
+        button.textContent = shouldShow ? 'Close' : 'Edit';
+    }
+
+    if (shouldShow) {
+        const input = document.getElementById('deliveryFeeInput');
+        if (input) {
+            if (deliveryPricingState.manual) {
+                input.value = deliveryPricingState.fee;
+            } else {
+                input.value = '';
+            }
+            input.focus();
+            input.select();
+        }
+    }
+}
+
+function applyManualDeliveryFee() {
+    if (orderType === 'dine-in') {
+        return;
+    }
+
+    const input = document.getElementById('deliveryFeeInput');
+    if (!input) {
+        return;
+    }
+
+    const rawValue = input.value ? input.value.trim() : '';
+
+    if (rawValue === '') {
+        deliveryPricingState.manual = false;
+        if (deliveryPricingState.calculatedFee !== null && !Number.isNaN(deliveryPricingState.calculatedFee)) {
+            deliveryPricingState.fee = Math.max(0, deliveryPricingState.calculatedFee);
+        } else {
+            deliveryPricingState.fee = 0;
+        }
+        deliveryPricingState.lastCalculatedAt = new Date();
+        refreshDeliveryFeeMeta('Manual fee cleared. Using calculated fee.');
+        toggleDeliveryFeeEdit(false);
+        updateCart();
+        return;
+    }
+
+    const manualValue = parseFloat(rawValue);
+    if (Number.isNaN(manualValue)) {
+        refreshDeliveryFeeMeta('Enter a valid number for the delivery fee.');
+        input.focus();
+        input.select();
+        return;
+    }
+
+    deliveryPricingState.manual = true;
+    deliveryPricingState.fee = Math.max(0, manualValue);
+    deliveryPricingState.lastCalculatedAt = new Date();
+    refreshDeliveryFeeMeta();
+    toggleDeliveryFeeEdit(false);
+    updateCart();
+}
+
+async function calculateDeliveryFee() {
+    if (orderType === 'dine-in') {
+        return;
+    }
+
+    const latitude = getCoordinateValue('deliveryLatitude');
+    const longitude = getCoordinateValue('deliveryLongitude');
+    const button = document.getElementById('recalculateDeliveryBtn');
+
+    if (latitude === null || longitude === null) {
+        refreshDeliveryFeeMeta('Enter latitude and longitude to calculate delivery fee.');
+        return;
+    }
+
+    if (button) {
+        button.disabled = true;
+        button.textContent = 'Calculating…';
+    }
+
+    refreshDeliveryFeeMeta('Calculating delivery fee…');
+
+    const subtotal = cart.reduce((sum, item) => sum + item.total, 0);
+    const taxAmount = subtotal * (TAX_RATE / 100);
+
+    const payload = {
+        delivery_latitude: latitude,
+        delivery_longitude: longitude,
+        subtotal: subtotal,
+        tax_amount: taxAmount,
+    };
+
+    if (deliveryPricingState.manual) {
+        payload.delivery_fee = deliveryPricingState.fee;
+    }
+
+    try {
+        const response = await fetch('api/calculate-delivery-fee.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            throw new Error('HTTP ' + response.status);
+        }
+
+        const result = await response.json();
+
+        if (!result.success || !result.data) {
+            throw new Error(result.message || 'Delivery fee calculation failed');
+        }
+
+        const data = result.data;
+
+        deliveryPricingState.manual = false;
+        deliveryPricingState.distance = typeof data.distance_km === 'number' ? data.distance_km : null;
+        deliveryPricingState.baseFee = typeof data.base_fee === 'number' ? data.base_fee : null;
+        deliveryPricingState.calculatedFee = typeof data.calculated_fee === 'number' ? Math.max(0, data.calculated_fee) : null;
+        deliveryPricingState.fee = deliveryPricingState.calculatedFee !== null ? deliveryPricingState.calculatedFee : 0;
+        deliveryPricingState.zone = data.zone || null;
+        deliveryPricingState.lastCalculatedAt = new Date();
+
+        refreshDeliveryFeeMeta();
+        toggleDeliveryFeeEdit(false);
+        updateCart();
+    } catch (error) {
+        console.error('Delivery fee calculation failed', error);
+        refreshDeliveryFeeMeta('Delivery fee error: ' + (error && error.message ? error.message : 'Unexpected error'));
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.textContent = 'Calculate Delivery Fee';
+        }
+    }
+}
 
 function filterProducts() {
     const searchTerm = document.getElementById('searchProduct').value.toLowerCase();
@@ -409,7 +659,7 @@ function addToCart(product) {
     
     if (!hasModifierOptions) {
         currentItem.total = currentItem.price * currentItem.quantity;
-        cart.push({...currentItem});
+        cart.push(Object.assign({}, currentItem));
         updateCart();
         currentItem = null;
         return;
@@ -458,6 +708,8 @@ function confirmModifiers() {
 function updateCart() {
     const cartDiv = document.getElementById('cartItems');
     
+    const submitBtn = document.getElementById('submitBtn');
+
     if (cart.length === 0) {
         cartDiv.innerHTML = `
             <div class="text-center text-muted py-5">
@@ -465,7 +717,9 @@ function updateCart() {
                 <p class="mt-2">Cart is empty</p>
             </div>
         `;
-        document.getElementById('submitBtn').disabled = true;
+        if (submitBtn) {
+            submitBtn.disabled = true;
+        }
     } else {
         let html = '<div class="list-group">';
         cart.forEach((item, index) => {
@@ -494,16 +748,26 @@ function updateCart() {
         });
         html += '</div>';
         cartDiv.innerHTML = html;
+        if (submitBtn) {
+            submitBtn.disabled = false;
+        }
     }
     
     // Calculate totals
     const subtotal = cart.reduce((sum, item) => sum + item.total, 0);
     const taxAmount = subtotal * (TAX_RATE / 100);
-    const total = subtotal + taxAmount;
+    const deliveryFee = getDeliveryFeeValue();
+    const total = subtotal + taxAmount + deliveryFee;
     
-    document.getElementById('subtotal').textContent = subtotal.toFixed(2);
-    document.getElementById('taxAmount').textContent = taxAmount.toFixed(2);
-    document.getElementById('total').textContent = total.toFixed(2);
+    const subtotalEl = document.getElementById('subtotal');
+    const taxEl = document.getElementById('taxAmount');
+    const deliveryFeeEl = document.getElementById('deliveryFeeDisplay');
+    const totalEl = document.getElementById('total');
+
+    if (subtotalEl) subtotalEl.textContent = subtotal.toFixed(2);
+    if (taxEl) taxEl.textContent = taxAmount.toFixed(2);
+    if (deliveryFeeEl) deliveryFeeEl.textContent = deliveryFee.toFixed(2);
+    if (totalEl) totalEl.textContent = total.toFixed(2);
     
     // Update button states
     updateButtonStates();
@@ -543,18 +807,23 @@ async function submitOrder() {
     
     const subtotal = cart.reduce((sum, item) => sum + item.total, 0);
     const taxAmount = subtotal * (TAX_RATE / 100);
-    const total = subtotal + taxAmount;
+    const deliveryFee = getDeliveryFeeValue();
+    const total = subtotal + taxAmount + deliveryFee;
     
     const orderData = {
         action: 'place_order',
         order_type: '<?= $orderType ?>',
         table_id: <?= $tableId ?? 'null' ?>,
-        customer_name: document.getElementById('customerName')?.value || null,
-        customer_phone: document.getElementById('customerPhone')?.value || null,
-        payment_method: document.getElementById('paymentMethod').value,
+        customer_name: getInputValue('customerName') || null,
+        customer_phone: getInputValue('customerPhone') || null,
+        payment_method: getInputValue('paymentMethod') || 'cash',
         subtotal: subtotal,
         tax_amount: taxAmount,
+        delivery_fee: deliveryFee,
         total_amount: total,
+        delivery_address: getInputValue('deliveryAddress') || null,
+        delivery_latitude: getCoordinateValue('deliveryLatitude'),
+        delivery_longitude: getCoordinateValue('deliveryLongitude'),
         items: cart
     };
     
@@ -633,8 +902,12 @@ async function processPayment() {
         if (!currentOrderId) return;
     }
     
-    const paymentMethod = document.getElementById('paymentMethod').value;
-    const total = cart.reduce((sum, item) => sum + item.total, 0) * (1 + TAX_RATE / 100);
+    const paymentMethodInput = document.getElementById('paymentMethod');
+    const paymentMethod = paymentMethodInput ? paymentMethodInput.value : 'cash';
+    const subtotal = cart.reduce((sum, item) => sum + item.total, 0);
+    const taxAmount = subtotal * (TAX_RATE / 100);
+    const deliveryFee = getDeliveryFeeValue();
+    const total = subtotal + taxAmount + deliveryFee;
     
     if (!confirm(`Process payment of ${currencySymbol} ${total.toFixed(2)} via ${paymentMethod}?`)) {
         return;
@@ -790,21 +1063,39 @@ function showPrintResults(printResults) {
 // Test function to verify buttons work
 function testButtons() {
     console.log('Testing buttons...');
-    console.log('Cart length:', cart.length);
-    console.log('Current order ID:', currentOrderId);
-    console.log('Order status:', orderStatus);
-    
-    const buttons = ['invoiceBtn', 'paymentBtn', 'kitchenBtn', 'receiptBtn'];
-    buttons.forEach(btnId => {
-        const btn = document.getElementById(btnId);
-        console.log(`${btnId}:`, btn ? `exists, disabled: ${btn.disabled}` : 'NOT FOUND');
-    });
 }
 
-// Initialize the page when DOM is loaded
-document.addEventListener('DOMContentLoaded', function() {
+function getInputValue(elementId) {
+    const el = document.getElementById(elementId);
+    return el ? el.value : null;
+}
+
+function getCoordinateValue(elementId) {
+    const raw = getInputValue(elementId);
+    if (raw === null || raw === undefined || raw === '') {
+        return null;
+    }
+
+    const parsed = parseFloat(raw);
+    if (Number.isNaN(parsed)) {
+        return null;
+    }
+
+    return parsed;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM loaded, initializing restaurant order page...');
-    
+
+    const searchInput = document.getElementById('searchProduct');
+    const categorySelect = document.getElementById('filterCategory');
+    if (searchInput) {
+        searchInput.addEventListener('input', filterProducts);
+    }
+    if (categorySelect) {
+        categorySelect.addEventListener('change', filterProducts);
+    }
+
     // Initialize button states
     updateButtonStates();
 
@@ -848,24 +1139,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Add debug logging for button clicks
-    const buttons = ['invoiceBtn', 'paymentBtn', 'kitchenBtn', 'receiptBtn'];
-    buttons.forEach(btnId => {
-        const btn = document.getElementById(btnId);
-        if (btn) {
-            console.log(`Found button: ${btnId}`);
-            btn.addEventListener('click', function(e) {
-                console.log(`Button ${btnId} clicked, disabled: ${btn.disabled}`);
-                if (btn.disabled) {
-                    e.preventDefault();
-                    console.log('Button click prevented - button is disabled');
-                }
-            });
-        } else {
-            console.error(`Button not found: ${btnId}`);
-        }
-    });
-    
-    // Add test button for debugging
     console.log('Page initialized. You can run testButtons() in console to debug.');
 });
 </script>

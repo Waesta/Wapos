@@ -22,6 +22,25 @@ if (!$order) {
 $items = $db->fetchAll("
     SELECT * FROM order_items WHERE order_id = ? ORDER BY id
 ", [$orderId]);
+
+function productColumnExists(Database $db, string $column): bool {
+    static $cache = [];
+    if (array_key_exists($column, $cache)) {
+        return $cache[$column];
+    }
+
+    $row = $db->fetchOne(
+        "SELECT COUNT(*) AS column_exists
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'products'
+           AND COLUMN_NAME = ?",
+        [$column]
+    );
+
+    $cache[$column] = !empty($row['column_exists']);
+    return $cache[$column];
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -210,11 +229,27 @@ $items = $db->fetchAll("
 
     <div class="items">
         <?php 
-            // Get product details for preparation time and allergens
+            // Get product details for preparation time and allergens with schema awareness
+            $hasPrepTime = productColumnExists($db, 'prep_time');
+            $hasAllergens = productColumnExists($db, 'allergens');
+            $hasCategory = productColumnExists($db, 'category_id');
+
+            $selectColumns = ['id'];
+            if ($hasPrepTime) {
+                $selectColumns[] = 'prep_time';
+            }
+            if ($hasAllergens) {
+                $selectColumns[] = 'allergens';
+            }
+            if ($hasCategory) {
+                $selectColumns[] = 'category_id';
+            }
+
+            $columnList = implode(', ', $selectColumns);
+
             $productDetails = [];
             foreach ($items as $item) {
-                $product = $db->fetchOne("SELECT prep_time, allergens, category_id FROM products WHERE id = ?", [$item['product_id']]);
-                $productDetails[$item['id']] = $product;
+                $productDetails[$item['id']] = $db->fetchOne("SELECT {$columnList} FROM products WHERE id = ?", [$item['product_id']]) ?: [];
             }
         ?>
         <?php foreach ($items as $item): ?>
@@ -223,12 +258,12 @@ $items = $db->fetchAll("
             <div>
                 <span class="item-qty">x<?= $item['quantity'] ?></span>
                 <span class="item-name"><?= strtoupper(htmlspecialchars($item['product_name'])) ?></span>
-                <?php if ($product && $product['prep_time']): ?>
+                <?php if ($hasPrepTime && !empty($product['prep_time'])): ?>
                 <span class="prep-time">⏱️ <?= $product['prep_time'] ?>min</span>
                 <?php endif; ?>
             </div>
             
-            <?php if ($product && $product['allergens']): ?>
+            <?php if ($hasAllergens && !empty($product['allergens'])): ?>
             <div class="allergy-warning">
                 ⚠️ ALLERGENS: <?= strtoupper(htmlspecialchars($product['allergens'])) ?> ⚠️
             </div>
@@ -275,7 +310,7 @@ $items = $db->fetchAll("
             $maxPrepTime = 0;
             foreach ($items as $item) {
                 $product = $productDetails[$item['id']] ?? null;
-                if ($product && $product['prep_time']) {
+                if ($hasPrepTime && !empty($product['prep_time'])) {
                     $maxPrepTime = max($maxPrepTime, $product['prep_time']);
                 }
             }

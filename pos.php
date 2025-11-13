@@ -436,6 +436,7 @@ include 'includes/header.php';
 </div>
 
 <script>
+const CSRF_TOKEN = '<?= generateCSRFToken(); ?>';
 let cart = [];
 const TAX_RATE = 16; // Default tax rate percentage
 
@@ -829,6 +830,7 @@ async function finalizePayment() {
     const customerName = document.getElementById('customerName').value || null;
     
     const saleData = {
+        csrf_token: CSRF_TOKEN,
         customer_name: customerName,
         payment_method: payment.paymentMethod,
         subtotal: payment.subtotal,
@@ -836,7 +838,19 @@ async function finalizePayment() {
         total_amount: payment.total,
         amount_paid: payment.amountPaid,
         change_amount: payment.changeAmount,
-        items: cart
+        items: cart.map(item => ({
+            product_id: item.id,
+            qty: item.quantity,
+            price: item.price,
+            tax_rate: item.tax_rate,
+            discount: item.discount ?? 0
+        })),
+        totals: {
+            subtotal: payment.subtotal,
+            tax: payment.taxAmount,
+            discount: 0,
+            grand: payment.total
+        }
     };
     
     // Disable button to prevent double-clicking
