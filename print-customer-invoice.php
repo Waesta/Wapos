@@ -27,12 +27,18 @@ $items = $db->fetchAll("
     ORDER BY oi.id
 ", [$orderId]);
 
-// Get settings
-$settingsRaw = $db->fetchAll("SELECT setting_key, setting_value FROM settings");
-$settings = [];
-foreach ($settingsRaw as $setting) {
-    $settings[$setting['setting_key']] = $setting['setting_value'];
-}
+// Get settings from cache
+$settings = function_exists('settings_many')
+    ? settings_many([
+        'business_logo',
+        'business_name',
+        'business_address',
+        'business_phone',
+        'business_email',
+        'vat_number',
+        'invoice_terms'
+    ])
+    : [];
 ?>
 <!DOCTYPE html>
 <html lang="en">

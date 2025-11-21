@@ -4,13 +4,16 @@ require_once '../includes/bootstrap.php';
 // Set content type
 header('Content-Type: application/json');
 
-// Get WhatsApp settings
+// Database + cached settings
 $db = Database::getInstance();
-$settings = [];
-$settingsResult = $db->fetchAll("SELECT setting_key, setting_value FROM settings WHERE setting_key LIKE 'whatsapp_%'");
-foreach ($settingsResult as $setting) {
-    $settings[$setting['setting_key']] = $setting['setting_value'];
-}
+$settings = function_exists('settings_many')
+    ? settings_many([
+        'whatsapp_verify_token',
+        'whatsapp_auto_replies',
+        'whatsapp_api_token',
+        'whatsapp_phone_number_id'
+    ])
+    : [];
 
 // Verify webhook (GET request)
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {

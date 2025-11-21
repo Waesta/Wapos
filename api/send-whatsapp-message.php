@@ -30,12 +30,14 @@ if (empty($phone) || empty($message)) {
 
 $db = Database::getInstance();
 
-// Get WhatsApp settings
-$settings = [];
-$settingsResult = $db->fetchAll("SELECT setting_key, setting_value FROM settings WHERE setting_key LIKE 'whatsapp_%'");
-foreach ($settingsResult as $setting) {
-    $settings[$setting['setting_key']] = $setting['setting_value'];
-}
+// Get WhatsApp settings from cache
+$settings = function_exists('settings_many')
+    ? settings_many([
+        'whatsapp_api_token',
+        'whatsapp_phone_number_id',
+        'whatsapp_access_token'
+    ])
+    : [];
 
 try {
     $result = sendWhatsAppMessage($phone, $message, $db, $settings);

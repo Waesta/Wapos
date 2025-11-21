@@ -10,12 +10,13 @@ if (!$auth->isLoggedIn()) {
 
 $db = Database::getInstance();
 
-// Get WhatsApp settings
-$settings = [];
-$settingsResult = $db->fetchAll("SELECT setting_key, setting_value FROM settings WHERE setting_key LIKE 'whatsapp_%'");
-foreach ($settingsResult as $setting) {
-    $settings[$setting['setting_key']] = $setting['setting_value'];
-}
+// Pull WhatsApp settings from cache
+$settings = function_exists('settings_many')
+    ? settings_many([
+        'whatsapp_api_token',
+        'whatsapp_phone_number_id'
+    ])
+    : [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $data = json_decode(file_get_contents('php://input'), true);

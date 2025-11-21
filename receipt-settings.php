@@ -2,8 +2,6 @@
 require_once 'includes/bootstrap.php';
 $auth->requireLogin();
 
-$db = Database::getInstance();
-
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $settings = [
@@ -32,24 +30,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'print_density' => $_POST['print_density'] ?? 'normal'
     ];
     
-    foreach ($settings as $key => $value) {
-        $existing = $db->fetchOne("SELECT id FROM settings WHERE setting_key = ?", [$key]);
-        if ($existing) {
-            $db->query("UPDATE settings SET setting_value = ? WHERE setting_key = ?", [$value, $key]);
-        } else {
-            $db->insert('settings', ['setting_key' => $key, 'setting_value' => $value]);
-        }
-    }
-    
+    SettingsStore::persistMany($settings);
+    SettingsStore::refresh();
     $success = "Receipt settings updated successfully!";
 }
 
 // Get current settings
-$settingsRaw = $db->fetchAll("SELECT setting_key, setting_value FROM settings");
-$settings = [];
-foreach ($settingsRaw as $setting) {
-    $settings[$setting['setting_key']] = $setting['setting_value'];
-}
+$settings = settings();
 
 $pageTitle = 'Receipt Settings';
 include 'includes/header.php';

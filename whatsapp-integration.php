@@ -21,13 +21,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'whatsapp_order_notifications' => isset($_POST['order_notifications']) ? '1' : '0',
                 'whatsapp_delivery_tracking' => isset($_POST['delivery_tracking']) ? '1' : '0'
             ];
-            
-            foreach ($settings as $key => $value) {
-                $db->query("
-                    INSERT INTO settings (setting_key, setting_value) 
-                    VALUES (?, ?) 
-                    ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
-                ", [$key, $value]);
+
+            if (class_exists('SettingsStore')) {
+                SettingsStore::persistMany($settings);
+                SettingsStore::refresh();
+            } else {
+                foreach ($settings as $key => $value) {
+                    $db->query(
+                        "INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) \
+                         ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)",
+                        [$key, $value]
+                    );
+                }
             }
             
             $_SESSION['success_message'] = 'WhatsApp configuration saved successfully';
@@ -39,11 +44,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // Get current WhatsApp settings
-$whatsappSettings = [];
-$settingsResult = $db->fetchAll("SELECT setting_key, setting_value FROM settings WHERE setting_key LIKE 'whatsapp_%'");
-foreach ($settingsResult as $setting) {
-    $whatsappSettings[$setting['setting_key']] = $setting['setting_value'];
-}
+$whatsappSettings = function_exists('settings_many')
+    ? settings_many([
+        'whatsapp_business_phone',
+        'whatsapp_api_token',
+        'whatsapp_webhook_url',
+        'whatsapp_verify_token',
+        'whatsapp_enabled',
+        'whatsapp_auto_replies',
+        'whatsapp_order_notifications',
+        'whatsapp_delivery_tracking'
+    ])
+    : [];
 
 // Get WhatsApp order statistics
 // Note: WhatsApp integration requires additional database setup

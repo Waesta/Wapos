@@ -312,20 +312,18 @@ class DeliveryPricingService
 
     private function loadSettings(): array
     {
-        $rows = $this->db->fetchAll('SELECT setting_key, setting_value FROM settings WHERE setting_key LIKE ?', ['%delivery%']);
+        $allSettings = settings();
         $settings = [];
-        foreach ($rows as $row) {
-            $settings[$row['setting_key']] = $row['setting_value'];
+        foreach ($allSettings as $key => $value) {
+            if (strpos($key, 'delivery_') === 0) {
+                $settings[$key] = $value;
+            }
         }
 
-        // Fetch individual keys that may not match pattern
         $extraKeys = ['business_latitude', 'business_longitude', 'google_maps_api_key', 'google_distance_matrix_endpoint', 'google_distance_matrix_timeout'];
         foreach ($extraKeys as $key) {
-            if (!array_key_exists($key, $settings)) {
-                $value = $this->db->fetchOne('SELECT setting_value FROM settings WHERE setting_key = ?', [$key]);
-                if ($value && isset($value['setting_value'])) {
-                    $settings[$key] = $value['setting_value'];
-                }
+            if (!array_key_exists($key, $settings) && array_key_exists($key, $allSettings)) {
+                $settings[$key] = $allSettings[$key];
             }
         }
 

@@ -2,7 +2,6 @@
 require_once 'includes/bootstrap.php';
 $auth->requireLogin();
 
-$db = Database::getInstance();
 $currencyManager = CurrencyManager::getInstance();
 
 // Handle settings update
@@ -24,6 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ];
         
         $currencyManager->updateCurrencySettings($settings);
+        SettingsStore::refresh();
         $_SESSION['success_message'] = 'Currency settings updated successfully';
         redirect($_SERVER['PHP_SELF']);
     } catch (Exception $e) {
@@ -39,11 +39,7 @@ $currentSettings = [
 ];
 
 // Get all settings for form
-$allSettings = $db->fetchAll("SELECT setting_key, setting_value FROM settings WHERE setting_key LIKE 'currency_%'");
-$settingsArray = [];
-foreach ($allSettings as $setting) {
-    $settingsArray[$setting['setting_key']] = $setting['setting_value'];
-}
+$settingsArray = SettingsStore::getByPrefix('currency_');
 
 // Common currencies
 $commonCurrencies = [

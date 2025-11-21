@@ -4,11 +4,9 @@
 
 class CurrencyManager {
     private static $instance = null;
-    private $db;
     private $currency_settings = [];
     
     private function __construct() {
-        $this->db = Database::getInstance();
         $this->loadCurrencySettings();
     }
     
@@ -21,19 +19,14 @@ class CurrencyManager {
     
     private function loadCurrencySettings() {
         try {
-            // Get currency settings from database
-            $settings = $this->db->fetchAll("SELECT setting_key, setting_value FROM settings WHERE setting_key LIKE 'currency_%'");
-            
-            foreach ($settings as $setting) {
-                $this->currency_settings[$setting['setting_key']] = $setting['setting_value'];
-            }
-            
-            // Set defaults if not found
-            if (empty($this->currency_settings)) {
+            $settings = SettingsStore::getByPrefix('currency_');
+            if (empty($settings)) {
                 $this->setDefaultCurrencySettings();
+                SettingsStore::persistMany($this->currency_settings);
+                return;
             }
+            $this->currency_settings = $settings;
         } catch (Exception $e) {
-            // Fallback to defaults if database error
             $this->setDefaultCurrencySettings();
         }
     }
@@ -100,11 +93,7 @@ class CurrencyManager {
     public function updateCurrencySettings($settings) {
         foreach ($settings as $key => $value) {
             if (strpos($key, 'currency_') === 0) {
-                $this->db->query(
-                    "INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) 
-                     ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)",
-                    [$key, $value]
-                );
+                SettingsStore::persist($key, $value);
                 $this->currency_settings[$key] = $value;
             }
         }
@@ -118,8 +107,6 @@ function formatCurrency($amount, $showSymbol = false) {
 
 // Initialize default currency settings in database if they don't exist
 function initializeCurrencySettings() {
-    $db = Database::getInstance();
-    
     $defaultSettings = [
         'currency_code' => 'USD',
         'currency_symbol' => '$',
@@ -132,14 +119,8 @@ function initializeCurrencySettings() {
     ];
     
     foreach ($defaultSettings as $key => $value) {
-        $existing = $db->fetchOne("SELECT setting_value FROM settings WHERE setting_key = ?", [$key]);
-        if (!$existing) {
-            $db->insert('settings', [
-                'setting_key' => $key,
-                'setting_value' => $value,
-                'setting_type' => 'string',
-                'description' => ucwords(str_replace('_', ' ', $key))
-            ]);
+        if (!SettingsStore::has($key)) {
+            SettingsStore::persist($key, $value);
         }
     }
 }

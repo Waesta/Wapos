@@ -26,11 +26,13 @@ class WhatsAppService
      */
     private function loadSettings(): void
     {
-        $sql = "SELECT setting_key, setting_value FROM settings 
-                WHERE setting_key IN ('whatsapp_access_token', 'whatsapp_phone_number_id', 'whatsapp_business_account_id')";
-        
-        $stmt = $this->db->query($sql);
-        $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+        $settings = function_exists('settings_many')
+            ? settings_many([
+                'whatsapp_access_token',
+                'whatsapp_phone_number_id',
+                'whatsapp_business_account_id'
+            ])
+            : [];
 
         $this->accessToken = $settings['whatsapp_access_token'] ?? null;
         $this->phoneNumberId = $settings['whatsapp_phone_number_id'] ?? null;
@@ -381,10 +383,9 @@ class WhatsAppService
 
     private function getAppSecret(): ?string
     {
-        $sql = "SELECT setting_value FROM settings WHERE setting_key = 'whatsapp_app_secret' LIMIT 1";
-        $stmt = $this->db->query($sql);
-        $result = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $result['setting_value'] ?? null;
+        return function_exists('settings')
+            ? settings('whatsapp_app_secret')
+            : null;
     }
 
     private function ensureTableExists(): void

@@ -228,11 +228,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!empty($settingsToUpdate)) {
             foreach ($settingsToUpdate as $key => $value) {
-                $db->query(
-                    "INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) " .
-                    "ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)",
-                    [$key, $value]
-                );
+                SettingsStore::persist($key, $value);
             }
         }
 
@@ -240,17 +236,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $systemManager->forceRefresh();
         }
 
+        SettingsStore::refresh();
         $_SESSION['success_message'] = 'Settings updated successfully';
         redirect($_SERVER['PHP_SELF']);
     }
 }
 
 // Get current settings
-$settingsRaw = $db->fetchAll('SELECT setting_key, setting_value FROM settings');
-$settings = [];
-foreach ($settingsRaw as $setting) {
-    $settings[$setting['setting_key']] = $setting['setting_value'];
-}
+$settings = settings();
 
 $pageTitle = 'System Settings';
 include 'includes/header.php';
