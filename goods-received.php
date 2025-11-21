@@ -272,6 +272,67 @@ include 'includes/header.php';
     </div>
 </div>
 
+<!-- GRN Overview -->
+<?php
+$grnMetrics = [
+    'today' => $db->fetchOne("SELECT COUNT(*) as total, SUM(total_amount) as amount FROM goods_received_notes WHERE DATE(received_date) = CURDATE()") ?: ['total' => 0, 'amount' => 0],
+    'week' => $db->fetchOne("SELECT COUNT(*) as total, SUM(total_amount) as amount FROM goods_received_notes WHERE received_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)") ?: ['total' => 0, 'amount' => 0],
+    'month' => $db->fetchOne("SELECT COUNT(*) as total, SUM(total_amount) as amount FROM goods_received_notes WHERE received_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)") ?: ['total' => 0, 'amount' => 0],
+];
+
+$grnPolicyHighlights = [
+    [
+        'label' => 'Pending POs',
+        'value' => count($pendingPOs),
+        'icon' => 'hourglass-split',
+        'variant' => count($pendingPOs) > 0 ? 'warning' : 'success',
+        'description' => count($pendingPOs) > 0 ? 'Awaiting receiving' : 'No pending purchase orders.'
+    ],
+    [
+        'label' => 'Suppliers',
+        'value' => count($suppliers),
+        'icon' => 'building',
+        'variant' => 'info',
+        'description' => 'Active suppliers enabled for receiving.'
+    ],
+    [
+        'label' => 'GRNs this Month',
+        'value' => $grnMetrics['month']['total'],
+        'icon' => 'truck',
+        'variant' => 'primary',
+        'description' => 'Completed goods receipts in the last 30 days.'
+    ],
+    [
+        'label' => 'Value Received',
+        'value' => 'KES ' . formatMoney($grnMetrics['month']['amount']),
+        'icon' => 'currency-dollar',
+        'variant' => 'success',
+        'description' => 'Total stock value received this month.'
+    ],
+];
+?>
+
+<div class="row g-3 mb-4">
+    <?php foreach ($grnPolicyHighlights as $highlight): ?>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="d-flex align-items-center gap-3">
+                    <span class="badge bg-<?= $highlight['variant'] ?>-subtle text-<?= $highlight['variant'] ?> rounded-circle p-2">
+                        <i class="bi bi-<?= htmlspecialchars($highlight['icon']) ?>"></i>
+                    </span>
+                    <div>
+                        <small class="text-muted text-uppercase"><?= htmlspecialchars($highlight['label']) ?></small>
+                        <h5 class="mb-1"><?= htmlspecialchars($highlight['value']) ?></h5>
+                        <span class="text-muted small"><?= htmlspecialchars($highlight['description']) ?></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endforeach; ?>
+</div>
+
 <!-- Tabs -->
 <ul class="nav nav-tabs mb-4" role="tablist">
     <li class="nav-item">
@@ -284,15 +345,37 @@ include 'includes/header.php';
             <i class="bi bi-hourglass-split me-2"></i>Pending POs (<?= count($pendingPOs) ?>)
         </button>
     </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#grn-insights">
+            <i class="bi bi-bar-chart"></i> Insights
+        </button>
+    </li>
 </ul>
 
 <div class="tab-content">
     <!-- GRN List Tab -->
     <div class="tab-pane fade show active" id="grn-list">
         <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
+                <h6 class="mb-0">Recent Goods Received Notes</h6>
+                <div class="d-flex flex-wrap gap-2">
+                    <div class="input-group input-group-sm" style="max-width:220px;">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text" class="form-control" id="grnSearch" placeholder="GRN number or supplier">
+                    </div>
+                    <input type="date" class="form-control form-control-sm" id="grnDateFilter" style="max-width:170px;">
+                    <select class="form-select form-select-sm" id="grnStatusFilter" style="max-width:160px;">
+                        <option value="">All Status</option>
+                        <option value="draft">Draft</option>
+                        <option value="completed">Completed</option>
+                        <option value="cancelled">Cancelled</option>
+                    </select>
+                    <button class="btn btn-outline-secondary btn-sm" id="grnExportBtn"><i class="bi bi-download"></i> Export CSV</button>
+                </div>
+            </div>
             <div class="card-body">
                 <div class="table-responsive">
-                    <table class="table table-hover">
+                    <table class="table table-hover" id="grnTable">
                         <thead class="table-light">
                             <tr>
                                 <th>GRN Number</th>
@@ -308,7 +391,7 @@ include 'includes/header.php';
                         </thead>
                         <tbody>
                             <?php foreach ($grns as $grn): ?>
-                            <tr>
+                            <tr data-search="<?= htmlspecialchars(strtolower($grn['grn_number'] . ' ' . $grn['supplier_name'] . ' ' . ($grn['invoice_number'] ?? ''))) ?>" data-date="<?= htmlspecialchars($grn['received_date']) ?>" data-status="<?= htmlspecialchars($grn['status']) ?>">
                                 <td><strong><?= htmlspecialchars($grn['grn_number']) ?></strong></td>
                                 <td><?= formatDate($grn['received_date'], 'd/m/Y') ?></td>
                                 <td><?= htmlspecialchars($grn['supplier_name']) ?></td>
@@ -333,6 +416,9 @@ include 'includes/header.php';
                             <?php endforeach; ?>
                         </tbody>
                     </table>
+                    <div id="grnEmptyState" class="alert alert-info text-center" style="display:none;">
+                        No GRNs match the current filters.
+                    </div>
                 </div>
             </div>
         </div>
@@ -341,9 +427,20 @@ include 'includes/header.php';
     <!-- Pending POs Tab -->
     <div class="tab-pane fade" id="pending-pos">
         <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
+                <h6 class="mb-0">Purchase Orders Awaiting Receipt</h6>
+                <div class="d-flex flex-wrap gap-2">
+                    <select class="form-select form-select-sm" id="poSupplierFilter" style="max-width:200px;">
+                        <option value="">All Suppliers</option>
+                        <?php foreach ($suppliers as $supplier): ?>
+                        <option value="<?= htmlspecialchars($supplier['name']) ?>"><?= htmlspecialchars($supplier['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
             <div class="card-body">
                 <div class="table-responsive">
-                    <table class="table table-hover">
+                    <table class="table table-hover" id="pendingPoTable">
                         <thead class="table-light">
                             <tr>
                                 <th>PO Number</th>
@@ -355,28 +452,114 @@ include 'includes/header.php';
                             </tr>
                         </thead>
                         <tbody>
-                            <?php foreach ($pendingPOs as $po): ?>
-                            <tr>
-                                <td><strong><?= htmlspecialchars($po['po_number']) ?></strong></td>
-                                <td><?= formatDate($po['created_at'], 'd/m/Y') ?></td>
-                                <td><?= htmlspecialchars($po['supplier_name']) ?></td>
-                                <td><?= formatMoney($po['total_amount']) ?></td>
-                                <td>
-                                    <span class="badge bg-warning"><?= ucfirst($po['status']) ?></span>
-                                </td>
-                                <td>
-                                    <?php
-                                    $poItemPayload = $pendingPoItems[$po['id']] ?? [];
-                                    $encodedItems = htmlspecialchars(json_encode($poItemPayload, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8');
-                                    ?>
-                                    <button class="btn btn-sm btn-success" data-po-id="<?= $po['id'] ?>" data-po-number="<?= htmlspecialchars($po['po_number']) ?>" data-po-items="<?= $encodedItems ?>" onclick="receiveFromPO(this)">
-                                        <i class="bi bi-check-circle me-1"></i>Receive Goods
-                                    </button>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
+                        <?php foreach ($pendingPOs as $po): ?>
+                        <tr data-supplier="<?= htmlspecialchars($po['supplier_name']) ?>">
+                            <td><strong><?= htmlspecialchars($po['po_number']) ?></strong></td>
+                            <td><?= formatDate($po['created_at'], 'd/m/Y') ?></td>
+                            <td><?= htmlspecialchars($po['supplier_name']) ?></td>
+                            <td><?= formatMoney($po['total_amount']) ?></td>
+                            <td>
+                                <span class="badge bg-warning"><?= ucfirst($po['status']) ?></span>
+                            </td>
+                            <td>
+                                <?php
+                                $poItemPayload = $pendingPoItems[$po['id']] ?? [];
+                                ?>
+                                <button class="btn btn-sm btn-success" data-po-id="<?= $po['id'] ?>" data-po-number="<?= htmlspecialchars($po['po_number']) ?>" data-po-items="<?= htmlspecialchars(json_encode($poItemPayload, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8') ?>" onclick="receiveFromPO(this)">
+                                    <i class="bi bi-check-circle me-1"></i>Receive Goods
+                                </button>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
                         </tbody>
                     </table>
+                    <div id="pendingPoEmptyState" class="alert alert-info text-center" style="display:none;">
+                        No pending purchase orders for the selected supplier.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Insights Tab -->
+    <div class="tab-pane fade" id="grn-insights">
+        <div class="row g-3">
+            <div class="col-lg-6">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-white">
+                        <h6 class="mb-0">Top Suppliers (30 days)</h6>
+                    </div>
+                    <div class="card-body">
+                        <?php
+                        $topSuppliers = $db->fetchAll("
+                            SELECT s.name, COUNT(g.id) AS grn_count, SUM(g.total_amount) AS total_amount
+                            FROM goods_received_notes g
+                            JOIN suppliers s ON g.supplier_id = s.id
+                            WHERE g.received_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+                            GROUP BY s.id
+                            ORDER BY total_amount DESC
+                            LIMIT 5
+                        ") ?: [];
+                        ?>
+                        <?php if (!empty($topSuppliers)): ?>
+                            <ul class="list-group list-group-flush">
+                                <?php foreach ($topSuppliers as $supplier): ?>
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong><?= htmlspecialchars($supplier['name']) ?></strong>
+                                        <div class="small text-muted"><?= $supplier['grn_count'] ?> GRNs</div>
+                                    </div>
+                                    <span class="badge bg-primary-subtle text-primary">KES <?= formatMoney($supplier['total_amount']) ?></span>
+                                </li>
+                                <?php endforeach; ?>
+                            </ul>
+                        <?php else: ?>
+                            <p class="text-muted mb-0">No supplier activity in the last 30 days.</p>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-white">
+                        <h6 class="mb-0">Receiving Timeline</h6>
+                    </div>
+                    <div class="card-body">
+                        <?php
+                        $grnTimeline = $db->fetchAll("
+                            SELECT DATE(received_date) as date, COUNT(*) as total, SUM(total_amount) as amount
+                            FROM goods_received_notes
+                            WHERE received_date >= DATE_SUB(CURDATE(), INTERVAL 14 DAY)
+                            GROUP BY DATE(received_date)
+                            ORDER BY date DESC
+                            LIMIT 14
+                        ") ?: [];
+                        ?>
+                        <?php if (!empty($grnTimeline)): ?>
+                            <div class="table-responsive" style="max-height:240px;">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th class="text-end">GRNs</th>
+                                            <th class="text-end">Value</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($grnTimeline as $row): ?>
+                                        <tr>
+                                            <td><?= date('M d, Y', strtotime($row['date'])) ?></td>
+                                            <td class="text-end"><?= $row['total'] ?></td>
+                                            <td class="text-end">KES <?= formatMoney($row['amount']) ?></td>
+                                        </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        <?php else: ?>
+                            <p class="text-muted mb-0">No GRNs recorded in the last two weeks.</p>
+                        <?php endif; ?>
+                    </div>
                 </div>
             </div>
         </div>
@@ -646,6 +829,79 @@ document.getElementById('grnModal').addEventListener('show.bs.modal', function (
         updateGRNDisplay();
     }
 });
+
+// Filtering controls for GRN list and pending PO tables
+const grnSearchInput = document.getElementById('grnSearch');
+const grnDateFilter = document.getElementById('grnDateFilter');
+const grnStatusFilter = document.getElementById('grnStatusFilter');
+const grnRows = Array.from(document.querySelectorAll('#grnTable tbody tr'));
+const grnEmptyState = document.getElementById('grnEmptyState');
+
+const poSupplierFilter = document.getElementById('poSupplierFilter');
+const pendingPoRows = Array.from(document.querySelectorAll('#pendingPoTable tbody tr'));
+const pendingPoEmptyState = document.getElementById('pendingPoEmptyState');
+
+document.addEventListener('DOMContentLoaded', () => {
+    grnSearchInput?.addEventListener('input', debounce(filterGrns, 150));
+    grnDateFilter?.addEventListener('change', filterGrns);
+    grnStatusFilter?.addEventListener('change', filterGrns);
+    poSupplierFilter?.addEventListener('change', filterPendingPOs);
+
+    filterGrns();
+    filterPendingPOs();
+});
+
+function filterGrns() {
+    const term = (grnSearchInput?.value || '').trim().toLowerCase();
+    const date = grnDateFilter?.value || '';
+    const status = grnStatusFilter?.value || '';
+
+    let visible = 0;
+
+    grnRows.forEach(row => {
+        const matchesTerm = !term || (row.dataset.search || '').includes(term);
+        const matchesDate = !date || (row.dataset.date || '') === date;
+        const matchesStatus = !status || (row.dataset.status || '') === status;
+
+        if (matchesTerm && matchesDate && matchesStatus) {
+            row.style.display = '';
+            visible++;
+        } else {
+            row.style.display = 'none';
+        }
+    });
+
+    if (grnEmptyState) {
+        grnEmptyState.style.display = visible === 0 ? '' : 'none';
+    }
+}
+
+function filterPendingPOs() {
+    const supplier = (poSupplierFilter?.value || '').toLowerCase();
+    let visible = 0;
+
+    pendingPoRows.forEach(row => {
+        const matchesSupplier = !supplier || (row.dataset.supplier || '').toLowerCase() === supplier;
+        if (matchesSupplier) {
+            row.style.display = '';
+            visible++;
+        } else {
+            row.style.display = 'none';
+        }
+    });
+
+    if (pendingPoEmptyState) {
+        pendingPoEmptyState.style.display = visible === 0 ? '' : 'none';
+    }
+}
+
+function debounce(fn, delay) {
+    let timeout;
+    return (...args) => {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => fn.apply(this, args), delay);
+    };
+}
 </script>
 
 <?php include 'includes/footer.php'; ?>

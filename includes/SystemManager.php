@@ -9,8 +9,12 @@ class SystemManager {
     private $db;
     private $cache = [];
     
+    private $moduleStatus = [];
+    private $settingsLoaded = false;
+
     private function __construct() {
         $this->db = Database::getInstance();
+        $this->loadModuleSettings();
     }
     
     public static function getInstance() {
@@ -23,17 +27,82 @@ class SystemManager {
     /**
      * Get system modules with error handling
      */
-    public function getSystemModules() {
+    public function getSystemModules($includeInactive = false) {
         try {
-            if (!isset($this->cache['modules'])) {
-                $this->cache['modules'] = $this->db->fetchAll(
-                    "SELECT * FROM system_modules WHERE is_active = 1 ORDER BY sort_order"
-                ) ?: [];
+            $cacheKey = $includeInactive ? 'modules_all' : 'modules_active';
+            if (!isset($this->cache[$cacheKey])) {
+                $query = "SELECT * FROM system_modules";
+                $params = [];
+                if (!$includeInactive) {
+                    $query .= " WHERE is_active = 1";
+                }
+                $query .= " ORDER BY sort_order";
+
+                $modules = $this->db->fetchAll($query, $params) ?: [];
+
+                $this->cache[$cacheKey] = array_map(function ($module) {
+                    $moduleKey = $module['module_key'] ?? '';
+                    if ($moduleKey) {
+                        $module['is_enabled'] = $this->moduleStatus[$moduleKey] ?? (int)($module['is_active'] ?? 1);
+                    }
+                    return $module;
+                }, $modules);
             }
-            return $this->cache['modules'];
+            return $this->cache[$cacheKey];
         } catch (Exception $e) {
             error_log('SystemManager getSystemModules error: ' . $e->getMessage());
             return $this->getDefaultModules();
+        }
+    }
+
+    public function isModuleEnabled($moduleKey) {
+        if (empty($moduleKey)) {
+            return true;
+        }
+        if (!$this->settingsLoaded) {
+            $this->loadModuleSettings();
+        }
+        return (bool)($this->moduleStatus[$moduleKey] ?? true);
+    }
+
+    public function setModuleEnabled($moduleKey, $enabled) {
+        if (empty($moduleKey)) {
+            return false;
+        }
+        try {
+            $this->db->query(
+                "INSERT INTO system_modules (module_key, name, display_name, is_active) VALUES (:key, :name, :display_name, :active)
+                 ON DUPLICATE KEY UPDATE is_active = VALUES(is_active)",
+                [
+                    'key' => $moduleKey,
+                    'name' => $moduleKey,
+                    'display_name' => ucwords(str_replace('_', ' ', $moduleKey)),
+                    'active' => $enabled ? 1 : 0,
+                ]
+            );
+            $this->moduleStatus[$moduleKey] = $enabled ? 1 : 0;
+            $this->clearCache();
+            return true;
+        } catch (Exception $e) {
+            error_log('SystemManager setModuleEnabled error: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    private function loadModuleSettings() {
+        try {
+            $rows = $this->db->fetchAll("SELECT module_key, is_active FROM system_modules");
+            foreach ($rows as $row) {
+                $moduleKey = $row['module_key'] ?? null;
+                if ($moduleKey) {
+                    $this->moduleStatus[$moduleKey] = (int)($row['is_active'] ?? 1);
+                }
+            }
+            $this->settingsLoaded = true;
+        } catch (Exception $e) {
+            error_log('SystemManager loadModuleSettings error: ' . $e->getMessage());
+            $this->moduleStatus = [];
+            $this->settingsLoaded = true;
         }
     }
     

@@ -1,6 +1,8 @@
 <?php
 require_once '../includes/bootstrap.php';
 
+use App\Services\DeliveryTrackingService;
+
 header('Content-Type: application/json');
 
 if (!$auth->isLoggedIn()) {
@@ -8,20 +10,22 @@ if (!$auth->isLoggedIn()) {
     exit;
 }
 
-$orderId = $_GET['order_id'] ?? null;
+$orderId = isset($_GET['order_id']) ? (int)$_GET['order_id'] : 0;
 
-if (!$orderId) {
+if ($orderId <= 0) {
     echo json_encode(['success' => false, 'message' => 'Order ID required']);
     exit;
 }
 
 $db = Database::getInstance();
+$service = new DeliveryTrackingService($db->getConnection());
 
 try {
     // Get order and delivery information
     $tracking = $db->fetchOne("
         SELECT 
             o.*,
+            d.id as delivery_id,
             d.status as delivery_status,
             d.rider_id,
             d.estimated_delivery_time,
@@ -57,8 +61,14 @@ try {
         'vehicle_number' => $tracking['vehicle_number'],
         'estimated_time' => $tracking['estimated_delivery_time'],
         'actual_delivery_time' => $tracking['actual_delivery_time'],
-        'delivery_notes' => $tracking['delivery_notes']
+        'delivery_notes' => $tracking['delivery_notes'],
+        'timeline' => []
     ];
+
+    if (!empty($tracking['delivery_id'])) {
+        $timeline = $service->getTimelineForOrder($orderId);
+        $response['timeline'] = $timeline;
+    }
     
     echo json_encode([
         'success' => true,

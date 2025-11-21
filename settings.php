@@ -1,214 +1,687 @@
 <?php
 require_once 'includes/bootstrap.php';
-$auth->requireRole('admin');
+$auth->requireRole(['admin', 'developer', 'accountant', 'super_admin']);
 
 $db = Database::getInstance();
+$userRole = strtolower($auth->getRole() ?? '');
+$csrfToken = generateCSRFToken();
+$systemManager = SystemManager::getInstance();
+$canManageModules = in_array($userRole, ['super_admin', 'developer'], true);
+
+$moduleCatalog = [
+    'dashboard' => [
+        'label' => 'Executive Dashboard',
+        'description' => 'KPIs, revenue pulse, and operational alerts for leadership.',
+        'icon' => 'bi-graph-up-arrow',
+        'category' => 'Core Platform Essentials',
+        'locked' => true,
+    ],
+    'pos' => [
+        'label' => 'Retail POS',
+        'description' => 'Counter sales, quick tenders, discounts, and drawer controls.',
+        'icon' => 'bi-cart-plus',
+        'category' => 'Sales Counters',
+    ],
+    'sales' => [
+        'label' => 'Sales History & Registers',
+        'description' => 'Register audit, receipt settings, promotions, and void workflows.',
+        'icon' => 'bi-journal-check',
+        'category' => 'Sales Counters',
+    ],
+    'customers' => [
+        'label' => 'Customers & Loyalty',
+        'description' => 'CRM tools, loyalty balances, and communication history.',
+        'icon' => 'bi-people',
+        'category' => 'Sales Counters',
+    ],
+    'inventory' => [
+        'label' => 'Inventory & Catalog',
+        'description' => 'Products, stock counts, GRNs, and multi-location transfers.',
+        'icon' => 'bi-boxes',
+        'category' => 'Back Office & Governance',
+    ],
+    'restaurant' => [
+        'label' => 'Restaurant Suite',
+        'description' => 'Dine-in orders, reservations, table management, and KDS.',
+        'icon' => 'bi-cup-hot',
+        'category' => 'Hospitality & Guest Ops',
+    ],
+    'rooms' => [
+        'label' => 'Rooms & Accommodation',
+        'description' => 'Room inventory, folios, invoices, and stay extensions.',
+        'icon' => 'bi-building',
+        'category' => 'Hospitality & Guest Ops',
+    ],
+    'housekeeping' => [
+        'label' => 'Housekeeping Board',
+        'description' => 'Room turns, inspections, and task dispatch for staff.',
+        'icon' => 'bi-broom',
+        'category' => 'Hospitality & Guest Ops',
+    ],
+    'maintenance' => [
+        'label' => 'Maintenance Desk',
+        'description' => 'Issue intake, technician routing, and resolution tracking.',
+        'icon' => 'bi-tools',
+        'category' => 'Hospitality & Guest Ops',
+    ],
+    'delivery' => [
+        'label' => 'Delivery & Dispatch',
+        'description' => 'Rider assignments, live tracking, and pricing rules.',
+        'icon' => 'bi-truck',
+        'category' => 'Logistics & Field Ops',
+    ],
+    'reports' => [
+        'label' => 'Business Reports',
+        'description' => 'Operational analytics, exports, and scheduled reports.',
+        'icon' => 'bi-file-earmark-bar-graph',
+        'category' => 'Back Office & Governance',
+    ],
+    'accounting' => [
+        'label' => 'Accounting & Finance',
+        'description' => 'Ledger-ready exports, balance sheet, P&L, and tax packs.',
+        'icon' => 'bi-calculator',
+        'category' => 'Back Office & Governance',
+    ],
+    'locations' => [
+        'label' => 'Locations & Branches',
+        'description' => 'Geo-aware branches, stock routing, and cash controls per site.',
+        'icon' => 'bi-geo-alt',
+        'category' => 'Back Office & Governance',
+    ],
+    'users' => [
+        'label' => 'User & Access Control',
+        'description' => 'Role assignments, permissions, and compliance logs.',
+        'icon' => 'bi-person-gear',
+        'category' => 'Admin & Compliance',
+    ],
+    'settings' => [
+        'label' => 'System Configuration',
+        'description' => 'Branding, fiscal parameters, integrations, and toggles.',
+        'icon' => 'bi-gear',
+        'category' => 'Admin & Compliance',
+        'locked' => true,
+    ],
+];
+
+foreach ($moduleCatalog as $moduleKey => $moduleMeta) {
+    $isEnabled = $systemManager->isModuleEnabled($moduleKey);
+    if (!empty($moduleMeta['locked']) && !$isEnabled) {
+        $systemManager->setModuleEnabled($moduleKey, true);
+        $isEnabled = true;
+    }
+    $moduleCatalog[$moduleKey]['enabled'] = $isEnabled;
+}
+
+// Registered setting fields with data types
+$fieldDefinitions = [
+    'business_name' => ['type' => 'string'],
+    'business_address' => ['type' => 'multiline'],
+    'business_phone' => ['type' => 'string'],
+    'business_email' => ['type' => 'string'],
+    'business_website' => ['type' => 'string'],
+    'tax_rate' => ['type' => 'float'],
+    'currency_code' => ['type' => 'string'],
+    'currency_symbol' => ['type' => 'string'],
+    'currency_position' => ['type' => 'string'],
+    'decimal_places' => ['type' => 'int'],
+    'decimal_separator' => ['type' => 'string'],
+    'thousands_separator' => ['type' => 'string'],
+    'receipt_header' => ['type' => 'string'],
+    'receipt_footer' => ['type' => 'multiline'],
+    'receipt_show_logo' => ['type' => 'bool'],
+    'receipt_show_qr' => ['type' => 'bool'],
+    'business_latitude' => ['type' => 'float'],
+    'business_longitude' => ['type' => 'float'],
+    'delivery_base_fee' => ['type' => 'float'],
+    'delivery_per_km_rate' => ['type' => 'float'],
+    'delivery_max_active_jobs' => ['type' => 'int'],
+    'delivery_sla_pending_limit' => ['type' => 'int'],
+    'delivery_sla_assigned_limit' => ['type' => 'int'],
+    'delivery_sla_delivery_limit' => ['type' => 'int'],
+    'delivery_sla_slack_minutes' => ['type' => 'int'],
+    'google_maps_api_key' => ['type' => 'string'],
+    'google_distance_matrix_endpoint' => ['type' => 'string'],
+    'google_distance_matrix_timeout' => ['type' => 'int'],
+    'delivery_cache_ttl_minutes' => ['type' => 'int'],
+    'delivery_cache_soft_ttl_minutes' => ['type' => 'int'],
+    'delivery_distance_fallback_provider' => ['type' => 'string'],
+    'accounting_auto_lock_days' => ['type' => 'int'],
+    'accounting_alert_email' => ['type' => 'string'],
+    'enable_whatsapp_notifications' => ['type' => 'bool'],
+    'whatsapp_access_token' => ['type' => 'string'],
+    'whatsapp_phone_number_id' => ['type' => 'string'],
+    'whatsapp_business_account_id' => ['type' => 'string'],
+    'notification_reply_to_email' => ['type' => 'string'],
+];
 
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
-    
+
     if ($action === 'update_settings') {
-        // CSRF validation
         if (!validateCSRFToken($_POST['csrf_token'] ?? '')) {
             $_SESSION['error_message'] = 'Invalid request. Please try again.';
             redirect($_SERVER['PHP_SELF']);
         }
-        $settings = [
-            'business_name' => sanitizeInput($_POST['business_name']),
-            'business_address' => sanitizeInput($_POST['business_address']),
-            'business_phone' => sanitizeInput($_POST['business_phone']),
-            'business_email' => sanitizeInput($_POST['business_email']),
-            'tax_rate' => $_POST['tax_rate'],
-            'currency' => sanitizeInput($_POST['currency']),
-            'receipt_header' => sanitizeInput($_POST['receipt_header']),
-            'receipt_footer' => sanitizeInput($_POST['receipt_footer']),
-            'business_latitude' => sanitizeInput($_POST['business_latitude'] ?? ''),
-            'business_longitude' => sanitizeInput($_POST['business_longitude'] ?? ''),
-            'delivery_base_fee' => sanitizeInput($_POST['delivery_base_fee'] ?? ''),
-            'delivery_per_km_rate' => sanitizeInput($_POST['delivery_per_km_rate'] ?? '')
-        ];
-        
-        foreach ($settings as $key => $value) {
-            $db->query(
-                "INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) 
-                 ON DUPLICATE KEY UPDATE setting_value = ?",
-                [$key, $value, $value]
-            );
+
+        $moduleStateChanged = false;
+        if ($canManageModules) {
+            $enabledModulesInput = array_keys($_POST['modules'] ?? []);
+            foreach ($moduleCatalog as $moduleKey => &$moduleMeta) {
+                $targetEnabled = !empty($moduleMeta['locked']) ? true : in_array($moduleKey, $enabledModulesInput, true);
+                if ($targetEnabled !== $moduleMeta['enabled']) {
+                    $systemManager->setModuleEnabled($moduleKey, $targetEnabled);
+                    $moduleMeta['enabled'] = $targetEnabled;
+                    $moduleStateChanged = true;
+                }
+            }
+            unset($moduleMeta);
         }
-        
+
+        $settingsToUpdate = [];
+        foreach ($fieldDefinitions as $key => $meta) {
+            $type = $meta['type'];
+
+            if ($type === 'bool') {
+                $settingsToUpdate[$key] = !empty($_POST[$key]) ? '1' : '0';
+                continue;
+            }
+
+            if (!array_key_exists($key, $_POST)) {
+                continue;
+            }
+
+            $rawValue = $_POST[$key];
+            switch ($type) {
+                case 'int':
+                    $value = trim((string) $rawValue);
+                    if ($value === '') {
+                        $settingsToUpdate[$key] = '';
+                        break;
+                    }
+                    $value = (string) filter_var($value, FILTER_SANITIZE_NUMBER_INT);
+                    $settingsToUpdate[$key] = $value;
+                    break;
+
+                case 'float':
+                    $value = trim((string) $rawValue);
+                    if ($value === '') {
+                        $settingsToUpdate[$key] = '';
+                        break;
+                    }
+                    $normalized = str_replace(',', '', $value);
+                    if (!is_numeric($normalized)) {
+                        $normalized = '0';
+                    }
+                    $settingsToUpdate[$key] = (string) $normalized;
+                    break;
+
+                case 'multiline':
+                    $settingsToUpdate[$key] = htmlspecialchars(trim((string) $rawValue), ENT_QUOTES, 'UTF-8');
+                    break;
+
+                default:
+                    $settingsToUpdate[$key] = sanitizeInput($rawValue ?? '');
+                    break;
+            }
+        }
+
+        if (!empty($settingsToUpdate)) {
+            foreach ($settingsToUpdate as $key => $value) {
+                $db->query(
+                    "INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) " .
+                    "ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)",
+                    [$key, $value]
+                );
+            }
+        }
+
+        if ($moduleStateChanged) {
+            $systemManager->forceRefresh();
+        }
+
         $_SESSION['success_message'] = 'Settings updated successfully';
         redirect($_SERVER['PHP_SELF']);
     }
 }
 
 // Get current settings
-$settingsRaw = $db->fetchAll("SELECT setting_key, setting_value FROM settings");
+$settingsRaw = $db->fetchAll('SELECT setting_key, setting_value FROM settings');
 $settings = [];
 foreach ($settingsRaw as $setting) {
     $settings[$setting['setting_key']] = $setting['setting_value'];
 }
 
-$pageTitle = 'Settings';
+$pageTitle = 'System Settings';
 include 'includes/header.php';
+
+$moduleGroups = [];
+foreach ($moduleCatalog as $key => $moduleMeta) {
+    $category = $moduleMeta['category'] ?? 'Other Modules';
+    if (!isset($moduleGroups[$category])) {
+        $moduleGroups[$category] = [];
+    }
+    $moduleGroups[$category][$key] = $moduleMeta;
+}
+
+$sections = [
+    'client_modules' => [
+        'title' => 'Client Modules',
+        'icon' => 'bi-toggle2-on',
+        'description' => 'Switch modules on/off per deployment without breaking other workflows.',
+        'roles' => ['super_admin', 'developer'],
+    ],
+    'business_profile' => [
+        'title' => 'Business Profile',
+        'icon' => 'bi-shop',
+        'description' => 'Core company details used across receipts, invoices, and notifications.',
+        'roles' => ['admin', 'developer'],
+    ],
+    'accounting_tax' => [
+        'title' => 'Accounting & Taxes',
+        'icon' => 'bi-calculator',
+        'description' => 'Financial configuration, tax percentages, and ledger preferences.',
+        'roles' => ['admin', 'developer', 'accountant'],
+    ],
+    'receipts_branding' => [
+        'title' => 'Receipts & Printing',
+        'icon' => 'bi-journal-text',
+        'description' => 'Customize receipt headers, footers, and printing preferences.',
+        'roles' => ['admin', 'developer', 'accountant'],
+    ],
+    'delivery_logistics' => [
+        'title' => 'Delivery & Logistics',
+        'icon' => 'bi-truck',
+        'description' => 'Control delivery origins, pricing defaults, and Distance Matrix behaviour.',
+        'roles' => ['admin', 'developer'],
+    ],
+    'integrations_notifications' => [
+        'title' => 'Integrations & Notifications',
+        'icon' => 'bi-plug',
+        'description' => 'Manage WhatsApp alerts and system-wide notification defaults.',
+        'roles' => ['admin', 'developer'],
+    ],
+];
+
+$visibleSections = array_filter($sections, function ($section) use ($userRole) {
+    if ($userRole === 'super_admin') {
+        return true;
+    }
+    return in_array($userRole, $section['roles'], true);
+});
 ?>
 
 <?php if (isset($_SESSION['success_message'])): ?>
-    <div class="alert alert-success"><?= $_SESSION['success_message']; unset($_SESSION['success_message']); ?></div>
+    <div class="alert alert-success alert-dismissible fade show">
+        <i class="bi bi-check-circle me-2"></i><?= $_SESSION['success_message']; unset($_SESSION['success_message']); ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
 <?php endif; ?>
 
-<h4 class="mb-3"><i class="bi bi-gear me-2"></i>System Settings</h4>
-
-<div class="row g-3">
-    <div class="col-md-8">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-white">
-                <h6 class="mb-0"><i class="bi bi-building me-2"></i>Business Information</h6>
-            </div>
-            <div class="card-body">
-                <form method="POST">
-                    <input type="hidden" name="action" value="update_settings">
-                    <input type="hidden" name="csrf_token" value="<?= generateCSRFToken(); ?>">
-                    
-                    <div class="mb-3">
-                        <label class="form-label">Business Name *</label>
-                        <input type="text" class="form-control" name="business_name" 
-                               value="<?= htmlspecialchars($settings['business_name'] ?? '') ?>" required>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label class="form-label">Business Address</label>
-                        <textarea class="form-control" name="business_address" rows="2"><?= htmlspecialchars($settings['business_address'] ?? '') ?></textarea>
-                    </div>
-                    
-                    <div class="row g-3 mb-3">
-                        <div class="col-md-6">
-                            <label class="form-label">Phone Number</label>
-                            <input type="text" class="form-control" name="business_phone" 
-                                   value="<?= htmlspecialchars($settings['business_phone'] ?? '') ?>">
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Email</label>
-                            <input type="email" class="form-control" name="business_email" 
-                                   value="<?= htmlspecialchars($settings['business_email'] ?? '') ?>">
-                        </div>
-                    </div>
-                    
-                    <div class="row g-3 mb-3">
-                        <div class="col-md-6">
-                            <label class="form-label">Default Tax Rate (%)</label>
-                            <input type="number" step="0.01" class="form-control" name="tax_rate" 
-                                   value="<?= htmlspecialchars($settings['tax_rate'] ?? '16') ?>">
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Currency Symbol</label>
-                            <input type="text" class="form-control" name="currency" 
-                                   value="<?= htmlspecialchars($settings['currency'] ?? '$') ?>"
-                                   placeholder="e.g. $, €, £, ¥, KES">
-                            <small class="text-muted">Examples: $ € £ ₹ KES USD</small>
-                        </div>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label class="form-label">Receipt Header Text</label>
-                        <input type="text" class="form-control" name="receipt_header" 
-                               value="<?= htmlspecialchars($settings['receipt_header'] ?? '') ?>">
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label class="form-label">Receipt Footer Text</label>
-                        <input type="text" class="form-control" name="receipt_footer" 
-                               value="<?= htmlspecialchars($settings['receipt_footer'] ?? '') ?>">
-                    </div>
-
-                    <div class="row g-3 mb-3">
-                        <div class="col-md-6">
-                            <label class="form-label">Business Latitude</label>
-                            <input type="number" step="0.000001" class="form-control" name="business_latitude"
-                                   value="<?= htmlspecialchars($settings['business_latitude'] ?? '') ?>"
-                                   placeholder="e.g. -1.292066">
-                            <small class="text-muted">Origin latitude used for delivery distance calculations.</small>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Business Longitude</label>
-                            <input type="number" step="0.000001" class="form-control" name="business_longitude"
-                                   value="<?= htmlspecialchars($settings['business_longitude'] ?? '') ?>"
-                                   placeholder="e.g. 36.821946">
-                            <small class="text-muted">Origin longitude used for delivery distance calculations.</small>
-                        </div>
-                    </div>
-
-                    <div class="row g-3 mb-3">
-                        <div class="col-md-6">
-                            <label class="form-label">Default Base Delivery Fee</label>
-                            <input type="number" step="0.01" class="form-control" name="delivery_base_fee"
-                                   value="<?= htmlspecialchars($settings['delivery_base_fee'] ?? '') ?>"
-                                   placeholder="e.g. 50">
-                            <small class="text-muted">Applied before distance when no zone configuration exists.</small>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Default Per-Kilometer Rate</label>
-                            <input type="number" step="0.01" class="form-control" name="delivery_per_km_rate"
-                                   value="<?= htmlspecialchars($settings['delivery_per_km_rate'] ?? '') ?>"
-                                   placeholder="e.g. 10">
-                            <small class="text-muted">Rate per kilometer outside the base distance.</small>
-                        </div>
-                    </div>
-
-                    <button type="submit" class="btn btn-primary">
-                        <i class="bi bi-check-circle me-2"></i>Save Settings
-                    </button>
-                </form>
-            </div>
-        </div>
+<?php if (isset($_SESSION['error_message'])): ?>
+    <div class="alert alert-danger alert-dismissible fade show">
+        <i class="bi bi-exclamation-triangle me-2"></i><?= $_SESSION['error_message']; unset($_SESSION['error_message']); ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
-    
-    <div class="col-md-4">
-        <div class="card border-0 shadow-sm mb-3">
-            <div class="card-header bg-white">
-                <h6 class="mb-0"><i class="bi bi-info-circle me-2"></i>System Information</h6>
-            </div>
-            <div class="card-body">
-                <table class="table table-sm mb-0">
-                    <tr>
-                        <td><strong>Version:</strong></td>
-                        <td>1.0.0</td>
-                    </tr>
-                    <tr>
-                        <td><strong>PHP Version:</strong></td>
-                        <td><?= phpversion() ?></td>
-                    </tr>
-                    <tr>
-                        <td><strong>Database:</strong></td>
-                        <td><?= DB_NAME ?></td>
-                    </tr>
-                    <tr>
-                        <td><strong>Installation:</strong></td>
-                        <td><?= date('Y-m-d') ?></td>
-                    </tr>
-                </table>
-            </div>
-        </div>
-        
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-white">
-                <h6 class="mb-0"><i class="bi bi-shield-check me-2"></i>Quick Actions</h6>
-            </div>
-            <div class="card-body">
-                <div class="d-grid gap-2">
-                    <a href="backup.php" class="btn btn-outline-primary">
-                        <i class="bi bi-download me-2"></i>Backup Database
-                    </a>
-                    <a href="users.php" class="btn btn-outline-success">
-                        <i class="bi bi-people me-2"></i>Manage Users
-                    </a>
-                    <a href="?clear_cache=1" class="btn btn-outline-secondary">
-                        <i class="bi bi-arrow-clockwise me-2"></i>Clear Cache
-                    </a>
-                </div>
-            </div>
-        </div>
+<?php endif; ?>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="mb-1"><i class="bi bi-gear me-2"></i>System Settings</h4>
+        <p class="text-muted mb-0">Smooth operations are our passion—fine-tune each module from one guided console.</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="coa-management.php" class="btn btn-outline-secondary">
+            <i class="bi bi-journal-richtext me-1"></i>Chart of Accounts
+        </a>
+        <button form="settingsForm" type="submit" class="btn btn-primary">
+            <i class="bi bi-check2-circle me-1"></i>Save Changes
+        </button>
     </div>
 </div>
+
+<div class="row">
+    <div class="col-lg-3 mb-4 mb-lg-0">
+        <div class="list-group shadow-sm sticky-lg-top" style="top: 6rem;">
+            <?php foreach ($visibleSections as $key => $section): ?>
+                <button type="button" class="list-group-item list-group-item-action settings-nav-item" data-section="<?= $key ?>">
+                    <i class="bi <?= $section['icon'] ?> me-2"></i><?= $section['title'] ?>
+                </button>
+            <?php endforeach; ?>
+        </div>
+    </div>
+    <div class="col-lg-9">
+        <?php if (empty($visibleSections)): ?>
+            <div class="alert alert-warning">
+                <i class="bi bi-lock me-2"></i>No settings are available for your role. Contact an administrator if you need access.
+            </div>
+        <?php else: ?>
+        <form method="POST" id="settingsForm">
+            <input type="hidden" name="action" value="update_settings">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
+
+            <?php foreach ($visibleSections as $key => $section): ?>
+            <section class="card border-0 shadow-sm mb-4 settings-section" id="<?= $key ?>">
+                <div class="card-header bg-white border-bottom">
+                    <div class="d-flex align-items-start justify-content-between">
+                        <div>
+                            <h5 class="card-title mb-1"><i class="bi <?= $section['icon'] ?> me-2"></i><?= $section['title'] ?></h5>
+                            <p class="text-muted small mb-0"><?= $section['description'] ?></p>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" data-section="<?= $key ?>">
+                            <i class="bi bi-arrow-up"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <?php if ($key === 'client_modules'): ?>
+                        <?php if (empty($moduleCatalog)): ?>
+                            <p class="text-muted">Module catalog unavailable.</p>
+                        <?php else: ?>
+                            <?php foreach ($moduleGroups as $groupName => $groupModules): ?>
+                                <div class="mb-4">
+                                    <div class="d-flex align-items-center mb-2">
+                                        <span class="text-uppercase text-muted small fw-semibold"><?= htmlspecialchars($groupName) ?></span>
+                                        <div class="ms-2 flex-grow-1 border-top border-dashed"></div>
+                                    </div>
+                                    <div class="row g-3">
+                                        <?php foreach ($groupModules as $moduleKey => $module): ?>
+                                            <div class="col-md-6">
+                                                <div class="card border-0 shadow-sm h-100">
+                                                    <div class="card-body d-flex align-items-start justify-content-between gap-3">
+                                                        <div>
+                                                            <div class="d-flex align-items-center gap-2 mb-1">
+                                                                <i class="bi <?= htmlspecialchars($module['icon'] ?? 'bi-grid') ?> text-primary"></i>
+                                                                <span class="fw-semibold"><?= htmlspecialchars($module['label']) ?></span>
+                                                                <?php if (!empty($module['locked'])): ?>
+                                                                    <span class="badge bg-secondary">Required</span>
+                                                                <?php endif; ?>
+                                                            </div>
+                                                            <p class="text-muted small mb-0"><?= htmlspecialchars($module['description']) ?></p>
+                                                        </div>
+                                                        <div class="form-check form-switch">
+                                                            <input class="form-check-input" type="checkbox" role="switch" name="modules[<?= htmlspecialchars($moduleKey) ?>]" value="1" id="module-<?= htmlspecialchars($moduleKey) ?>" <?= !empty($module['enabled']) ? 'checked' : '' ?> <?= !empty($module['locked']) ? 'disabled' : '' ?>>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                            <div class="alert alert-info mb-0">
+                                <i class="bi bi-shield-check me-2"></i>Disabled modules fully hide their menus and routes but keep historical data safe.
+                            </div>
+                        <?php endif; ?>
+                    <?php elseif ($key === 'business_profile'): ?>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Business Name *</label>
+                                <input type="text" class="form-control" name="business_name" value="<?= htmlspecialchars($settings['business_name'] ?? '') ?>" required>
+                                <div class="form-text">Displayed on receipts, invoices, and PDF exports.</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Contact Email</label>
+                                <input type="email" class="form-control" name="business_email" value="<?= htmlspecialchars($settings['business_email'] ?? '') ?>" placeholder="support@yourbusiness.com">
+                                <div class="form-text">Customers will reply here when emailing documents.</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Phone Number</label>
+                                <input type="text" class="form-control" name="business_phone" value="<?= htmlspecialchars($settings['business_phone'] ?? '') ?>" placeholder="+254 700 000000">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Website</label>
+                                <input type="url" class="form-control" name="business_website" value="<?= htmlspecialchars($settings['business_website'] ?? '') ?>" placeholder="https://example.com">
+                            </div>
+                            <div class="col-md-12">
+                                <label class="form-label">Registered Address</label>
+                                <textarea class="form-control" name="business_address" rows="3" placeholder="Street, City, Country"><?= htmlspecialchars($settings['business_address'] ?? '') ?></textarea>
+                                <div class="form-text">Appears on receipts and delivery notes.</div>
+                            </div>
+                        </div>
+                    <?php elseif ($key === 'accounting_tax'): ?>
+                        <div class="row g-3">
+                            <div class="col-md-3">
+                                <label class="form-label">Tax Rate (%)</label>
+                                <input type="number" class="form-control" step="0.01" min="0" name="tax_rate" value="<?= htmlspecialchars($settings['tax_rate'] ?? '16') ?>">
+                                <div class="form-text">Default VAT applied to taxable items.</div>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Currency Code</label>
+                                <input type="text" class="form-control" name="currency_code" value="<?= htmlspecialchars($settings['currency_code'] ?? ($settings['currency_code'] ?? CurrencyManager::getInstance()->getCurrencyCode())) ?>" placeholder="KES" maxlength="6">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Currency Symbol</label>
+                                <input type="text" class="form-control" name="currency_symbol" value="<?= htmlspecialchars($settings['currency_symbol'] ?? CurrencyManager::getInstance()->getCurrencySymbol()) ?>" placeholder="KES">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Symbol Position</label>
+                                <?php $currencyPosition = $settings['currency_position'] ?? 'before'; ?>
+                                <select class="form-select" name="currency_position">
+                                    <option value="before" <?= $currencyPosition === 'before' ? 'selected' : '' ?>>Before amount (KES 1,000)</option>
+                                    <option value="after" <?= $currencyPosition === 'after' ? 'selected' : '' ?>>After amount (1,000 KES)</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Decimal Places</label>
+                                <input type="number" class="form-control" name="decimal_places" min="0" max="4" value="<?= htmlspecialchars($settings['decimal_places'] ?? '2') ?>">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Decimal Separator</label>
+                                <input type="text" class="form-control" name="decimal_separator" maxlength="1" value="<?= htmlspecialchars($settings['decimal_separator'] ?? '.') ?>">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Thousands Separator</label>
+                                <input type="text" class="form-control" name="thousands_separator" maxlength="1" value="<?= htmlspecialchars($settings['thousands_separator'] ?? ',') ?>">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Auto-lock Period (days)</label>
+                                <input type="number" class="form-control" min="0" name="accounting_auto_lock_days" value="<?= htmlspecialchars($settings['accounting_auto_lock_days'] ?? '0') ?>">
+                                <div class="form-text">Automatically lock journals after the given number of days. Use 0 to disable.</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Accounting Alerts Email</label>
+                                <input type="email" class="form-control" name="accounting_alert_email" value="<?= htmlspecialchars($settings['accounting_alert_email'] ?? '') ?>" placeholder="finance@yourbusiness.com">
+                                <div class="form-text">Period close summaries and exception alerts will be sent here.</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Reply-to Email for Notifications</label>
+                                <input type="email" class="form-control" name="notification_reply_to_email" value="<?= htmlspecialchars($settings['notification_reply_to_email'] ?? '') ?>">
+                                <div class="form-text">Used as the default reply-to address for automated mailers.</div>
+                            </div>
+                        </div>
+                    <?php elseif ($key === 'receipts_branding'): ?>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Receipt Header</label>
+                                <input type="text" class="form-control" name="receipt_header" value="<?= htmlspecialchars($settings['receipt_header'] ?? '') ?>" placeholder="Thank you for your business!">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Receipt Footer</label>
+                                <textarea class="form-control" name="receipt_footer" rows="2" placeholder="Return policy or contact info"><?= htmlspecialchars($settings['receipt_footer'] ?? '') ?></textarea>
+                            </div>
+                            <div class="col-md-6">
+                                <?php $showLogo = !empty($settings['receipt_show_logo']); ?>
+                                <div class="form-check form-switch mt-4">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="receiptLogoToggle" name="receipt_show_logo" <?= $showLogo ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="receiptLogoToggle">Show company logo on printed receipts</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <?php $showQr = !empty($settings['receipt_show_qr']); ?>
+                                <div class="form-check form-switch mt-4">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="receiptQRToggle" name="receipt_show_qr" <?= $showQr ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="receiptQRToggle">Include payment QR code / M-Pesa paybill</label>
+                                </div>
+                                <div class="form-text">Configure QR code content in the integrations section.</div>
+                            </div>
+                        </div>
+                    <?php elseif ($key === 'delivery_logistics'): ?>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Business Latitude</label>
+                                <input type="number" step="0.000001" class="form-control" name="business_latitude" value="<?= htmlspecialchars($settings['business_latitude'] ?? '') ?>" placeholder="-1.292066">
+                                <div class="form-text">Origin latitude used for routing and distance estimates.</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Business Longitude</label>
+                                <input type="number" step="0.000001" class="form-control" name="business_longitude" value="<?= htmlspecialchars($settings['business_longitude'] ?? '') ?>" placeholder="36.821946">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Max Active Jobs per Rider</label>
+                                <input type="number" min="1" class="form-control" name="delivery_max_active_jobs" value="<?= htmlspecialchars($settings['delivery_max_active_jobs'] ?? '3') ?>">
+                                <div class="form-text">Dispatch will avoid assigning riders beyond this active delivery count.</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Default Base Delivery Fee</label>
+                                <div class="input-group">
+                                    <span class="input-group-text"><?= htmlspecialchars($settings['currency_symbol'] ?? CurrencyManager::getInstance()->getCurrencySymbol()) ?></span>
+                                    <input type="number" class="form-control" name="delivery_base_fee" step="0.01" min="0" value="<?= htmlspecialchars($settings['delivery_base_fee'] ?? '') ?>" placeholder="50">
+                                </div>
+                                <div class="form-text">Applies when no specific pricing rule is matched.</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Per-Kilometer Rate</label>
+                                <div class="input-group">
+                                    <span class="input-group-text"><?= htmlspecialchars($settings['currency_symbol'] ?? CurrencyManager::getInstance()->getCurrencySymbol()) ?></span>
+                                    <input type="number" class="form-control" name="delivery_per_km_rate" step="0.01" min="0" value="<?= htmlspecialchars($settings['delivery_per_km_rate'] ?? '') ?>" placeholder="10">
+                                </div>
+                            </div>
+                            <div class="col-md-12">
+                                <label class="form-label">SLA Targets (minutes)</label>
+                                <div class="row g-2">
+                                    <div class="col-sm-6 col-lg-3">
+                                        <div class="input-group">
+                                            <span class="input-group-text">Pending</span>
+                                            <input type="number" min="1" class="form-control" name="delivery_sla_pending_limit" value="<?= htmlspecialchars($settings['delivery_sla_pending_limit'] ?? '15') ?>">
+                                        </div>
+                                    </div>
+                                    <div class="col-sm-6 col-lg-3">
+                                        <div class="input-group">
+                                            <span class="input-group-text">Assigned</span>
+                                            <input type="number" min="1" class="form-control" name="delivery_sla_assigned_limit" value="<?= htmlspecialchars($settings['delivery_sla_assigned_limit'] ?? '10') ?>">
+                                        </div>
+                                    </div>
+                                    <div class="col-sm-6 col-lg-3">
+                                        <div class="input-group">
+                                            <span class="input-group-text">Delivery</span>
+                                            <input type="number" min="1" class="form-control" name="delivery_sla_delivery_limit" value="<?= htmlspecialchars($settings['delivery_sla_delivery_limit'] ?? '45') ?>">
+                                        </div>
+                                    </div>
+                                    <div class="col-sm-6 col-lg-3">
+                                        <div class="input-group">
+                                            <span class="input-group-text">Slack</span>
+                                            <input type="number" min="0" class="form-control" name="delivery_sla_slack_minutes" value="<?= htmlspecialchars($settings['delivery_sla_slack_minutes'] ?? '5') ?>">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="form-text">Configure SLA thresholds for monitoring and risk alerts. Slack adds tolerance before triggering an alert.</div>
+                            </div>
+                            <div class="col-md-12">
+                                <label class="form-label">Google Distance Matrix API Key</label>
+                                <input type="text" class="form-control" name="google_maps_api_key" value="<?= htmlspecialchars($settings['google_maps_api_key'] ?? '') ?>" placeholder="AIza...">
+                                <div class="form-text">Secure the key via HTTP referrer restrictions or a proxy server.</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Distance Matrix Endpoint</label>
+                                <input type="text" class="form-control" name="google_distance_matrix_endpoint" value="<?= htmlspecialchars($settings['google_distance_matrix_endpoint'] ?? 'https://maps.googleapis.com/maps/api/distancematrix/json') ?>">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">HTTP Timeout (s)</label>
+                                <input type="number" class="form-control" name="google_distance_matrix_timeout" value="<?= htmlspecialchars($settings['google_distance_matrix_timeout'] ?? '10') ?>" min="5">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Fallback Provider</label>
+                                <?php $fallbackProvider = $settings['delivery_distance_fallback_provider'] ?? 'haversine'; ?>
+                                <select class="form-select" name="delivery_distance_fallback_provider">
+                                    <option value="haversine" <?= $fallbackProvider === 'haversine' ? 'selected' : '' ?>>Haversine Estimate</option>
+                                    <option value="manual" <?= $fallbackProvider === 'manual' ? 'selected' : '' ?>>Manual / Fixed Fee</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Cache TTL (minutes)</label>
+                                <input type="number" class="form-control" name="delivery_cache_ttl_minutes" min="5" value="<?= htmlspecialchars($settings['delivery_cache_ttl_minutes'] ?? '1440') ?>">
+                                <div class="form-text">Distance results will automatically refresh after this time.</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Soft Refresh Interval (minutes)</label>
+                                <input type="number" class="form-control" name="delivery_cache_soft_ttl_minutes" min="5" value="<?= htmlspecialchars($settings['delivery_cache_soft_ttl_minutes'] ?? '180') ?>">
+                            </div>
+                        </div>
+                    <?php elseif ($key === 'integrations_notifications'): ?>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <?php $enableWhatsApp = !empty($settings['enable_whatsapp_notifications']); ?>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="enableWhatsapp" name="enable_whatsapp_notifications" <?= $enableWhatsApp ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="enableWhatsapp">Enable WhatsApp notifications</label>
+                                </div>
+                                <div class="form-text">Requires Meta Business API credentials.</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Phone Number ID</label>
+                                <input type="text" class="form-control" name="whatsapp_phone_number_id" value="<?= htmlspecialchars($settings['whatsapp_phone_number_id'] ?? '') ?>" placeholder="1234567890">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Access Token</label>
+                                <input type="text" class="form-control" name="whatsapp_access_token" value="<?= htmlspecialchars($settings['whatsapp_access_token'] ?? '') ?>" placeholder="EAA...">
+                                <div class="form-text">Store securely—tokens expire periodically.</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Business Account ID</label>
+                                <input type="text" class="form-control" name="whatsapp_business_account_id" value="<?= htmlspecialchars($settings['whatsapp_business_account_id'] ?? '') ?>" placeholder="123456">
+                            </div>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </section>
+            <?php endforeach; ?>
+
+            <div class="d-flex justify-content-end">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check2-circle me-1"></i>Save Changes
+                </button>
+            </div>
+        </form>
+        <?php endif; ?>
+    </div>
+</div>
+
+<script>
+document.querySelectorAll('.settings-nav-item').forEach((navButton) => {
+    navButton.addEventListener('click', () => {
+        const targetId = navButton.getAttribute('data-section');
+        const section = document.getElementById(targetId);
+        if (!section) {
+            return;
+        }
+        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+});
+
+const sectionElements = Array.from(document.querySelectorAll('.settings-section'));
+const navItems = Array.from(document.querySelectorAll('.settings-nav-item'));
+
+function updateActiveNav() {
+    const scrollPosition = window.scrollY + 120;
+    let activeId = null;
+    sectionElements.forEach((section) => {
+        if (section.offsetTop <= scrollPosition) {
+            activeId = section.id;
+        }
+    });
+
+    navItems.forEach((item) => {
+        if (item.getAttribute('data-section') === activeId) {
+            item.classList.add('active');
+        } else {
+            item.classList.remove('active');
+        }
+    });
+}
+
+updateActiveNav();
+window.addEventListener('scroll', updateActiveNav);
+</script>
 
 <?php include 'includes/footer.php'; ?>

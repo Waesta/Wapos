@@ -45,9 +45,15 @@ try {
         'success' => true,
         'data' => [
             'distance_km' => $pricing['distance_km'],
+            'duration_minutes' => $pricing['duration_minutes'],
             'calculated_fee' => $pricing['calculated_fee'],
-            'base_fee' => $pricing['base_fee'],
-            'zone' => $pricing['zone'],
+            'fee_components' => $pricing['fee_components'] ?? null,
+            'rule' => $pricing['rule'] ?? null,
+            'provider' => $pricing['provider'] ?? null,
+            'cache_hit' => $pricing['cache_hit'] ?? false,
+            'fallback_used' => $pricing['fallback_used'] ?? false,
+            'metadata' => $pricing['metadata'] ?? [],
+            'audit_request_id' => $pricing['audit_request_id'] ?? null,
         ]
     ]);
 } catch (Throwable $e) {

@@ -65,265 +65,347 @@ $shiftOrders = $db->fetchOne("
 ", [$userId, $shiftStart]) ?: ['count' => 0, 'total' => 0];
 ?>
 
-<div class="container-fluid py-4">
-    <!-- Page Header -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h2 class="mb-1"><i class="bi bi-person-badge me-2"></i>Waiter Dashboard</h2>
-            <p class="text-muted mb-0">Welcome back, <?= htmlspecialchars($auth->getUser()['full_name'] ?? 'User') ?>!</p>
+<style>
+    .waiter-shell {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-xl);
+    }
+    .waiter-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        align-items: center;
+        gap: var(--spacing-md);
+    }
+    .waiter-toolbar h1 {
+        margin: 0;
+        font-size: var(--text-2xl);
+    }
+    .waiter-toolbar p {
+        margin: 0;
+        color: var(--color-text-muted);
+    }
+    .waiter-metrics {
+        display: grid;
+        gap: var(--spacing-md);
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    }
+    .waiter-metric-card {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        background: var(--color-surface);
+        box-shadow: var(--shadow-sm);
+        padding: var(--spacing-md);
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+    }
+    .waiter-metric-card h3 {
+        font-size: var(--text-2xl);
+        margin: 0;
+    }
+    .waiter-metric-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: var(--radius-pill);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: var(--text-lg);
+    }
+    .waiter-quick-actions {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        background: var(--color-surface);
+        box-shadow: var(--shadow-sm);
+        padding: var(--spacing-md);
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-md);
+    }
+    .waiter-quick-actions .action-grid {
+        display: grid;
+        gap: var(--spacing-sm);
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    }
+    .waiter-layout {
+        display: grid;
+        gap: var(--spacing-lg);
+    }
+    @media (min-width: 1200px) {
+        .waiter-layout {
+            grid-template-columns: minmax(0, 7fr) minmax(0, 4fr);
+        }
+    }
+    .waiter-card {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        background: var(--color-surface);
+        box-shadow: var(--shadow-sm);
+        display: flex;
+        flex-direction: column;
+    }
+    .waiter-card header {
+        padding: var(--spacing-md);
+        border-bottom: 1px solid var(--color-border-subtle);
+    }
+    .waiter-card header h5,
+    .waiter-card header h6 {
+        margin: 0;
+    }
+    .waiter-card .card-body {
+        padding: var(--spacing-md);
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-md);
+    }
+    .waiter-active-grid {
+        display: grid;
+        gap: var(--spacing-md);
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    }
+    .waiter-active-card {
+        border: 1px solid var(--color-border-subtle);
+        border-radius: var(--radius-md);
+        padding: var(--spacing-md);
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+        background: var(--color-surface-subtle);
+    }
+    .waiter-active-card[data-status="ready"] {
+        border-left: 4px solid var(--color-success-500);
+    }
+    .waiter-active-card[data-status="preparing"] {
+        border-left: 4px solid var(--color-info-500);
+    }
+    .waiter-active-card[data-status="pending"] {
+        border-left: 4px solid var(--color-warning-500);
+    }
+    .waiter-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+    }
+    .waiter-list-item {
+        border: 1px solid var(--color-border-subtle);
+        border-radius: var(--radius-md);
+        padding: var(--spacing-sm) var(--spacing-md);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .waiter-tables {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
+    }
+    .waiter-tables .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+    }
+</style>
+
+<div class="waiter-shell container-fluid py-4">
+    <section class="waiter-toolbar">
+        <div class="stack-sm">
+            <h1><i class="bi bi-person-badge me-2"></i>Waiter Dashboard</h1>
+            <p>Welcome back, <?= htmlspecialchars($auth->getUser()['full_name'] ?? 'User') ?>! Your shift insights are below.</p>
         </div>
-        <div>
+        <div class="d-flex flex-wrap gap-2">
+            <a href="../restaurant.php" class="btn btn-primary btn-icon btn-lg">
+                <i class="bi bi-plus-circle"></i>New Order
+            </a>
+            <a href="../restaurant-reservations.php" class="btn btn-outline-secondary btn-icon">
+                <i class="bi bi-calendar-event"></i>Reservations
+            </a>
+        </div>
+    </section>
+
+    <section class="waiter-metrics">
+        <article class="waiter-metric-card">
+            <div class="d-flex justify-content-between align-items-start">
+                <div class="stack-xs">
+                    <span class="text-muted text-uppercase small">Today's Orders</span>
+                    <h3><?= (int)($todayOrders['count'] ?? 0) ?></h3>
+                </div>
+                <span class="waiter-metric-icon bg-success bg-opacity-10 text-success">
+                    <i class="bi bi-receipt"></i>
+                </span>
+            </div>
+            <span class="text-muted small"><i class="bi bi-cash-coin me-1"></i><?= formatMoney($todayOrders['total'] ?? 0) ?></span>
+        </article>
+        <article class="waiter-metric-card">
+            <div class="d-flex justify-content-between align-items-start">
+                <div class="stack-xs">
+                    <span class="text-muted text-uppercase small">Active Orders</span>
+                    <h3><?= count($activeOrders) ?></h3>
+                </div>
+                <span class="waiter-metric-icon bg-warning bg-opacity-10 text-warning">
+                    <i class="bi bi-hourglass-split"></i>
+                </span>
+            </div>
+            <span class="text-muted small"><i class="bi bi-alarm me-1"></i>Needs attention</span>
+        </article>
+        <article class="waiter-metric-card">
+            <div class="d-flex justify-content-between align-items-start">
+                <div class="stack-xs">
+                    <span class="text-muted text-uppercase small">Shift (8h)</span>
+                    <h3><?= (int)($shiftOrders['count'] ?? 0) ?></h3>
+                </div>
+                <span class="waiter-metric-icon bg-primary bg-opacity-10 text-primary">
+                    <i class="bi bi-clock"></i>
+                </span>
+            </div>
+            <span class="text-muted small"><i class="bi bi-cash me-1"></i><?= formatMoney($shiftOrders['total'] ?? 0) ?></span>
+        </article>
+        <article class="waiter-metric-card">
+            <div class="d-flex justify-content-between align-items-start">
+                <div class="stack-xs">
+                    <span class="text-muted text-uppercase small">Tables Free</span>
+                    <h3><?= count($availableTables) ?></h3>
+                </div>
+                <span class="waiter-metric-icon bg-info bg-opacity-10 text-info">
+                    <i class="bi bi-table"></i>
+                </span>
+            </div>
+            <span class="text-muted small"><i class="bi bi-check-circle me-1"></i>Ready to seat</span>
+        </article>
+    </section>
+
+    <section class="waiter-quick-actions">
+        <header class="stack-xs">
+            <h5 class="mb-0"><i class="bi bi-lightning-charge me-2"></i>Quick Actions</h5>
+            <span class="text-muted small">Jump straight into the tools you use every shift.</span>
+        </header>
+        <div class="action-grid">
             <a href="../restaurant.php" class="btn btn-primary btn-lg">
                 <i class="bi bi-plus-circle me-2"></i>New Order
             </a>
+            <a href="../manage-tables.php" class="btn btn-outline-success btn-lg">
+                <i class="bi bi-table me-2"></i>Manage Tables
+            </a>
+            <a href="../kitchen-display.php" class="btn btn-outline-warning btn-lg">
+                <i class="bi bi-fire me-2"></i>Kitchen Display
+            </a>
+            <a href="../customers.php" class="btn btn-outline-info btn-lg">
+                <i class="bi bi-people me-2"></i>Customers
+            </a>
         </div>
-    </div>
+    </section>
 
-    <!-- Stats Summary Cards -->
-    <div class="row g-3 mb-4">
-        <!-- Today's Orders -->
-        <div class="col-md-3">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-start mb-3">
-                        <div>
-                            <p class="text-muted mb-1 small">Today's Orders</p>
-                            <h3 class="mb-0"><?= $todayOrders['count'] ?></h3>
-                        </div>
-                        <div class="bg-success bg-opacity-10 p-3 rounded">
-                            <i class="bi bi-receipt text-success fs-4"></i>
-                        </div>
+    <section class="waiter-layout">
+        <article class="waiter-card">
+            <header>
+                <h5 class="mb-0"><i class="bi bi-hourglass-split me-2"></i>Active Orders</h5>
+            </header>
+            <div class="card-body">
+                <?php if (empty($activeOrders)): ?>
+                    <div class="text-center text-muted py-5">
+                        <i class="bi bi-check-circle fs-1 text-success"></i>
+                        <p class="mt-3 mb-0">All tickets cleared — nice work!</p>
                     </div>
-                    <small class="text-muted">
-                        <i class="bi bi-cash me-1"></i><?= formatMoney($todayOrders['total']) ?>
-                    </small>
-                </div>
-            </div>
-        </div>
-
-        <!-- Active Orders -->
-        <div class="col-md-3">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-start mb-3">
-                        <div>
-                            <p class="text-muted mb-1 small">Active Orders</p>
-                            <h3 class="mb-0"><?= count($activeOrders) ?></h3>
-                        </div>
-                        <div class="bg-warning bg-opacity-10 p-3 rounded">
-                            <i class="bi bi-hourglass-split text-warning fs-4"></i>
-                        </div>
-                    </div>
-                    <small class="text-muted">
-                        <i class="bi bi-clock me-1"></i>Needs attention
-                    </small>
-                </div>
-            </div>
-        </div>
-
-        <!-- This Shift -->
-        <div class="col-md-3">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-start mb-3">
-                        <div>
-                            <p class="text-muted mb-1 small">This Shift (8h)</p>
-                            <h3 class="mb-0"><?= $shiftOrders['count'] ?></h3>
-                        </div>
-                        <div class="bg-primary bg-opacity-10 p-3 rounded">
-                            <i class="bi bi-clock text-primary fs-4"></i>
-                        </div>
-                    </div>
-                    <small class="text-muted">
-                        <i class="bi bi-cash me-1"></i><?= formatMoney($shiftOrders['total']) ?>
-                    </small>
-                </div>
-            </div>
-        </div>
-
-        <!-- Available Tables -->
-        <div class="col-md-3">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-start mb-3">
-                        <div>
-                            <p class="text-muted mb-1 small">Available Tables</p>
-                            <h3 class="mb-0"><?= count($availableTables) ?></h3>
-                        </div>
-                        <div class="bg-info bg-opacity-10 p-3 rounded">
-                            <i class="bi bi-table text-info fs-4"></i>
-                        </div>
-                    </div>
-                    <small class="text-muted">
-                        <i class="bi bi-check-circle me-1"></i>Ready to serve
-                    </small>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Quick Actions -->
-    <div class="row g-3 mb-4">
-        <div class="col-12">
-            <div class="card border-0 shadow-sm">
-                <div class="card-body">
-                    <h5 class="card-title mb-3"><i class="bi bi-lightning-charge me-2"></i>Quick Actions</h5>
-                    <div class="row g-2">
-                        <div class="col-md-3">
-                            <a href="../restaurant.php" class="btn btn-primary w-100 btn-lg">
-                                <i class="bi bi-plus-circle me-2"></i>New Order
-                            </a>
-                        </div>
-                        <div class="col-md-3">
-                            <a href="../manage-tables.php" class="btn btn-outline-success w-100">
-                                <i class="bi bi-table me-2"></i>Manage Tables
-                            </a>
-                        </div>
-                        <div class="col-md-3">
-                            <a href="../kitchen-display.php" class="btn btn-outline-warning w-100">
-                                <i class="bi bi-fire me-2"></i>Kitchen Display
-                            </a>
-                        </div>
-                        <div class="col-md-3">
-                            <a href="../customers.php" class="btn btn-outline-info w-100">
-                                <i class="bi bi-people me-2"></i>Customers
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="row g-3">
-        <!-- Active Orders -->
-        <div class="col-lg-8">
-            <div class="card border-0 shadow-sm">
-                <div class="card-header bg-white py-3">
-                    <h5 class="mb-0"><i class="bi bi-hourglass-split me-2"></i>Active Orders</h5>
-                </div>
-                <div class="card-body">
-                    <?php if (empty($activeOrders)): ?>
-                        <div class="text-center py-5 text-muted">
-                            <i class="bi bi-check-circle fs-1 d-block mb-3 text-success"></i>
-                            <h5>No Active Orders</h5>
-                            <p class="mb-0">All orders are completed. Great job!</p>
-                        </div>
-                    <?php else: ?>
-                        <div class="row g-3">
-                            <?php foreach ($activeOrders as $order): ?>
-                                <div class="col-md-6">
-                                    <div class="card border-start border-4 <?= $order['status'] === 'ready' ? 'border-success' : 'border-warning' ?>">
-                                        <div class="card-body">
-                                            <div class="d-flex justify-content-between align-items-start mb-2">
-                                                <div>
-                                                    <h6 class="mb-1">Order #<?= str_pad($order['id'], 4, '0', STR_PAD_LEFT) ?></h6>
-                                                    <small class="text-muted">
-                                                        <?php if ($order['table_number']): ?>
-                                                            <i class="bi bi-table me-1"></i>Table <?= $order['table_number'] ?>
-                                                        <?php elseif ($order['room_name']): ?>
-                                                            <i class="bi bi-door-open me-1"></i><?= htmlspecialchars($order['room_name']) ?>
-                                                        <?php endif; ?>
-                                                    </small>
-                                                </div>
-                                                <?php
-                                                $statusColors = [
-                                                    'pending' => 'warning',
-                                                    'preparing' => 'info',
-                                                    'ready' => 'success'
-                                                ];
-                                                $color = $statusColors[$order['status']] ?? 'secondary';
-                                                ?>
-                                                <span class="badge bg-<?= $color ?>">
-                                                    <?= ucfirst($order['status']) ?>
-                                                </span>
-                                            </div>
-                                            <div class="d-flex justify-content-between align-items-center">
-                                                <strong><?= formatMoney($order['total_amount']) ?></strong>
-                                                <small class="text-muted">
-                                                    <?= date('h:i A', strtotime($order['created_at'])) ?>
-                                                </small>
-                                            </div>
-                                            <?php if ($order['status'] === 'ready'): ?>
-                                                <div class="mt-2">
-                                                    <a href="../restaurant-payment.php?order_id=<?= $order['id'] ?>" 
-                                                       class="btn btn-sm btn-success w-100">
-                                                        <i class="bi bi-cash me-1"></i>Process Payment
-                                                    </a>
-                                                </div>
+                <?php else: ?>
+                    <div class="waiter-active-grid">
+                        <?php foreach ($activeOrders as $order): ?>
+                            <?php
+                                $statusColors = [
+                                    'pending' => 'warning',
+                                    'preparing' => 'info',
+                                    'ready' => 'success'
+                                ];
+                                $statusColor = $statusColors[$order['status']] ?? 'secondary';
+                                $orderLabel = sprintf('#%04d', $order['id']);
+                            ?>
+                            <div class="waiter-active-card" data-status="<?= htmlspecialchars($order['status']) ?>">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div class="stack-xs">
+                                        <span class="fw-semibold">Order <?= $orderLabel ?></span>
+                                        <small class="text-muted">
+                                            <?php if (!empty($order['table_number'])): ?>
+                                                <i class="bi bi-table me-1"></i>Table <?= htmlspecialchars($order['table_number']) ?>
+                                            <?php elseif (!empty($order['room_name'])): ?>
+                                                <i class="bi bi-door-open me-1"></i><?= htmlspecialchars($order['room_name']) ?>
+                                            <?php else: ?>
+                                                Takeout
                                             <?php endif; ?>
-                                        </div>
+                                        </small>
                                     </div>
+                                    <span class="app-status" data-color="<?= $statusColor ?>"><?= ucfirst($order['status']) ?></span>
                                 </div>
-                            <?php endforeach; ?>
-                        </div>
-                    <?php endif; ?>
-                </div>
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <strong><?= formatMoney($order['total_amount'] ?? 0) ?></strong>
+                                    <small class="text-muted"><i class="bi bi-clock me-1"></i><?= date('h:i A', strtotime($order['created_at'])) ?></small>
+                                </div>
+                                <?php if ($order['status'] === 'ready'): ?>
+                                    <a href="../restaurant-payment.php?order_id=<?= $order['id'] ?>" class="btn btn-success btn-sm w-100">
+                                        <i class="bi bi-cash me-1"></i>Process Payment
+                                    </a>
+                                <?php endif; ?>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
             </div>
-        </div>
+        </article>
 
-        <!-- Recent Orders & Available Tables -->
-        <div class="col-lg-4">
-            <!-- Recent Orders -->
-            <div class="card border-0 shadow-sm mb-3">
-                <div class="card-header bg-white py-3">
+        <div class="stack-lg">
+            <article class="waiter-card">
+                <header>
                     <h6 class="mb-0"><i class="bi bi-clock-history me-2"></i>Recent Orders</h6>
-                </div>
+                </header>
                 <div class="card-body">
                     <?php if (empty($recentOrders)): ?>
-                        <div class="text-center py-3 text-muted">
-                            <p class="mb-0 small">No recent orders</p>
+                        <div class="text-center text-muted py-3">
+                            <p class="mb-0">No recent orders yet.</p>
                         </div>
                     <?php else: ?>
-                        <div class="list-group list-group-flush">
+                        <div class="waiter-list">
                             <?php foreach ($recentOrders as $order): ?>
-                                <div class="list-group-item px-0">
-                                    <div class="d-flex justify-content-between align-items-start">
-                                        <div>
-                                            <h6 class="mb-1">#<?= str_pad($order['id'], 4, '0', STR_PAD_LEFT) ?></h6>
-                                            <small class="text-muted">
-                                                <?= date('h:i A', strtotime($order['created_at'])) ?>
-                                            </small>
-                                        </div>
-                                        <div class="text-end">
-                                            <strong class="d-block"><?= formatMoney($order['total_amount']) ?></strong>
-                                            <span class="badge bg-<?= $order['status'] === 'completed' ? 'success' : 'secondary' ?> badge-sm">
-                                                <?= ucfirst($order['status']) ?>
-                                            </span>
-                                        </div>
+                                <?php $orderLabel = sprintf('#%04d', $order['id']); ?>
+                                <div class="waiter-list-item">
+                                    <div class="stack-xs">
+                                        <span class="fw-semibold"><?= $orderLabel ?></span>
+                                        <small class="text-muted"><?= date('h:i A', strtotime($order['created_at'])) ?></small>
+                                    </div>
+                                    <div class="text-end">
+                                        <strong><?= formatMoney($order['total_amount'] ?? 0) ?></strong>
+                                        <span class="app-status ms-2" data-color="<?= $order['status'] === 'completed' ? 'success' : 'secondary' ?>">
+                                            <?= ucfirst($order['status']) ?>
+                                        </span>
                                     </div>
                                 </div>
                             <?php endforeach; ?>
                         </div>
                     <?php endif; ?>
                 </div>
-            </div>
+            </article>
 
-            <!-- Available Tables -->
-            <div class="card border-0 shadow-sm">
-                <div class="card-header bg-white py-3">
-                    <h6 class="mb-0"><i class="bi bi-table me-2"></i>Available Tables</h6>
-                </div>
+            <article class="waiter-card">
+                <header>
+                    <h6 class="mb-0"><i class="bi bi-table me-2"></i>Free Tables</h6>
+                </header>
                 <div class="card-body">
                     <?php if (empty($availableTables)): ?>
-                        <div class="text-center py-3 text-muted">
-                            <p class="mb-0 small">All tables are occupied</p>
+                        <div class="text-center text-muted py-3">
+                            <p class="mb-0">All tables are currently seated.</p>
                         </div>
                     <?php else: ?>
-                        <div class="d-flex flex-wrap gap-2">
+                        <div class="waiter-tables">
                             <?php foreach ($availableTables as $table): ?>
-                                <a href="../restaurant.php?table_id=<?= $table['id'] ?>" 
-                                   class="btn btn-outline-success btn-sm">
-                                    Table <?= $table['table_number'] ?>
-                                    <small class="text-muted">(<?= $table['capacity'] ?>)</small>
+                                <a href="../restaurant.php?table_id=<?= $table['id'] ?>" class="btn btn-outline-success btn-sm">
+                                    <i class="bi bi-person-plus"></i>Table <?= htmlspecialchars($table['table_number']) ?>
+                                    <span class="text-muted">(<?= (int)$table['capacity'] ?>)</span>
                                 </a>
                             <?php endforeach; ?>
                         </div>
                     <?php endif; ?>
                 </div>
-            </div>
+            </article>
         </div>
-    </div>
+    </section>
 </div>
 
 <?php include '../includes/footer.php'; ?>

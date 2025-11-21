@@ -2,44 +2,24 @@
 require_once '../includes/bootstrap.php';
 $auth->requireLogin();
 
-$db = Database::getInstance();
-$bookingId = $_GET['id'] ?? 0;
+use App\Services\RoomBookingService;
+
+$database = Database::getInstance();
+$pdo = $database->getConnection();
+$bookingService = new RoomBookingService($pdo);
+
+$bookingId = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+
+if ($bookingId <= 0) {
+    $_SESSION['error_message'] = 'Invalid booking selected for check-out.';
+    header('Location: ../rooms.php');
+    exit;
+}
 
 try {
-    $db->beginTransaction();
-    
-    // Get booking
-    $booking = $db->fetchOne("SELECT * FROM bookings WHERE id = ?", [$bookingId]);
-    
-    if (!$booking) {
-        throw new Exception('Booking not found');
-    }
-    
-    // Update booking
-    $db->update('bookings',
-        [
-            'booking_status' => 'checked-out',
-            'check_out_time' => date('Y-m-d H:i:s'),
-            'payment_status' => 'paid'
-        ],
-        'id = :id',
-        ['id' => $bookingId]
-    );
-    
-    // Update room
-    $db->update('rooms',
-        ['status' => 'available'],
-        'id = :id',
-        ['id' => $booking['room_id']]
-    );
-    
-    $db->commit();
-    
-    // Redirect to invoice
+    $bookingService->checkOut($bookingId, (int)$auth->getUserId());
     header('Location: ../room-invoice.php?booking_id=' . $bookingId);
-    
 } catch (Exception $e) {
-    $db->rollback();
     $_SESSION['error_message'] = 'Check-out failed: ' . $e->getMessage();
     header('Location: ../rooms.php');
 }

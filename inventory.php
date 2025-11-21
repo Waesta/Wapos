@@ -188,15 +188,18 @@ include 'includes/header.php';
     </div>
 <?php endif; ?>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 mb-4">
     <div>
         <h4 class="mb-0">
             <i class="bi bi-boxes me-2"></i>Inventory Management
         </h4>
-        <p class="text-muted mb-0">Stock control, movements, and purchase orders</p>
+        <small class="text-muted">Stock control, movements, and purchase orders</small>
     </div>
-    <div>
-        <button class="btn btn-primary me-2" data-bs-toggle="modal" data-bs-target="#stockAdjustmentModal">
+    <div class="d-flex flex-wrap gap-2">
+        <button class="btn btn-outline-secondary" onclick="location.href='products.php'">
+            <i class="bi bi-box-seam me-2"></i>Catalog
+        </button>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#stockAdjustmentModal">
             <i class="bi bi-plus-circle me-2"></i>Stock Adjustment
         </button>
         <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#purchaseOrderModal">
@@ -208,19 +211,19 @@ include 'includes/header.php';
 <!-- Inventory Overview Cards -->
 <div class="row g-3 mb-4">
     <div class="col-md-3">
-        <div class="card border-0 shadow-sm">
-            <div class="card-body text-center">
-                <i class="bi bi-exclamation-triangle text-warning fs-1 mb-2"></i>
-                <h3 class="text-warning"><?= count($lowStockProducts) ?></h3>
-                <p class="text-muted mb-0">Low Stock Items</p>
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <small class="text-muted text-uppercase">Low Stock Items</small>
+                <h3 class="mb-0 text-warning"><?= count($lowStockProducts) ?></h3>
+                <span class="badge bg-warning-subtle text-warning mt-2">Watchlist</span>
             </div>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="card border-0 shadow-sm">
-            <div class="card-body text-center">
-                <i class="bi bi-arrow-up-circle text-success fs-1 mb-2"></i>
-                <h3 class="text-success">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <small class="text-muted text-uppercase">Stock In Today</small>
+                <h3 class="mb-0 text-success">
                     <?php
                     try {
                         $inMovements = $db->fetchOne("SELECT COUNT(*) as count FROM stock_movements WHERE movement_type = 'in' AND DATE(created_at) = CURDATE()");
@@ -230,15 +233,15 @@ include 'includes/header.php';
                     }
                     ?>
                 </h3>
-                <p class="text-muted mb-0">Stock In Today</p>
+                <span class="badge bg-success-subtle text-success mt-2">Receipts</span>
             </div>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="card border-0 shadow-sm">
-            <div class="card-body text-center">
-                <i class="bi bi-arrow-down-circle text-danger fs-1 mb-2"></i>
-                <h3 class="text-danger">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <small class="text-muted text-uppercase">Stock Out Today</small>
+                <h3 class="mb-0 text-danger">
                     <?php
                     try {
                         $outMovements = $db->fetchOne("SELECT COUNT(*) as count FROM stock_movements WHERE movement_type IN ('out', 'damaged') AND DATE(created_at) = CURDATE()");
@@ -248,15 +251,15 @@ include 'includes/header.php';
                     }
                     ?>
                 </h3>
-                <p class="text-muted mb-0">Stock Out Today</p>
+                <span class="badge bg-danger-subtle text-danger mt-2">Issues</span>
             </div>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="card border-0 shadow-sm">
-            <div class="card-body text-center">
-                <i class="bi bi-currency-dollar text-info fs-1 mb-2"></i>
-                <h3 class="text-info">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <small class="text-muted text-uppercase">Total Stock Value</small>
+                <h3 class="mb-0 text-info">
                     <?php
                     try {
                         $totalValue = $db->fetchOne("SELECT SUM(stock_quantity * cost_price) as total FROM products WHERE is_active = 1");
@@ -266,7 +269,88 @@ include 'includes/header.php';
                     }
                     ?>
                 </h3>
-                <p class="text-muted mb-0">Total Stock Value</p>
+                <span class="badge bg-info-subtle text-info mt-2">On Hand</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Insights Tab -->
+    <div class="tab-pane fade" id="insights">
+        <div class="row g-3">
+            <div class="col-lg-6">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-white">
+                        <h6 class="mb-0">Top Movers (7 days)</h6>
+                    </div>
+                    <div class="card-body">
+                        <?php
+                        $topMovers = $db->fetchAll("
+                            SELECT p.name, p.sku,
+                                   SUM(CASE WHEN sm.movement_type = 'in' THEN sm.quantity ELSE 0 END) AS total_in,
+                                   SUM(CASE WHEN sm.movement_type IN ('out','damaged') THEN sm.quantity ELSE 0 END) AS total_out
+                            FROM stock_movements sm
+                            JOIN products p ON sm.product_id = p.id
+                            WHERE sm.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+                            GROUP BY sm.product_id
+                            ORDER BY total_out DESC
+                            LIMIT 5
+                        ") ?: [];
+                        ?>
+                        <?php if (!empty($topMovers)): ?>
+                        <ul class="list-group list-group-flush">
+                            <?php foreach ($topMovers as $mover): ?>
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <strong><?= htmlspecialchars($mover['name']) ?></strong>
+                                    <div class="small text-muted"><?= htmlspecialchars($mover['sku']) ?></div>
+                                </div>
+                                <div class="text-end">
+                                    <span class="badge bg-success-subtle text-success">In: <?= (float)$mover['total_in'] ?></span>
+                                    <span class="badge bg-danger-subtle text-danger ms-2">Out: <?= (float)$mover['total_out'] ?></span>
+                                </div>
+                            </li>
+                            <?php endforeach; ?>
+                        </ul>
+                        <?php else: ?>
+                            <p class="text-muted mb-0">Not enough movement data this week.</p>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-white">
+                        <h6 class="mb-0">Reorder Recommendations</h6>
+                    </div>
+                    <div class="card-body">
+                        <?php if (!empty($lowStockProducts)): ?>
+                        <div class="table-responsive" style="max-height:240px;">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Product</th>
+                                        <th>Current</th>
+                                        <th>Reorder</th>
+                                        <th>Suggested Qty</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach (array_slice($lowStockProducts, 0, 10) as $product): ?>
+                                    <tr>
+                                        <td><?= htmlspecialchars($product['name']) ?></td>
+                                        <td><?= $product['stock_quantity'] ?></td>
+                                        <td><?= $product['reorder_level'] ?></td>
+                                        <td><?= $product['reorder_quantity'] ?: max(1, $product['reorder_level'] * 2) ?></td>
+                                    </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                        <?php else: ?>
+                            <p class="text-muted mb-0">All products are above reorder levels.</p>
+                        <?php endif; ?>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -274,16 +358,21 @@ include 'includes/header.php';
 
 <!-- Low Stock Alert -->
 <?php if (!empty($lowStockProducts)): ?>
-<div class="alert alert-warning">
-    <h5><i class="bi bi-exclamation-triangle me-2"></i>Low Stock Alert</h5>
-    <p>The following items are running low and may need reordering:</p>
-    <div class="row">
-        <?php foreach (array_slice($lowStockProducts, 0, 6) as $product): ?>
-        <div class="col-md-4 mb-2">
-            <strong><?= htmlspecialchars($product['name']) ?></strong><br>
-            <small>Current: <?= $product['stock_quantity'] ?> | Reorder at: <?= $product['reorder_level'] ?></small>
+<div class="alert alert-warning border-0 shadow-sm">
+    <div class="d-flex align-items-start gap-3">
+        <i class="bi bi-exclamation-triangle-fill fs-3"></i>
+        <div>
+            <h5 class="mb-1">Low Stock Alert</h5>
+            <p class="mb-2">The following items are running low and may need reordering:</p>
+            <div class="row g-2">
+                <?php foreach (array_slice($lowStockProducts, 0, 6) as $product): ?>
+                <div class="col-md-4">
+                    <strong><?= htmlspecialchars($product['name']) ?></strong><br>
+                    <small class="text-muted">Current: <?= $product['stock_quantity'] ?> | Reorder at: <?= $product['reorder_level'] ?></small>
+                </div>
+                <?php endforeach; ?>
+            </div>
         </div>
-        <?php endforeach; ?>
     </div>
 </div>
 <?php endif; ?>
@@ -310,18 +399,41 @@ include 'includes/header.php';
             <i class="bi bi-building me-2"></i>Suppliers
         </button>
     </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#insights">
+            <i class="bi bi-bar-chart-line me-2"></i>Insights
+        </button>
+    </li>
 </ul>
 
 <div class="tab-content">
     <!-- Stock Levels Tab -->
     <div class="tab-pane fade show active" id="stock-levels">
         <div class="card border-0 shadow-sm">
-            <div class="card-header bg-white">
+            <div class="card-header bg-white d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
                 <h6 class="mb-0">Current Stock Levels</h6>
+                <div class="d-flex flex-wrap gap-2">
+                    <div class="input-group input-group-sm" style="max-width:220px;">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text" class="form-control" id="inventorySearch" placeholder="Search product or SKU">
+                    </div>
+                    <select class="form-select form-select-sm" id="inventoryCategoryFilter" style="max-width:180px;">
+                        <option value="">All Categories</option>
+                        <?php foreach ($categories as $category): ?>
+                        <option value="<?= htmlspecialchars($category['name']) ?>"><?= htmlspecialchars($category['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <select class="form-select form-select-sm" id="inventoryStatusFilter" style="max-width:160px;">
+                        <option value="">All Status</option>
+                        <option value="normal">Normal</option>
+                        <option value="low stock">Low Stock</option>
+                        <option value="out of stock">Out of Stock</option>
+                    </select>
+                </div>
             </div>
             <div class="card-body">
                 <div class="table-responsive">
-                    <table class="table table-hover">
+                    <table class="table table-hover" id="inventoryTable">
                         <thead>
                             <tr>
                                 <th>Product</th>
@@ -357,7 +469,7 @@ include 'includes/header.php';
                                     $statusClass = 'warning';
                                 }
                             ?>
-                            <tr>
+                            <tr data-search="<?= htmlspecialchars(strtolower($product['name'] . ' ' . $product['sku'])) ?>" data-category="<?= htmlspecialchars($product['category_name'] ?? '') ?>" data-status="<?= $status ?>">
                                 <td>
                                     <strong><?= htmlspecialchars($product['name']) ?></strong><br>
                                     <small class="text-muted"><?= htmlspecialchars($product['sku']) ?></small>
@@ -385,6 +497,9 @@ include 'includes/header.php';
                             <?php endforeach; ?>
                         </tbody>
                     </table>
+                    <div id="inventoryEmptyState" class="alert alert-info text-center" style="display:none;">
+                        No products match the selected filters.
+                    </div>
                 </div>
             </div>
         </div>
@@ -393,8 +508,11 @@ include 'includes/header.php';
     <!-- Stock Movements Tab -->
     <div class="tab-pane fade" id="movements">
         <div class="card border-0 shadow-sm">
-            <div class="card-header bg-white">
+            <div class="card-header bg-white d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
                 <h6 class="mb-0">Recent Stock Movements</h6>
+                <button class="btn btn-sm btn-outline-secondary" onclick="window.open('export-stock-movements.php', '_blank')">
+                    <i class="bi bi-download"></i> Export CSV
+                </button>
             </div>
             <div class="card-body">
                 <div class="table-responsive">
@@ -690,6 +808,56 @@ include 'includes/header.php';
 
 <script>
 let poItems = [];
+
+function editSupplier(id) {
+    window.location.href = 'supplier-management.php?id=' + id;
+}
+
+const inventorySearchInput = document.getElementById('inventorySearch');
+const inventoryCategoryFilter = document.getElementById('inventoryCategoryFilter');
+const inventoryStatusFilter = document.getElementById('inventoryStatusFilter');
+const inventoryRows = Array.from(document.querySelectorAll('#inventoryTable tbody tr'));
+const inventoryEmptyState = document.getElementById('inventoryEmptyState');
+
+function filterInventory() {
+    const searchTerm = (inventorySearchInput?.value || '').trim().toLowerCase();
+    const category = (inventoryCategoryFilter?.value || '').toLowerCase();
+    const status = (inventoryStatusFilter?.value || '');
+
+    let visible = 0;
+
+    inventoryRows.forEach(row => {
+        const matchesSearch = !searchTerm || (row.dataset.search || '').includes(searchTerm);
+        const matchesCategory = !category || (row.dataset.category || '').toLowerCase() === category;
+        const matchesStatus = !status || (row.dataset.status || '') === status;
+
+        if (matchesSearch && matchesCategory && matchesStatus) {
+            row.style.display = '';
+            visible++;
+        } else {
+            row.style.display = 'none';
+        }
+    });
+
+    if (inventoryEmptyState) {
+        inventoryEmptyState.style.display = visible === 0 ? '' : 'none';
+    }
+}
+
+function debounce(fn, delay) {
+    let timeout;
+    return (...args) => {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => fn.apply(this, args), delay);
+    };
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    inventorySearchInput?.addEventListener('input', debounce(filterInventory, 150));
+    inventoryCategoryFilter?.addEventListener('change', filterInventory);
+    inventoryStatusFilter?.addEventListener('change', filterInventory);
+    filterInventory();
+});
 
 function addPOItem() {
     const productSelect = document.querySelector('.po-product');

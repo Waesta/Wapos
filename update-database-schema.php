@@ -16,6 +16,34 @@ try {
     
     $created = [];
     $errors = [];
+
+    // Ensure users.role enum includes all operational roles
+    $roleValues = [
+        'admin',
+        'manager',
+        'accountant',
+        'cashier',
+        'waiter',
+        'inventory_manager',
+        'rider',
+        'frontdesk',
+        'housekeeping_manager',
+        'housekeeping_staff',
+        'maintenance_manager',
+        'maintenance_staff',
+        'technician',
+        'engineer',
+        'developer'
+    ];
+
+    $enumList = "'" . implode("','", array_map(fn($role) => addslashes($role), $roleValues)) . "'";
+    try {
+        $pdo->exec("ALTER TABLE users MODIFY COLUMN role ENUM($enumList) NOT NULL DEFAULT 'cashier'");
+        echo "<p style='color: green;'>✅ users.role enum synchronized</p>";
+    } catch (Exception $e) {
+        echo "<p style='color: orange;'>⚠️ Unable to alter users.role enum: " . htmlspecialchars($e->getMessage()) . "</p>";
+        $errors[] = "users.role enum: " . $e->getMessage();
+    }
     
     // 1. Stock Management Tables
     echo "<h2>📦 Stock Management Tables</h2>";
@@ -425,7 +453,10 @@ try {
         ['settings', 'System Settings', 'System configuration and preferences'],
         ['rooms', 'Room Management', 'Hotel room bookings and management'],
         ['restaurant', 'Restaurant Operations', 'Table service and kitchen management'],
-        ['delivery', 'Delivery Management', 'Order delivery and logistics']
+        ['delivery', 'Delivery Management', 'Order delivery and logistics'],
+        ['housekeeping', 'Housekeeping', 'Scheduling, room status, and task execution'],
+        ['maintenance', 'Maintenance', 'Issue tracking, technician dispatch, and resolution'],
+        ['frontdesk', 'Front Desk', 'Guest services, check-ins, and concierge workflows']
     ];
     
     foreach ($defaultModules as $module) {
@@ -437,6 +468,69 @@ try {
         }
     }
     echo "<p style='color: green;'>✅ Default permission modules inserted</p>";
+
+    // Default Permission Actions per module
+    $moduleActionDefinitions = [
+        'pos' => [
+            ['view', 'View POS', 'View POS transactions and reports'],
+            ['create', 'Create Sale', 'Create new POS transactions'],
+            ['update', 'Update Sale', 'Modify existing POS transactions'],
+            ['refund', 'Issue Refunds', 'Process POS refunds'],
+            ['void', 'Void Sale', 'Void POS transactions']
+        ],
+        'inventory' => [
+            ['view', 'View Inventory', 'View stock levels and movements'],
+            ['create', 'Create Inventory Entry', 'Add new inventory records'],
+            ['update', 'Update Inventory', 'Modify inventory records'],
+            ['adjust_inventory', 'Adjust Inventory', 'Execute stock adjustments']
+        ],
+        'housekeeping' => [
+            ['view', 'View Tasks', 'Access housekeeping dashboards and tasks'],
+            ['create', 'Create Task', 'Create new housekeeping tasks'],
+            ['update', 'Update Task', 'Update housekeeping tasks'],
+            ['assign', 'Assign Task', 'Assign or reassign housekeeping tasks'],
+            ['complete', 'Complete Task', 'Mark housekeeping tasks complete']
+        ],
+        'maintenance' => [
+            ['view', 'View Requests', 'Access maintenance requests'],
+            ['create', 'Create Request', 'Log new maintenance issues'],
+            ['update', 'Update Request', 'Update maintenance request details'],
+            ['assign', 'Assign Request', 'Assign maintenance requests to staff'],
+            ['resolve', 'Resolve Request', 'Mark maintenance requests resolved']
+        ],
+        'frontdesk' => [
+            ['view', 'View Front Desk', 'Access front desk dashboards'],
+            ['create', 'Create Record', 'Create guest or stay records'],
+            ['update', 'Update Record', 'Update guest or stay records']
+        ],
+        'users' => [
+            ['view', 'View Users', 'View user directory'],
+            ['create', 'Create User', 'Create new user accounts'],
+            ['update', 'Update User', 'Update existing user accounts'],
+            ['change_permissions', 'Change Permissions', 'Adjust user/group permissions']
+        ]
+    ];
+
+    $getModuleIdStmt = $pdo->prepare("SELECT id FROM permission_modules WHERE module_key = ?");
+    $insertActionStmt = $pdo->prepare("INSERT INTO permission_actions (module_id, action_key, action_name, description, is_active) VALUES (?, ?, ?, ?, 1) ON DUPLICATE KEY UPDATE action_name = VALUES(action_name), description = VALUES(description), is_active = VALUES(is_active)");
+
+    foreach ($moduleActionDefinitions as $moduleKey => $actions) {
+        if (!$getModuleIdStmt->execute([$moduleKey])) {
+            continue;
+        }
+        $moduleId = $getModuleIdStmt->fetchColumn();
+        if (!$moduleId) {
+            continue;
+        }
+        foreach ($actions as $action) {
+            [$actionKey, $actionName, $description] = $action;
+            try {
+                $insertActionStmt->execute([$moduleId, $actionKey, $actionName, $description]);
+            } catch (Exception $e) {
+                $errors[] = "permission_actions ({$moduleKey}:{$actionKey}) " . $e->getMessage();
+            }
+        }
+    }
     
     // Default Room Types
     $defaultRoomTypes = [

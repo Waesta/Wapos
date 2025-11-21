@@ -26,10 +26,162 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
     <style>
         :root {
             --sidebar-width: 250px;
+
+            /* Primary palette */
+            --color-primary: #0d6efd;
+            --color-primary-dark: #0a58ca;
+            --color-secondary: #6c757d;
+            --color-success: #198754;
+            --color-info: #0dcaf0;
+            --color-warning: #ffc107;
+            --color-danger: #dc3545;
+
+            /* Neutral palette */
+            --color-surface: #ffffff;
+            --color-surface-alt: #f1f3f5;
+            --color-background: #f8f9fa;
+            --color-border: #dee2e6;
+            --color-border-strong: #c0c4cc;
+            --color-text: #1f2933;
+            --color-text-muted: #6c757d;
+            --color-text-inverse: #ffffff;
+
+            /* Shadows & elevation */
+            --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.08);
+            --shadow-sm: 0 2px 6px rgba(15, 23, 42, 0.08);
+            --shadow-md: 0 12px 32px rgba(15, 23, 42, 0.12);
+
+            /* Radius */
+            --radius-sm: 0.35rem;
+            --radius-md: 0.5rem;
+            --radius-lg: 0.75rem;
+
+            /* Spacing scale */
+            --spacing-2xs: 0.125rem;
+            --spacing-xs: 0.25rem;
+            --spacing-sm: 0.5rem;
+            --spacing-md: 1rem;
+            --spacing-lg: 1.5rem;
+            --spacing-xl: 2rem;
+
+            /* Typography scale */
+            --font-base: "Inter", "Segoe UI", system-ui, sans-serif;
+            --text-xs: 0.75rem;
+            --text-sm: 0.875rem;
+            --text-md: 0.95rem;
+            --text-lg: 1.125rem;
+            --text-xl: 1.5rem;
+            --text-display: 2rem;
+            --line-tight: 1.2;
+            --line-normal: 1.45;
+
+            /* Motion */
+            --transition-base: 0.2s ease;
         }
         body {
-            font-size: 0.9rem;
+            font-family: var(--font-base);
+            font-size: var(--text-md);
+            color: var(--color-text);
+            background-color: var(--color-background);
+            line-height: var(--line-normal);
         }
+        h1, h2, h3, h4, h5, h6 {
+            line-height: var(--line-tight);
+            font-weight: 600;
+            color: var(--color-text);
+        }
+        h1 { font-size: var(--text-display); }
+        h2 { font-size: 1.75rem; }
+        h3 { font-size: 1.5rem; }
+        h4 { font-size: 1.25rem; }
+        h5 { font-size: var(--text-lg); }
+        h6 { font-size: var(--text-sm); text-transform: uppercase; letter-spacing: 0.04em; }
+        .text-muted { color: var(--color-text-muted) !important; }
+        .fw-semibold { font-weight: 600 !important; }
+
+        .app-card {
+            background: var(--color-surface);
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-sm);
+            border: 1px solid var(--color-border);
+            padding: var(--spacing-md);
+        }
+        .app-card[data-elevation="md"] { box-shadow: var(--shadow-md); }
+        .app-card-header {
+            margin-bottom: var(--spacing-sm);
+        }
+        .app-table {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-md);
+            overflow: hidden;
+            box-shadow: var(--shadow-sm);
+        }
+        .app-table table {
+            margin-bottom: 0;
+        }
+        .app-table thead {
+            background-color: #f1f3f5;
+            color: #212529;
+        }
+        .app-table tbody tr:hover {
+            background-color: rgba(13, 110, 253, 0.05);
+        }
+        .app-table .table > :not(caption) > * > * {
+            padding: 0.75rem 1rem;
+            vertical-align: middle;
+        }
+
+        .app-status {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--spacing-xs);
+            padding: 0.35rem 0.65rem;
+            border-radius: var(--radius-sm);
+            font-size: var(--text-xs);
+            font-weight: 600;
+        }
+        .app-status[data-color="primary"] { background: rgba(13,110,253,0.12); color: var(--color-primary); }
+        .app-status[data-color="success"] { background: rgba(25,135,84,0.12); color: var(--color-success); }
+        .app-status[data-color="warning"] { background: rgba(255,193,7,0.18); color: #b88600; }
+        .app-status[data-color="danger"] { background: rgba(220,53,69,0.12); color: var(--color-danger); }
+        .app-status[data-color="info"] { background: rgba(13,202,240,0.12); color: #087990; }
+        .btn-icon {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--spacing-xs);
+        }
+        .btn {
+            font-weight: 500;
+            transition: transform var(--transition-base), box-shadow var(--transition-base);
+        }
+        .btn:focus-visible {
+            outline: 2px solid var(--color-primary);
+            outline-offset: 2px;
+        }
+        .btn-icon:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-xs);
+        }
+        .section-heading {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: var(--spacing-sm);
+            margin-bottom: var(--spacing-md);
+        }
+        .stack-md { display: flex; flex-direction: column; gap: var(--spacing-md); }
+        .stack-lg { display: flex; flex-direction: column; gap: var(--spacing-lg); }
+        .stack-sm { display: flex; flex-direction: column; gap: var(--spacing-sm); }
+        .stack-sm > * + * { margin-top: 0; }
+        .badge-soft {
+            border-radius: var(--radius-sm);
+            padding: 0.35rem 0.6rem;
+            font-size: var(--text-xs);
+            font-weight: 600;
+        }
+
         .sidebar {
             position: fixed;
             top: 0;
@@ -45,18 +197,119 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
         .main-content {
             margin-left: var(--sidebar-width);
             min-height: 100vh;
-            background: #f8f9fa;
+            background: var(--color-background);
+        }
+        .sidebar-brand-title {
+            color: #fdfdff;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .sidebar-brand-title .brand-icon {
+            color: #9ec5ff;
+            font-size: 1.35rem;
+        }
+        .sidebar-brand-subtitle {
+            color: rgba(255,255,255,0.85);
+            letter-spacing: 0.02em;
+        }
+        .sidebar-nav {
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing-sm);
+            padding: var(--spacing-sm) 0 var(--spacing-lg);
+        }
+        .nav-group {
+            padding: 0 var(--spacing-sm);
+            border-radius: var(--radius-md);
+        }
+        .nav-group + .nav-group {
+            border-top: 1px solid rgba(255,255,255,0.08);
+            padding-top: var(--spacing-sm);
+            margin-top: var(--spacing-sm);
+        }
+        .nav-group-toggle {
+            width: 100%;
+            border: 0;
+            background: transparent;
+            color: rgba(255,255,255,0.7);
+            font-size: var(--text-xs);
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+            padding: var(--spacing-xs) var(--spacing-sm);
+        }
+        .nav-group.open .nav-group-toggle {
+            color: #ffffff;
+        }
+        .nav-group-toggle i {
+            transition: transform 0.2s ease;
+        }
+        .nav-group.open .nav-group-toggle i {
+            transform: rotate(180deg);
+        }
+        .nav-group-items {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.25s ease;
+        }
+        .nav-group.open .nav-group-items {
+            max-height: 500px;
         }
         .sidebar .nav-link {
-            color: rgba(255,255,255,0.8);
-            padding: 12px 20px;
-            border-radius: 0;
-            transition: all 0.3s ease;
+            color: rgba(255,255,255,0.82);
+            padding: 10px 16px;
+            border-radius: var(--radius-sm);
+            margin: 0 4px;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: var(--text-sm);
+            transition: background 0.2s ease, transform 0.2s ease;
         }
-        .sidebar .nav-link:hover,
+        .sidebar .nav-link .nav-label {
+            flex: 1;
+        }
+        .sidebar .nav-link .nav-badge {
+            font-size: var(--text-xs);
+            background: rgba(255,255,255,0.16);
+            padding: 0.1rem 0.45rem;
+            border-radius: 999px;
+        }
+        .sidebar .nav-link:hover {
+            background: rgba(255,255,255,0.12);
+            color: #ffffff;
+            transform: translateX(2px);
+        }
         .sidebar .nav-link.active {
-            background: rgba(255,255,255,0.1);
-            color: white;
+            background: rgba(13,110,253,0.2);
+            color: #ffffff;
+        }
+        .sidebar-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.45);
+            backdrop-filter: blur(2px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            z-index: 999;
+        }
+        .sidebar-overlay.show {
+            opacity: 1;
+            pointer-events: all;
+        }
+        body.sidebar-open {
+            overflow: hidden;
         }
         .top-bar {
             background: white;
@@ -65,6 +318,16 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: var(--spacing-md);
+        }
+        .top-bar-title {
+            display: flex;
+            flex-direction: column;
+        }
+        .top-bar-actions {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
         }
         @media (max-width: 768px) {
             .sidebar {
@@ -83,181 +346,437 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
 <body>
 
 <?php if (isset($auth) && $auth->isLoggedIn()): ?>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
     <!-- Sidebar -->
-    <div class="sidebar">
-        <div class="p-3 border-bottom">
-            <h5 class="mb-0"><i class="bi bi-shop me-2"></i><?= APP_NAME ?></h5>
-            <small class="text-light opacity-75">Point of Sale System</small>
-        </div>
-        
-        <nav class="nav flex-column">
-            <?php $userRole = $auth->getUser()['role'] ?? 'guest'; ?>
-            
-            <!-- Dashboard (All roles) -->
-            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'index.php' ? ' active' : '' ?>" href="/wapos/index.php">
-                <i class="bi bi-speedometer2 me-2"></i>Dashboard
-            </a>
-            
-            <?php if (in_array($userRole, ['admin', 'manager', 'cashier'])): ?>
-            <!-- POS (Admin, Manager, Cashier) -->
-            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'pos.php' ? ' active' : '' ?>" href="/wapos/pos.php">
-                <i class="bi bi-cart-plus me-2"></i>Retail POS
-            </a>
-            <?php endif; ?>
-            
-            <?php if (in_array($userRole, ['admin', 'manager', 'waiter', 'cashier'])): ?>
-            <!-- Restaurant Operations (Admin, Manager, Waiter, Cashier) -->
-            <div class="mt-3 px-3">
-                <small class="text-white-50 text-uppercase fw-bold">Restaurant</small>
-            </div>
-            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'restaurant.php' ? ' active' : '' ?>" href="/wapos/restaurant.php">
-                <i class="bi bi-cup-hot me-2"></i>Orders
-            </a>
-            <?php if (in_array($userRole, ['admin', 'manager'])): ?>
-            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'kitchen-display.php' ? ' active' : '' ?>" href="/wapos/kitchen-display.php">
-                <i class="bi bi-fire me-2"></i>Kitchen Display
-            </a>
-            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'manage-tables.php' ? ' active' : '' ?>" href="/wapos/manage-tables.php">
-                <i class="bi bi-table me-2"></i>Manage Tables
-            </a>
-            <?php endif; ?>
-            <?php endif; ?>
-            
-            <?php if (in_array($userRole, ['admin', 'manager', 'rider'])): ?>
-            <!-- Delivery (Admin, Manager, Rider) -->
-            <div class="mt-3 px-3">
-                <small class="text-white-50 text-uppercase fw-bold">Delivery</small>
-            </div>
-            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'delivery.php' ? ' active' : '' ?>" href="/wapos/delivery.php">
-                <i class="bi bi-truck me-2"></i>Deliveries
-            </a>
-            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'enhanced-delivery-tracking.php' ? ' active' : '' ?>" href="/wapos/enhanced-delivery-tracking.php">
-                <i class="bi bi-geo-alt me-2"></i>Tracking
-            </a>
-            <?php endif; ?>
-            
-            <?php if (in_array($userRole, ['admin', 'manager'])): ?>
-            <!-- Management Tools (Admin, Manager) -->
-            <div class="mt-3 px-3">
-                <small class="text-white-50 text-uppercase fw-bold">Management</small>
-            </div>
-            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'void-order-management.php' ? ' active' : '' ?>" href="/wapos/void-order-management.php">
-                <i class="bi bi-x-circle me-2"></i>Void Orders
-            </a>
-            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'void-reports.php' ? ' active' : '' ?>" href="/wapos/void-reports.php">
-                <i class="bi bi-file-bar-graph me-2"></i>Void Reports
-            </a>
-            <?php if ($userRole === 'admin'): ?>
-            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'void-settings.php' ? ' active' : '' ?>" href="/wapos/void-settings.php">
-                <i class="bi bi-sliders me-2"></i>Void Settings
-            </a>
-            <?php endif; ?>
-            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'rooms.php' ? ' active' : '' ?>" href="/wapos/rooms.php">
-                <i class="bi bi-building me-2"></i>Rooms
-            </a>
-            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'locations.php' ? ' active' : '' ?>" href="/wapos/locations.php">
-                <i class="bi bi-geo-alt me-2"></i>Locations
-            </a>
-            <?php endif; ?>
-            
-            <?php if (in_array($userRole, ['admin', 'manager', 'inventory_manager', 'cashier'])): ?>
-            <!-- Inventory (Admin, Manager, Inventory Manager, Cashier) -->
-            <div class="mt-3 px-3">
-                <small class="text-white-50 text-uppercase fw-bold">Inventory</small>
-            </div>
-            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'products.php' ? ' active' : '' ?>" href="/wapos/products.php">
-                <i class="bi bi-box me-2"></i>Products
-            </a>
-            <?php if (in_array($userRole, ['admin', 'manager', 'inventory_manager'])): ?>
-            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'inventory.php' ? ' active' : '' ?>" href="/wapos/inventory.php">
-                <i class="bi bi-boxes me-2"></i>Inventory
-            </a>
-            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'goods-received.php' ? ' active' : '' ?>" href="/wapos/goods-received.php">
-                <i class="bi bi-truck me-2"></i>Goods Received
-            </a>
-            <?php endif; ?>
-            <?php endif; ?>
-            
-            <?php if (in_array($userRole, ['admin', 'manager', 'cashier', 'accountant'])): ?>
-            <!-- Sales (Admin, Manager, Cashier, Accountant) -->
-            <div class="mt-3 px-3">
-                <small class="text-white-50 text-uppercase fw-bold">Sales</small>
-            </div>
-            <?php if (in_array($userRole, ['admin', 'manager', 'cashier'])): ?>
-            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'customers.php' ? ' active' : '' ?>" href="/wapos/customers.php">
-                <i class="bi bi-people me-2"></i>Customers
-            </a>
-            <?php endif; ?>
-            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'sales.php' ? ' active' : '' ?>" href="/wapos/sales.php">
-                <i class="bi bi-receipt me-2"></i>Sales History
-            </a>
-            <?php endif; ?>
-            
-            <?php if (in_array($userRole, ['admin', 'manager', 'accountant'])): ?>
-            <!-- Financial Management (Admin, Manager, Accountant) -->
-            <div class="mt-3 px-3">
-                <small class="text-white-50 text-uppercase fw-bold">Finance</small>
-            </div>
-            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'accounting.php' ? ' active' : '' ?>" href="/wapos/accounting.php">
-                <i class="bi bi-calculator me-2"></i>Accounting
-            </a>
-            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'reports.php' ? ' active' : '' ?>" href="/wapos/reports.php">
-                <i class="bi bi-file-earmark-text me-2"></i>Reports
-            </a>
-            <?php if (in_array($userRole, ['admin', 'accountant'])): ?>
-            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'profit-and-loss.php' ? ' active' : '' ?>" href="/wapos/reports/profit-and-loss.php">
-                <i class="bi bi-journal-text me-2"></i>Profit & Loss
-            </a>
-            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'balance-sheet.php' ? ' active' : '' ?>" href="/wapos/reports/balance-sheet.php">
-                <i class="bi bi-clipboard-data me-2"></i>Balance Sheet
-            </a>
-            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'sales-tax-report.php' ? ' active' : '' ?>" href="/wapos/reports/sales-tax-report.php">
-                <i class="bi bi-file-spreadsheet me-2"></i>Tax Report
-            </a>
-            <?php endif; ?>
-            <?php endif; ?>
-            
-            
-            <?php if ($userRole === 'admin'): ?>
-            <!-- System Administration (Admin Only) -->
-            <div class="mt-3 px-3">
-                <small class="text-white-50 text-uppercase fw-bold">Administration</small>
-            </div>
-            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'users.php' ? ' active' : '' ?>" href="/wapos/users.php">
-                <i class="bi bi-person-gear me-2"></i>Users
-            </a>
-            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'permissions.php' ? ' active' : '' ?>" href="/wapos/permissions.php">
-                <i class="bi bi-shield-lock me-2"></i>Permissions
-            </a>
-            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'system-health.php' ? ' active' : '' ?>" href="/wapos/system-health.php">
-                <i class="bi bi-heart-pulse me-2"></i>System Health
-            </a>
-            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'settings.php' ? ' active' : '' ?>" href="/wapos/settings.php">
-                <i class="bi bi-gear me-2"></i>Settings
-            </a>
-            <a class="nav-link<?= basename($_SERVER['PHP_SELF']) == 'currency-settings.php' ? ' active' : '' ?>" href="/wapos/currency-settings.php">
-                <i class="bi bi-currency-exchange me-2"></i>Currency
-            </a>
-            <?php endif; ?>
-        </nav>
-    </div>
-    
-    <!-- Main Content -->
-    <div class="main-content">
-        <div class="top-bar">
+    <aside class="sidebar" id="appSidebar" aria-label="Primary Navigation">
+        <div class="p-3 border-bottom d-flex justify-content-between align-items-center">
             <div>
-                <h4 class="mb-0"><?= isset($pageTitle) ? $pageTitle : 'Dashboard' ?></h4>
-                <small class="text-muted"><?= date('l, F j, Y') ?></small>
+                <h5 class="mb-0 sidebar-brand-title">
+                    <i class="bi bi-shop brand-icon"></i>
+                    <?= APP_NAME ?>
+                </h5>
+                <small class="sidebar-brand-subtitle">Point of Sale System</small>
             </div>
-            <div class="dropdown">
-                <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                    <i class="bi bi-person-circle me-2"></i><?= $auth->getUser()['username'] ?? 'User' ?>
+            <button class="btn btn-outline-light d-md-none" type="button" id="sidebarCloseBtn" aria-label="Close navigation">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+
+        <nav class="sidebar-nav" id="sidebarNav">
+            <?php
+                $userRole = $auth->getRole() ?? 'guest';
+                $currentPage = basename($_SERVER['PHP_SELF']);
+                $systemManager = SystemManager::getInstance();
+                $privilegedRoles = ['super_admin', 'developer'];
+                $isPrivileged = in_array($userRole, $privilegedRoles, true);
+                $navGroups = [
+                    'core' => [
+                        'label' => 'Core',
+                        'items' => [
+                            [
+                                'roles' => 'all',
+                                'href' => '/wapos/index.php',
+                                'page' => 'index.php',
+                                'icon' => 'bi-speedometer2',
+                                'label' => 'Dashboard'
+                            ],
+                            [
+                                'roles' => ['admin','manager','cashier'],
+                                'href' => '/wapos/pos.php',
+                                'page' => 'pos.php',
+                                'icon' => 'bi-cart-plus',
+                                'label' => 'Retail POS',
+                                'module' => 'pos'
+                            ]
+                        ]
+                    ],
+                    'restaurant' => [
+                        'label' => 'Restaurant',
+                        'items' => [
+                            [
+                                'roles' => ['admin','manager','waiter','cashier'],
+                                'href' => '/wapos/restaurant.php',
+                                'page' => 'restaurant.php',
+                                'icon' => 'bi-cup-hot',
+                                'label' => 'Orders',
+                                'module' => 'restaurant'
+                            ],
+                            [
+                                'roles' => ['admin','manager','waiter'],
+                                'href' => '/wapos/restaurant-reservations.php',
+                                'page' => 'restaurant-reservations.php',
+                                'icon' => 'bi-calendar-event',
+                                'label' => 'Reservations',
+                                'module' => 'restaurant'
+                            ],
+                            [
+                                'roles' => ['admin','manager'],
+                                'href' => '/wapos/kitchen-display.php',
+                                'page' => 'kitchen-display.php',
+                                'icon' => 'bi-fire',
+                                'label' => 'Kitchen Display',
+                                'module' => 'restaurant'
+                            ],
+                            [
+                                'roles' => ['admin','manager'],
+                                'href' => '/wapos/manage-tables.php',
+                                'page' => 'manage-tables.php',
+                                'icon' => 'bi-table',
+                                'label' => 'Manage Tables',
+                                'module' => 'restaurant'
+                            ]
+                        ]
+                    ],
+                    'delivery' => [
+                        'label' => 'Delivery',
+                        'items' => [
+                            [
+                                'roles' => ['admin','manager','rider'],
+                                'href' => '/wapos/delivery.php',
+                                'page' => 'delivery.php',
+                                'icon' => 'bi-truck',
+                                'label' => 'Deliveries',
+                                'module' => 'delivery'
+                            ],
+                            [
+                                'roles' => ['admin','manager','rider'],
+                                'href' => '/wapos/enhanced-delivery-tracking.php',
+                                'page' => 'enhanced-delivery-tracking.php',
+                                'icon' => 'bi-geo-alt',
+                                'label' => 'Tracking',
+                                'module' => 'delivery'
+                            ],
+                            [
+                                'roles' => ['admin','developer'],
+                                'href' => '/wapos/delivery-pricing.php',
+                                'page' => 'delivery-pricing.php',
+                                'icon' => 'bi-cash-coin',
+                                'label' => 'Pricing Rules',
+                                'module' => 'delivery'
+                            ]
+                        ]
+                    ],
+                    'management' => [
+                        'label' => 'Management',
+                        'items' => [
+                            [
+                                'roles' => ['admin','manager'],
+                                'href' => '/wapos/void-order-management.php',
+                                'page' => 'void-order-management.php',
+                                'icon' => 'bi-x-circle',
+                                'label' => 'Void Orders',
+                                'module' => 'sales'
+                            ],
+                            [
+                                'roles' => ['admin','manager'],
+                                'href' => '/wapos/void-reports.php',
+                                'page' => 'void-reports.php',
+                                'icon' => 'bi-file-bar-graph',
+                                'label' => 'Void Reports',
+                                'module' => 'sales'
+                            ],
+                            [
+                                'roles' => ['admin'],
+                                'href' => '/wapos/void-settings.php',
+                                'page' => 'void-settings.php',
+                                'icon' => 'bi-sliders',
+                                'label' => 'Void Settings',
+                                'module' => 'sales'
+                            ],
+                            [
+                                'roles' => ['admin','manager'],
+                                'href' => '/wapos/rooms.php',
+                                'page' => 'rooms.php',
+                                'icon' => 'bi-building',
+                                'label' => 'Rooms',
+                                'module' => 'rooms'
+                            ],
+                            [
+                                'roles' => ['admin','manager'],
+                                'href' => '/wapos/locations.php',
+                                'page' => 'locations.php',
+                                'icon' => 'bi-geo-alt',
+                                'label' => 'Locations',
+                                'module' => 'locations'
+                            ]
+                        ]
+                    ],
+                    'housekeeping' => [
+                        'label' => 'Housekeeping',
+                        'items' => [
+                            [
+                                'roles' => ['admin','manager','housekeeping_manager','housekeeping_staff','housekeeper','housekeeping','frontdesk'],
+                                'href' => '/wapos/housekeeping.php',
+                                'page' => 'housekeeping.php',
+                                'icon' => 'bi-broom',
+                                'label' => 'Housekeeping Board',
+                                'module' => 'housekeeping'
+                            ]
+                        ]
+                    ],
+                    'maintenance' => [
+                        'label' => 'Maintenance',
+                        'items' => [
+                            [
+                                'roles' => ['admin','manager','maintenance_manager','maintenance_staff','maintenance','technician','engineer','frontdesk'],
+                                'href' => '/wapos/maintenance.php',
+                                'page' => 'maintenance.php',
+                                'icon' => 'bi-tools',
+                                'label' => 'Maintenance Desk',
+                                'module' => 'maintenance'
+                            ]
+                        ]
+                    ],
+                    'inventory' => [
+                        'label' => 'Inventory',
+                        'items' => [
+                            [
+                                'roles' => ['admin','manager','inventory_manager','cashier'],
+                                'href' => '/wapos/products.php',
+                                'page' => 'products.php',
+                                'icon' => 'bi-box',
+                                'label' => 'Products',
+                                'module' => 'inventory'
+                            ],
+                            [
+                                'roles' => ['admin','manager','inventory_manager'],
+                                'href' => '/wapos/inventory.php',
+                                'page' => 'inventory.php',
+                                'icon' => 'bi-boxes',
+                                'label' => 'Inventory',
+                                'module' => 'inventory'
+                            ],
+                            [
+                                'roles' => ['admin','manager','inventory_manager'],
+                                'href' => '/wapos/goods-received.php',
+                                'page' => 'goods-received.php',
+                                'icon' => 'bi-truck',
+                                'label' => 'Goods Received',
+                                'module' => 'inventory'
+                            ]
+                        ]
+                    ],
+                    'sales' => [
+                        'label' => 'Sales',
+                        'items' => [
+                            [
+                                'roles' => ['admin','manager','cashier'],
+                                'href' => '/wapos/customers.php',
+                                'page' => 'customers.php',
+                                'icon' => 'bi-people',
+                                'label' => 'Customers',
+                                'module' => 'customers'
+                            ],
+                            [
+                                'roles' => ['admin','manager','cashier','accountant'],
+                                'href' => '/wapos/sales.php',
+                                'page' => 'sales.php',
+                                'icon' => 'bi-receipt',
+                                'label' => 'Sales History',
+                                'module' => 'sales'
+                            ],
+                            [
+                                'roles' => ['admin','manager','cashier'],
+                                'href' => '/wapos/register-reports.php',
+                                'page' => 'register-reports.php',
+                                'icon' => 'bi-journal-check',
+                                'label' => 'Register Reports',
+                                'module' => 'sales'
+                            ],
+                            [
+                                'roles' => ['admin','manager'],
+                                'href' => '/wapos/manage-promotions.php',
+                                'page' => 'manage-promotions.php',
+                                'icon' => 'bi-stars',
+                                'label' => 'Promotions',
+                                'module' => 'sales'
+                            ],
+                            [
+                                'roles' => ['admin','manager'],
+                                'href' => '/wapos/receipt-settings.php',
+                                'page' => 'receipt-settings.php',
+                                'icon' => 'bi-receipt-cutoff',
+                                'label' => 'Receipt Settings',
+                                'module' => 'sales'
+                            ]
+                        ]
+                    ],
+                    'finance' => [
+                        'label' => 'Finance',
+                        'items' => [
+                            [
+                                'roles' => ['admin','manager','accountant'],
+                                'href' => '/wapos/accounting.php',
+                                'page' => 'accounting.php',
+                                'icon' => 'bi-calculator',
+                                'label' => 'Accounting',
+                                'module' => 'accounting'
+                            ],
+                            [
+                                'roles' => ['admin','manager','accountant'],
+                                'href' => '/wapos/reports.php',
+                                'page' => 'reports.php',
+                                'icon' => 'bi-file-earmark-text',
+                                'label' => 'Reports',
+                                'module' => 'reports'
+                            ],
+                            [
+                                'roles' => ['admin','accountant'],
+                                'href' => '/wapos/reports/profit-and-loss.php',
+                                'page' => 'profit-and-loss.php',
+                                'icon' => 'bi-journal-text',
+                                'label' => 'Profit & Loss',
+                                'module' => 'reports'
+                            ],
+                            [
+                                'roles' => ['admin','accountant'],
+                                'href' => '/wapos/reports/balance-sheet.php',
+                                'page' => 'balance-sheet.php',
+                                'icon' => 'bi-clipboard-data',
+                                'label' => 'Balance Sheet',
+                                'module' => 'reports'
+                            ],
+                            [
+                                'roles' => ['admin','accountant'],
+                                'href' => '/wapos/reports/sales-tax-report.php',
+                                'page' => 'sales-tax-report.php',
+                                'icon' => 'bi-file-spreadsheet',
+                                'label' => 'Tax Report',
+                                'module' => 'reports'
+                            ]
+                        ]
+                    ],
+                    'admin' => [
+                        'label' => 'Administration',
+                        'items' => [
+                            [
+                                'roles' => ['admin'],
+                                'href' => '/wapos/users.php',
+                                'page' => 'users.php',
+                                'icon' => 'bi-person-gear',
+                                'label' => 'Users',
+                                'module' => 'users'
+                            ],
+                            [
+                                'roles' => ['admin'],
+                                'href' => '/wapos/permissions.php',
+                                'page' => 'permissions.php',
+                                'icon' => 'bi-shield-lock',
+                                'label' => 'Permissions',
+                                'module' => 'users'
+                            ],
+                            [
+                                'roles' => ['admin'],
+                                'href' => '/wapos/system-health.php',
+                                'page' => 'system-health.php',
+                                'icon' => 'bi-heart-pulse',
+                                'label' => 'System Health',
+                                'module' => 'settings'
+                            ],
+                            [
+                                'roles' => ['admin'],
+                                'href' => '/wapos/settings.php',
+                                'page' => 'settings.php',
+                                'icon' => 'bi-gear',
+                                'label' => 'Settings',
+                                'module' => 'settings'
+                            ],
+                            [
+                                'roles' => ['admin'],
+                                'href' => '/wapos/currency-settings.php',
+                                'page' => 'currency-settings.php',
+                                'icon' => 'bi-currency-exchange',
+                                'label' => 'Currency',
+                                'module' => 'settings'
+                            ]
+                        ]
+                    ]
+                ];
+
+                foreach ($navGroups as $groupKey => $group) {
+                    if ($isPrivileged) {
+                        $visibleItems = array_map(function ($item) {
+                            $item['hidden'] = false;
+                            return $item;
+                        }, $group['items']);
+                    } else {
+                        $visibleItems = array_filter($group['items'], function ($item) use ($userRole, $systemManager) {
+                            if ($item['roles'] === 'all') {
+                                $roleAllowed = true;
+                            } else {
+                                $roleAllowed = in_array($userRole, $item['roles'], true);
+                            }
+
+                            if (empty($item['module'])) {
+                                $moduleAllowed = true;
+                            } else {
+                                $moduleAllowed = $systemManager->isModuleEnabled($item['module']);
+                            }
+
+                            return $roleAllowed && $moduleAllowed;
+                        });
+                    }
+
+                    if (empty($visibleItems)) {
+                        continue;
+                    }
+
+                    $isGroupActive = $isPrivileged;
+                    if (!$isGroupActive) {
+                        foreach ($visibleItems as $item) {
+                            if ($item['page'] === $currentPage) {
+                                $isGroupActive = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    $groupId = 'nav-group-' . preg_replace('/[^a-z0-9\-]/i', '-', $groupKey);
+            ?>
+            <div class="nav-group <?= $isGroupActive ? 'open' : '' ?>" data-group-id="<?= htmlspecialchars($groupId) ?>">
+                <button class="nav-group-toggle" type="button" aria-expanded="<?= $isGroupActive ? 'true' : 'false' ?>" data-target="#<?= htmlspecialchars($groupId) ?>">
+                    <i class="bi bi-chevron-down"></i>
+                    <span><?= htmlspecialchars($group['label']) ?></span>
                 </button>
-                <ul class="dropdown-menu">
-                    <li><a class="dropdown-item" href="/wapos/settings.php"><i class="bi bi-gear me-2"></i>Settings</a></li>
-                    <li><hr class="dropdown-divider"></li>
-                    <li><a class="dropdown-item" href="/wapos/logout.php"><i class="bi bi-box-arrow-right me-2"></i>Logout</a></li>
-                </ul>
+                <div class="nav-group-items" id="<?= htmlspecialchars($groupId) ?>">
+                    <?php foreach ($visibleItems as $item): ?>
+                        <a class="nav-link<?= $item['page'] === $currentPage ? ' active' : '' ?>" href="<?= htmlspecialchars($item['href']) ?>">
+                            <i class="bi <?= htmlspecialchars($item['icon']) ?>"></i>
+                            <span class="nav-label"><?= htmlspecialchars($item['label']) ?></span>
+                            <?php if (!empty($item['badge'])): ?>
+                                <span class="nav-badge"><?= htmlspecialchars($item['badge']) ?></span>
+                            <?php endif; ?>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php } ?>
+        </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="main-content" id="mainContent">
+        <div class="top-bar">
+            <div class="d-flex align-items-center gap-3">
+                <button class="btn btn-outline-primary d-md-none" type="button" id="sidebarToggleBtn" aria-label="Toggle navigation">
+                    <i class="bi bi-list"></i>
+                </button>
+                <div class="top-bar-title">
+                    <h4 class="mb-0"><?= isset($pageTitle) ? htmlspecialchars($pageTitle) : 'Dashboard' ?></h4>
+                    <small class="text-muted"><?= date('l, F j, Y') ?></small>
+                </div>
+            </div>
+            <div class="top-bar-actions">
+                <div class="dropdown">
+                    <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                        <i class="bi bi-person-circle me-2"></i><?= htmlspecialchars($auth->getUser()['username'] ?? 'User') ?>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" href="/wapos/settings.php"><i class="bi bi-gear me-2"></i>Settings</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="/wapos/logout.php"><i class="bi bi-box-arrow-right me-2"></i>Logout</a></li>
+                    </ul>
+                </div>
             </div>
         </div>
         <div class="p-4">

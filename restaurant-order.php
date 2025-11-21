@@ -12,7 +12,79 @@ $orderId = $_GET['id'] ?? null;
 // Get products and modifiers
 $products = $db->fetchAll("SELECT * FROM products WHERE is_active = 1 ORDER BY name");
 $categories = $db->fetchAll("SELECT * FROM categories WHERE is_active = 1 ORDER BY name");
+
+// Fetch checked-in rooms for room charge payments
+$checkedInRooms = [];
+try {
+    $pdo = $db->getConnection();
+    $tablesStmt = $pdo->query("SHOW TABLES LIKE 'room_bookings'");
+    if ($tablesStmt && $tablesStmt->fetchColumn()) {
+        $roomsStmt = $pdo->prepare(
+            "SELECT b.id, b.booking_number, b.guest_name, r.room_number
+             FROM room_bookings b
+             JOIN rooms r ON b.room_id = r.id
+             WHERE b.status = 'checked_in'
+             ORDER BY r.room_number ASC, b.booking_number ASC"
+        );
+        $roomsStmt->execute();
+        $rows = $roomsStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($rows as $row) {
+            $guestName = trim((string)($row['guest_name'] ?? ''));
+            $roomNumber = trim((string)($row['room_number'] ?? ''));
+            $bookingNumber = trim((string)($row['booking_number'] ?? ''));
+
+            $labelParts = [];
+            if ($roomNumber !== '') {
+                $labelParts[] = 'Room ' . $roomNumber;
+            }
+            if ($guestName !== '') {
+                $labelParts[] = $guestName;
+            }
+
+            $label = implode(' · ', $labelParts);
+            if ($bookingNumber !== '') {
+                $label .= ($label !== '' ? ' ' : '') . '(' . $bookingNumber . ')';
+            }
+
+            if ($label === '') {
+                $label = 'Booking #' . (int)$row['id'];
+            }
+
+            $checkedInRooms[] = [
+                'id' => (int)$row['id'],
+                'label' => $label,
+            ];
+        }
+    }
+} catch (Throwable $e) {
+    $checkedInRooms = [];
+}
 $modifiers = $db->fetchAll("SELECT * FROM modifiers WHERE is_active = 1 ORDER BY category, name");
+
+$deliveryConfigKeys = [
+    'google_maps_api_key',
+    'business_latitude',
+    'business_longitude',
+    'delivery_cache_ttl_minutes',
+    'delivery_cache_soft_ttl_minutes',
+    'delivery_distance_fallback_provider'
+];
+
+$placeholders = implode(',', array_fill(0, count($deliveryConfigKeys), '?'));
+$deliveryConfigRows = $db->fetchAll(
+    "SELECT setting_key, setting_value FROM settings WHERE setting_key IN ($placeholders)",
+    $deliveryConfigKeys
+);
+
+$deliveryConfig = [];
+foreach ($deliveryConfigRows as $row) {
+    $deliveryConfig[$row['setting_key']] = $row['setting_value'];
+}
+
+$googleMapsApiKey = $deliveryConfig['google_maps_api_key'] ?? '';
+$businessLat = isset($deliveryConfig['business_latitude']) ? (float)$deliveryConfig['business_latitude'] : null;
+$businessLng = isset($deliveryConfig['business_longitude']) ? (float)$deliveryConfig['business_longitude'] : null;
 
 // Get table info if dine-in
 $tableInfo = null;
@@ -35,295 +107,376 @@ include 'includes/header.php';
 ?>
 
 <style>
-    .pos-container {
-        height: calc(100vh - 220px);
-        overflow: hidden;
-        margin-bottom: 60px;
-    }
-    .product-card {
-        cursor: pointer;
-        transition: all 0.2s;
-        height: 120px;
-    }
-    .product-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    }
-    .cart-section {
-        border-left: 2px solid #dee2e6;
-        height: 100%;
+    .order-shell {
         display: flex;
         flex-direction: column;
-        padding-bottom: 20px;
-        overflow-y: auto;
+        gap: var(--spacing-lg);
+        min-height: calc(100vh - 120px);
+    }
+    .order-grid {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-lg);
+    }
+    @media (min-width: 992px) {
+        .order-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+            gap: var(--spacing-lg);
+            align-items: start;
+        }
+    }
+    .order-products .product-grid {
+        display: grid;
+        gap: var(--spacing-md);
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        padding-bottom: var(--spacing-md);
+    }
+    .product-item {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        background-color: var(--color-surface);
+        box-shadow: var(--shadow-sm);
+        padding: var(--spacing-md);
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+        transition: transform var(--transition-base), box-shadow var(--transition-base);
+    }
+    .product-item:hover,
+    .product-item:focus-within {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-md);
+    }
+    .product-item h6 {
+        font-size: var(--text-md);
+        font-weight: 600;
+    }
+    .product-item .product-price {
+        font-size: var(--text-lg);
+        font-weight: 700;
+        color: var(--color-primary-600);
+    }
+    .product-item .stock-pill {
+        font-size: var(--text-sm);
+        color: var(--color-text-muted);
+    }
+    .product-item .add-to-cart-btn {
+        width: 100%;
+    }
+    .order-cart-card {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-lg);
+    }
+    @media (min-width: 992px) {
+        .order-cart-card {
+            position: sticky;
+            top: var(--spacing-lg);
+        }
     }
     .cart-items {
-        flex: 0 0 auto;
+        max-height: 340px;
         overflow-y: auto;
-        max-height: 30vh;
-        margin-bottom: 10px;
+        border: 1px dashed var(--color-border-subtle);
+        border-radius: var(--radius-md);
+        padding: var(--spacing-sm);
+        background: var(--color-surface-subtle);
     }
-    
-    /* Custom scrollbar styling */
-    .cart-section::-webkit-scrollbar {
-        width: 8px;
+    .cart-items .list-group {
+        gap: var(--spacing-sm);
+        display: flex;
+        flex-direction: column;
     }
-    
-    .cart-section::-webkit-scrollbar-track {
-        background: #f1f1f1;
-        border-radius: 4px;
+    .cart-items .list-group-item {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        box-shadow: none;
     }
-    
-    .cart-section::-webkit-scrollbar-thumb {
-        background: #c1c1c1;
-        border-radius: 4px;
+    .cart-empty {
+        text-align: center;
+        color: var(--color-text-muted);
+        padding: var(--spacing-xl) var(--spacing-md);
     }
-    
-    .cart-section::-webkit-scrollbar-thumb:hover {
-        background: #a8a8a8;
+    .cart-totals {
+        border-top: 1px solid var(--color-border);
+        padding-top: var(--spacing-md);
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
     }
-    
-    .cart-items::-webkit-scrollbar {
-        width: 6px;
+    .cart-total-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: var(--text-md);
     }
-    
-    .cart-items::-webkit-scrollbar-track {
-        background: #f8f9fa;
-        border-radius: 3px;
+    .cart-total-row strong {
+        font-size: var(--text-lg);
     }
-    
-    .cart-items::-webkit-scrollbar-thumb {
-        background: #dee2e6;
-        border-radius: 3px;
+    .delivery-map-wrapper {
+        position: relative;
     }
-    
-    .cart-items::-webkit-scrollbar-thumb:hover {
-        background: #c1c1c1;
+    .delivery-map-container {
+        position: relative;
+        height: 260px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+        background: var(--color-surface-subtle);
     }
-    
-    /* Compact form elements */
-    .form-label {
-        margin-bottom: 4px;
-        font-size: 0.9rem;
+    #deliveryMap {
+        height: 100%;
+        width: 100%;
     }
-    
-    .form-control, .form-select {
-        padding: 6px 12px;
-        font-size: 0.9rem;
+    .map-search-box {
+        position: absolute;
+        top: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 5;
+        width: calc(100% - 32px);
+        max-width: 360px;
+        box-shadow: var(--shadow-md);
     }
-    
-    .btn-sm {
-        padding: 4px 8px;
-        font-size: 0.8rem;
+    .order-actions {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
     }
-    
-    /* Responsive adjustments for scrollable layout */
-    @media (max-height: 800px) {
-        .pos-container {
-            height: calc(100vh - 180px);
-            margin-bottom: 40px;
-        }
-        .cart-items {
-            max-height: 25vh;
-        }
+    .order-actions .btn-group {
+        width: 100%;
     }
-    
-    @media (max-height: 700px) {
-        .pos-container {
-            height: calc(100vh - 160px);
-            margin-bottom: 40px;
-        }
-        .cart-items {
-            max-height: 20vh;
-        }
-    }
-    
-    @media (max-height: 600px) {
-        .pos-container {
-            height: calc(100vh - 140px);
-            margin-bottom: 40px;
-        }
-        .cart-items {
-            max-height: 18vh;
-        }
+    .order-actions .btn-group .btn {
+        flex: 1;
     }
 </style>
 
-<div class="pos-container">
-    <div class="row g-0 h-100">
-        <!-- Products Section -->
-        <div class="col-md-7 p-3" style="overflow-y: auto;">
-            <!-- Header -->
-            <div class="d-flex justify-content-between align-items-center mb-3">
+<div class="order-shell container-fluid py-4">
+    <div class="order-header d-flex flex-wrap justify-content-between align-items-start gap-3">
+        <div class="stack-sm">
+            <h1 class="mb-0"><i class="bi bi-<?= $orderType === 'dine-in' ? 'table' : 'bag-check' ?> me-2"></i><?= ucfirst($orderType) ?> Order</h1>
+            <?php if ($tableInfo): ?>
+                <p class="text-muted mb-0">Table <?= htmlspecialchars($tableInfo['table_number']) ?> · Seats <?= (int)($tableInfo['capacity'] ?? 0) ?></p>
+            <?php else: ?>
+                <p class="text-muted mb-0">Build the order and send to the kitchen in one place.</p>
+            <?php endif; ?>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <a href="restaurant.php" class="btn btn-outline-secondary btn-icon">
+                <i class="bi bi-arrow-left me-2"></i>Back to Floor
+            </a>
+        </div>
+    </div>
+
+    <div class="order-grid">
+        <section class="order-products app-card h-100">
+            <div class="section-heading">
                 <div>
-                    <h5 class="mb-0">
-                        <i class="bi bi-<?= $orderType === 'dine-in' ? 'table' : 'bag-check' ?> me-2"></i>
-                        <?= ucfirst($orderType) ?> Order
-                    </h5>
-                    <?php if ($tableInfo): ?>
-                        <small class="text-muted">Table: <?= htmlspecialchars($tableInfo['table_number']) ?></small>
-                    <?php endif; ?>
-                </div>
-                <a href="restaurant.php" class="btn btn-outline-secondary btn-sm">
-                    <i class="bi bi-arrow-left me-2"></i>Back
-                </a>
-            </div>
-
-            <!-- Search and Filter -->
-            <div class="mb-3">
-                <div class="row g-2">
-                    <div class="col-md-8">
-                        <input type="text" id="searchProduct" class="form-control" placeholder="Search menu items...">
-                    </div>
-                    <div class="col-md-4">
-                        <select id="filterCategory" class="form-select">
-                            <option value="">All Categories</option>
-                            <?php foreach ($categories as $cat): ?>
-                                <option value="<?= $cat['id'] ?>"><?= htmlspecialchars($cat['name']) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
+                    <h6 class="mb-0"><i class="bi bi-list-ul me-2"></i>Menu Browser</h6>
+                    <span class="text-muted small">Tap to add dishes. Filters refine search instantly.</span>
                 </div>
             </div>
 
-            <!-- Products List -->
-            <div id="productsList" class="list-group product-list">
+            <div class="row g-2 align-items-center mb-3">
+                <div class="col-md-8">
+                    <label for="searchProduct" class="form-label mb-1">Search Menu</label>
+                    <input type="text" id="searchProduct" class="form-control" placeholder="Search menu items...">
+                </div>
+                <div class="col-md-4">
+                    <label for="filterCategory" class="form-label mb-1">Category</label>
+                    <select id="filterCategory" class="form-select">
+                        <option value="">All Categories</option>
+                        <?php foreach ($categories as $cat): ?>
+                            <option value="<?= $cat['id'] ?>"><?= htmlspecialchars($cat['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
+
+            <div id="productsList" class="product-grid">
                 <?php foreach ($products as $product): ?>
-                <?php
-                $productPayload = json_encode([
-                    'id' => (int)$product['id'],
-                    'name' => $product['name'],
-                    'selling_price' => (float)$product['selling_price'],
-                    'stock_quantity' => (float)$product['stock_quantity'],
-                ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
-                ?>
-                <div class="list-group-item product-item d-flex flex-column flex-md-row align-items-md-center justify-product between gap-2"
-                     data-category="<?= $product['category_id'] ?>"
-                     data-name="<?= strtolower($product['name']) ?>">
-                    <div class="product-info">
-                        <h6 class="mb-1"><?= htmlspecialchars($product['name']) ?></h6>
-                        <div class="text-muted small">Stock: <?= $product['stock_quantity'] ?></div>
-                    </div>
-                    <div class="d-flex flex-column flex-sm-row align-items-sm-center gap-2">
-                        <div class="text-primary fw-bold"><?= formatMoney($product['selling_price'], false) ?></div>
-                        <button 
+                    <?php
+                    $productPayload = json_encode([
+                        'id' => (int)$product['id'],
+                        'name' => $product['name'],
+                        'selling_price' => (float)$product['selling_price'],
+                        'stock_quantity' => (float)$product['stock_quantity'],
+                    ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
+                    ?>
+                    <article class="product-item" data-category="<?= $product['category_id'] ?>" data-name="<?= strtolower($product['name']) ?>">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="stack-xs">
+                                <h6 class="mb-0"><?= htmlspecialchars($product['name']) ?></h6>
+                                <span class="stock-pill"><i class="bi bi-archive me-1"></i>Stock <?= (float)$product['stock_quantity'] ?></span>
+                            </div>
+                            <span class="product-price"><?= formatMoney($product['selling_price'], false) ?></span>
+                        </div>
+                        <button
                             type="button"
-                            class="btn btn-sm btn-primary add-to-cart-btn"
+                            class="btn btn-primary btn-icon add-to-cart-btn"
                             data-product-id="<?= (int)$product['id'] ?>"
                             data-product-name="<?= htmlspecialchars($product['name'], ENT_QUOTES, 'UTF-8') ?>"
                             data-product-price="<?= (float)$product['selling_price'] ?>"
                             data-product-stock="<?= (float)$product['stock_quantity'] ?>"
                             data-product-json="<?= htmlspecialchars($productPayload, ENT_QUOTES, 'UTF-8') ?>"
                         >
-                            <i class="bi bi-cart-plus me-1"></i>Add
+                            <i class="bi bi-cart-plus me-2"></i>Add to Order
                         </button>
-                    </div>
-                </div>
+                    </article>
                 <?php endforeach; ?>
             </div>
-        </div>
+        </section>
 
-        <!-- Cart Section -->
-        <div class="col-md-5 cart-section">
-            <div class="p-3">
-                <h5 class="mb-3"><i class="bi bi-receipt me-2"></i>Order Items</h5>
-                
-                <!-- Customer Info -->
-                <?php if ($orderType !== 'dine-in'): ?>
-                <div class="mb-3">
-                    <input type="text" id="customerName" class="form-control form-control-sm mb-2" placeholder="Customer Name (Optional)">
-                    <input type="tel" id="customerPhone" class="form-control form-control-sm mb-2" placeholder="Customer Phone (Optional)">
-                    <textarea id="deliveryAddress" class="form-control form-control-sm mb-2" rows="2" placeholder="Delivery Address"></textarea>
-                    <div class="row g-2">
-                        <div class="col-6">
-                            <input type="number" step="0.000001" id="deliveryLatitude" class="form-control form-control-sm" placeholder="Latitude">
-                        </div>
-                        <div class="col-6">
-                            <input type="number" step="0.000001" id="deliveryLongitude" class="form-control form-control-sm" placeholder="Longitude">
-                        </div>
+        <section class="order-cart">
+            <div class="app-card order-cart-card">
+                <div class="section-heading">
+                    <div>
+                        <h6 class="mb-0"><i class="bi bi-receipt me-2"></i>Order Summary</h6>
+                        <span class="text-muted small">Review lines, capture customer details, and take payment.</span>
                     </div>
-                    <div class="form-text">Provide coordinates for accurate delivery fee calculation. Use decimal degrees.</div>
                 </div>
+
+                <?php if ($orderType !== 'dine-in'): ?>
+                    <div class="stack-sm">
+                        <h6 class="text-uppercase text-muted fw-semibold small mb-2">Customer Details</h6>
+                        <input type="text" id="customerName" class="form-control" placeholder="Customer name (optional)">
+                        <input type="tel" id="customerPhone" class="form-control" placeholder="Customer phone (optional)">
+                        <textarea id="deliveryAddress" class="form-control" rows="2" placeholder="Delivery address"></textarea>
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <input type="number" step="0.000001" id="deliveryLatitude" class="form-control" placeholder="Latitude">
+                            </div>
+                            <div class="col-6">
+                                <input type="number" step="0.000001" id="deliveryLongitude" class="form-control" placeholder="Longitude">
+                            </div>
+                        </div>
+                        <div class="form-text">Coordinates help auto-calculate delivery fees. Use decimal degrees.</div>
+                        <?php if (!empty($googleMapsApiKey)): ?>
+                            <div class="d-flex flex-wrap gap-2">
+                                <button type="button" class="btn btn-outline-primary btn-sm" onclick="toggleDeliveryMap()">
+                                    <i class="bi bi-geo-alt"></i> Pick on Map
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="useCurrentLocation()">
+                                    <i class="bi bi-crosshair"></i> Use My Location
+                                </button>
+                            </div>
+                            <div id="deliveryMapWrapper" class="delivery-map-wrapper mt-2" style="display:none;">
+                                <input id="deliveryMapSearch" type="text" class="form-control map-search-box" placeholder="Search address or place">
+                                <div class="delivery-map-container">
+                                    <div id="deliveryMap"></div>
+                                </div>
+                                <small class="text-muted d-block mt-2">Tap the map to refine the drop-off.</small>
+                            </div>
+                        <?php else: ?>
+                            <div class="alert alert-warning small mb-0">
+                                Configure a Google Maps API key in Settings to enable map-based location selection.
+                            </div>
+                        <?php endif; ?>
+                    </div>
                 <?php endif; ?>
 
-                <!-- Cart Items -->
-                <div class="cart-items" id="cartItems">
-                    <div class="text-center text-muted py-5">
-                        <i class="bi bi-cart-x fs-1"></i>
-                        <p class="mt-2">Cart is empty</p>
+                <div class="stack-sm">
+                    <h6 class="text-uppercase text-muted fw-semibold small mb-2">Cart Items</h6>
+                    <div class="cart-items" id="cartItems">
+                        <div class="cart-empty">
+                            <i class="bi bi-cart-x fs-1"></i>
+                            <p class="mt-2 mb-0">Cart is empty</p>
+                            <small>Add items from the menu to get started.</small>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Cart Total -->
-                <div class="border-top pt-3 mt-3">
-                    <div class="d-flex justify-content-between mb-2">
-                        <span>Subtotal:</span>
+                <div class="cart-totals">
+                    <div class="cart-total-row">
+                        <span>Subtotal</span>
                         <span id="subtotal"><?= formatMoney(0, false) ?></span>
                     </div>
-                    <div class="d-flex justify-content-between mb-2">
-                        <span>Tax (16%):</span>
+                    <div class="cart-total-row">
+                        <span>Tax (16%)</span>
                         <span id="taxAmount"><?= formatMoney(0, false) ?></span>
                     </div>
                     <?php if ($orderType !== 'dine-in'): ?>
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <span>Delivery Fee:</span>
-                        <div class="d-flex align-items-center gap-2">
-                            <span id="deliveryFeeDisplay">0.00</span>
-                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleDeliveryFeeEdit()" id="editDeliveryFeeBtn">Edit</button>
-                        </div>
-                    </div>
-                    <div class="mb-2" id="deliveryFeeEdit" style="display: none;">
-                        <div class="input-group input-group-sm">
-                            <span class="input-group-text">Fee</span>
-                            <input type="number" step="0.01" class="form-control" id="deliveryFeeInput" placeholder="0.00">
-                            <button class="btn btn-outline-primary" type="button" onclick="applyManualDeliveryFee()">Apply</button>
-                        </div>
-                        <div class="form-text">Leave blank to use the calculated fee.</div>
-                    </div>
-                    <div class="mb-2">
-                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="calculateDeliveryFee()" id="recalculateDeliveryBtn">Calculate Delivery Fee</button>
-                        <div class="small text-muted" id="deliveryFeeMeta"></div>
-                    </div>
-                    <?php endif; ?>
-                    <div class="d-flex justify-content-between mb-3">
-                        <strong>Total:</strong>
-                        <strong class="text-primary fs-4" id="total"><?= formatMoney(0, false) ?></strong>
-                    </div>
-
-                    <div class="mb-3">
-                        <select id="paymentMethod" class="form-select">
-                            <option value="cash">Cash</option>
-                            <option value="card">Card</option>
-                            <option value="mobile_money">Mobile Money</option>
-                        </select>
-                    </div>
-
-                    <div class="d-grid gap-2">
-                        <div class="d-grid gap-2">
-                            <button class="btn btn-info" onclick="printInvoice()" id="invoiceBtn" disabled>
-                                <i class="bi bi-receipt me-2"></i>Print Invoice
-                            </button>
-                            <button class="btn btn-primary btn-lg" onclick="processPayment()" id="paymentBtn" disabled>
-                                <i class="bi bi-credit-card me-2"></i>Process Payment
-                            </button>
-                        </div>
-                        <div class="d-grid gap-2 mt-2">
-                            <div class="btn-group">
-                                <button class="btn btn-outline-success btn-sm" onclick="printKitchenOrder()" id="kitchenBtn" disabled>
-                                    <i class="bi bi-printer me-1"></i>Kitchen
-                                </button>
-                                <button class="btn btn-outline-info btn-sm" onclick="printCustomerReceipt()" id="receiptBtn" disabled>
-                                    <i class="bi bi-receipt-cutoff me-1"></i>Receipt
-                                </button>
+                        <div class="cart-total-row">
+                            <span>Delivery Fee</span>
+                            <div class="d-flex align-items-center gap-2">
+                                <span id="deliveryFeeDisplay">0.00</span>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="toggleDeliveryFeeEdit()" id="editDeliveryFeeBtn">Edit</button>
                             </div>
-                            <button class="btn btn-outline-danger" onclick="clearCart()">
-                                <i class="bi bi-trash me-2"></i>Clear Cart
-                            </button>
                         </div>
+                        <div id="deliveryFeeEdit" class="stack-xs" style="display: none;">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text">Fee</span>
+                                <input type="number" step="0.01" class="form-control" id="deliveryFeeInput" placeholder="0.00">
+                                <button class="btn btn-outline-primary" type="button" onclick="applyManualDeliveryFee()">Apply</button>
+                            </div>
+                            <div class="form-text">Leave blank to use the calculated fee.</div>
+                        </div>
+                        <div class="stack-xs">
+                            <button type="button" class="btn btn-outline-primary btn-sm align-self-start" onclick="calculateDeliveryFee()" id="recalculateDeliveryBtn">Calculate Delivery Fee</button>
+                            <div class="small text-muted" id="deliveryFeeMeta"></div>
+                        </div>
+                    <?php endif; ?>
+                    <div class="cart-total-row">
+                        <strong>Total</strong>
+                        <strong class="text-primary" id="total"><?= formatMoney(0, false) ?></strong>
                     </div>
                 </div>
+
+                <div class="stack-sm">
+                    <label for="paymentMethod" class="form-label mb-1">Payment Method</label>
+                    <select id="paymentMethod" class="form-select">
+                        <option value="cash">Cash</option>
+                        <option value="card">Card</option>
+                        <option value="mobile_money">Mobile Money</option>
+                        <option value="room_charge">Charge to Room</option>
+                    </select>
+                </div>
+
+                <div id="roomChargeSection" class="stack-sm" style="display: none;">
+                    <?php if (!empty($checkedInRooms)): ?>
+                        <label for="roomBookingSelect" class="form-label">Select Checked-in Room</label>
+                        <select id="roomBookingSelect" class="form-select">
+                            <option value="">Select a checked-in room...</option>
+                            <?php foreach ($checkedInRooms as $room): ?>
+                                <option value="<?= (int)$room['id'] ?>" data-label="<?= htmlspecialchars($room['label'], ENT_QUOTES, 'UTF-8') ?>">
+                                    <?= htmlspecialchars($room['label']) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <label for="roomChargeDescription" class="form-label">Folio Note (optional)</label>
+                        <input type="text" id="roomChargeDescription" class="form-control" maxlength="120" placeholder="e.g. Dinner at restaurant">
+                        <small class="text-muted">Charges will be posted to the guest folio.</small>
+                    <?php else: ?>
+                        <div class="alert alert-warning mb-0">
+                            <div class="small mb-1"><i class="bi bi-exclamation-triangle me-1"></i>No checked-in rooms available.</div>
+                            <div class="small">Check in a guest before charging orders to a room.</div>
+                        </div>
+                    <?php endif; ?>
+                </div>
+
+                <div class="order-actions">
+                    <button class="btn btn-info w-100" onclick="printInvoice()" id="invoiceBtn" disabled>
+                        <i class="bi bi-receipt me-2"></i>Print Invoice
+                    </button>
+                    <button class="btn btn-primary btn-lg w-100" onclick="processPayment()" id="paymentBtn" disabled>
+                        <i class="bi bi-credit-card me-2"></i>Process Payment
+                    </button>
+                    <div class="btn-group" role="group" aria-label="Print options">
+                        <button class="btn btn-outline-success btn-sm" onclick="printKitchenOrder()" id="kitchenBtn" disabled>
+                            <i class="bi bi-printer me-1"></i>Kitchen
+                        </button>
+                        <button class="btn btn-outline-info btn-sm" onclick="printCustomerReceipt()" id="receiptBtn" disabled>
+                            <i class="bi bi-receipt-cutoff me-1"></i>Receipt
+                        </button>
+                    </div>
+                    <button class="btn btn-outline-danger w-100" onclick="clearCart()">
+                        <i class="bi bi-trash me-2"></i>Clear Cart
+                    </button>
+                </div>
             </div>
-        </div>
+        </section>
     </div>
 </div>
 
@@ -384,6 +537,11 @@ let currentItem = null;
 const TAX_RATE = 16;
 const currencySymbol = <?= json_encode($currencySymbol) ?>;
 const orderType = '<?= $orderType ?>';
+const googleMapsApiKey = <?= json_encode($googleMapsApiKey) ?>;
+const businessCoordinates = {
+    lat: <?= $businessLat !== null ? json_encode($businessLat) : 'null' ?>,
+    lng: <?= $businessLng !== null ? json_encode($businessLng) : 'null' ?>
+};
 const modifierModalEl = document.getElementById('modifierModal');
 const hasModifierOptions = modifierModalEl && modifierModalEl.querySelectorAll('.modifier-check').length > 0;
 let modifierModalInstance = null;
@@ -394,8 +552,18 @@ let deliveryPricingState = {
     zone: null,
     manual: false,
     lastCalculatedAt: null,
-    calculatedFee: null
+    calculatedFee: null,
+    rule: null,
+    provider: null,
+    cacheHit: false,
+    fallbackUsed: false,
+    auditRequestId: null,
+    durationMinutes: null
 };
+let deliveryMap = null;
+let deliveryMarker = null;
+let googleMapsLoadingPromise = null;
+let deliveryMapInitialized = false;
 
 function getDeliveryFeeValue() {
     if (orderType === 'dine-in') {
@@ -445,6 +613,18 @@ function refreshDeliveryFeeMeta(customMessage) {
         segments.push('Zone: ' + deliveryPricingState.zone.name);
     }
 
+    if (deliveryPricingState.provider) {
+        segments.push('Provider: ' + deliveryPricingState.provider.replace(/_/g, ' '));
+    }
+
+    if (deliveryPricingState.cacheHit) {
+        segments.push('Cache hit');
+    }
+
+    if (deliveryPricingState.durationMinutes !== null) {
+        segments.push('ETA: ~' + deliveryPricingState.durationMinutes + ' min');
+    }
+
     if (deliveryPricingState.lastCalculatedAt instanceof Date) {
         segments.push('Updated ' + deliveryPricingState.lastCalculatedAt.toLocaleTimeString());
     }
@@ -488,6 +668,183 @@ function toggleDeliveryFeeEdit(forceOpen) {
             input.select();
         }
     }
+}
+
+function toggleDeliveryMap() {
+    const wrapper = document.getElementById('deliveryMapWrapper');
+    if (!wrapper) return;
+
+    const shouldShow = wrapper.style.display === 'none' || wrapper.style.display === '';
+    wrapper.style.display = shouldShow ? 'block' : 'none';
+
+    if (shouldShow && !deliveryMapInitialized) {
+        initDeliveryMap();
+    }
+}
+
+async function initDeliveryMap() {
+    if (!googleMapsApiKey) {
+        console.warn('Google Maps API key missing');
+        return;
+    }
+
+    try {
+        const googleMaps = await loadGoogleMaps();
+        const mapElement = document.getElementById('deliveryMap');
+        if (!mapElement) return;
+
+        const defaultCenter = {
+            lat: (typeof deliveryPricingState.lat === 'number' ? deliveryPricingState.lat : (businessCoordinates.lat || -1.2921)),
+            lng: (typeof deliveryPricingState.lng === 'number' ? deliveryPricingState.lng : (businessCoordinates.lng || 36.8219))
+        };
+
+        deliveryMap = new googleMaps.Map(mapElement, {
+            center: defaultCenter,
+            zoom: 13,
+            disableDefaultUI: false,
+        });
+
+        deliveryMarker = new googleMaps.Marker({
+            map: deliveryMap,
+            draggable: true,
+            position: defaultCenter,
+        });
+
+        deliveryMarker.addListener('dragend', () => {
+            const pos = deliveryMarker.getPosition();
+            updateDeliveryCoordinates(pos.lat(), pos.lng(), true);
+        });
+
+        deliveryMap.addListener('click', (event) => {
+            if (!event.latLng) return;
+            updateDeliveryCoordinates(event.latLng.lat(), event.latLng.lng(), true);
+            if (deliveryMarker) {
+                deliveryMarker.setPosition(event.latLng);
+            }
+        });
+
+        initAutocomplete(googleMaps);
+
+        const currentLat = getCoordinateValue('deliveryLatitude');
+        const currentLng = getCoordinateValue('deliveryLongitude');
+        if (currentLat !== null && currentLng !== null) {
+            const position = { lat: currentLat, lng: currentLng };
+            deliveryMap.setCenter(position);
+            deliveryMarker.setPosition(position);
+        }
+
+        deliveryMapInitialized = true;
+    } catch (error) {
+        console.error('Failed to load Google Maps', error);
+    }
+}
+
+function initAutocomplete(googleMaps) {
+    const input = document.getElementById('deliveryMapSearch');
+    if (!input) {
+        return;
+    }
+
+    const autocomplete = new googleMaps.places.Autocomplete(input, {
+        fields: ['geometry', 'formatted_address'],
+        types: ['geocode']
+    });
+
+    autocomplete.addListener('place_changed', () => {
+        const place = autocomplete.getPlace();
+        if (!place || !place.geometry || !place.geometry.location) {
+            return;
+        }
+
+        const location = place.geometry.location;
+        updateDeliveryCoordinates(location.lat(), location.lng(), true);
+        if (deliveryMap) {
+            deliveryMap.panTo(location);
+        }
+        if (deliveryMarker) {
+            deliveryMarker.setPosition(location);
+        }
+
+        if (place.formatted_address) {
+            const addressField = document.getElementById('deliveryAddress');
+            if (addressField) {
+                addressField.value = place.formatted_address;
+            }
+        }
+    });
+}
+
+function updateDeliveryCoordinates(lat, lng, updateInputs = false) {
+    if (updateInputs) {
+        const latField = document.getElementById('deliveryLatitude');
+        const lngField = document.getElementById('deliveryLongitude');
+        if (latField) latField.value = lat.toFixed(6);
+        if (lngField) lngField.value = lng.toFixed(6);
+    }
+    deliveryPricingState.lat = lat;
+    deliveryPricingState.lng = lng;
+}
+
+function loadGoogleMaps() {
+    if (googleMapsLoadingPromise) {
+        return googleMapsLoadingPromise;
+    }
+
+    googleMapsLoadingPromise = new Promise((resolve, reject) => {
+        if (window.google && window.google.maps) {
+            resolve(window.google.maps);
+            return;
+        }
+
+        const script = document.createElement('script');
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(googleMapsApiKey)}&libraries=places`;
+        script.async = true;
+        script.defer = true;
+        script.onload = () => {
+            if (window.google && window.google.maps) {
+                resolve(window.google.maps);
+            } else {
+                reject(new Error('Google Maps failed to load.'));
+            }
+        };
+        script.onerror = () => {
+            reject(new Error('Unable to load Google Maps script.'));
+        };
+
+        document.head.appendChild(script);
+    });
+
+    return googleMapsLoadingPromise;
+}
+
+function useCurrentLocation() {
+    if (!navigator.geolocation) {
+        refreshDeliveryFeeMeta('Geolocation not supported in this browser.');
+        return;
+    }
+
+    navigator.geolocation.getCurrentPosition((position) => {
+        const { latitude, longitude } = position.coords;
+        updateDeliveryCoordinates(latitude, longitude, true);
+        if (deliveryMap) {
+            deliveryMap.panTo({ lat: latitude, lng: longitude });
+        }
+        if (deliveryMarker) {
+            deliveryMarker.setPosition({ lat: latitude, lng: longitude });
+        } else if (deliveryMapInitialized) {
+            const googleMaps = window.google && window.google.maps;
+            if (googleMaps) {
+                deliveryMarker = new googleMaps.Marker({
+                    map: deliveryMap,
+                    position: { lat: latitude, lng: longitude },
+                    draggable: true,
+                });
+            }
+        }
+        refreshDeliveryFeeMeta('Location captured from device GPS.');
+    }, () => {
+        refreshDeliveryFeeMeta('Unable to retrieve current location.');
+    });
 }
 
 function applyManualDeliveryFee() {
@@ -914,15 +1271,45 @@ async function processPayment() {
     }
     
     try {
+        const payload = {
+            action: 'process_payment',
+            order_id: currentOrderId,
+            payment_method: paymentMethod,
+            amount_paid: total
+        };
+
+        if (paymentMethod === 'room_charge') {
+            const roomSelect = document.getElementById('roomBookingSelect');
+            if (!roomSelect || roomSelect.options.length <= 1) {
+                alert('There are no checked-in rooms available to charge.');
+                return;
+            }
+
+            if (!roomSelect.value) {
+                alert('Please select a checked-in room to charge this order to.');
+                roomSelect.focus();
+                return;
+            }
+
+            const roomBookingId = parseInt(roomSelect.value, 10);
+            if (!Number.isFinite(roomBookingId) || roomBookingId <= 0) {
+                alert('Invalid room selection.');
+                return;
+            }
+
+            const descriptionField = document.getElementById('roomChargeDescription');
+            payload.room_booking_id = roomBookingId;
+            payload.amount_paid = 0;
+            payload.change_amount = 0;
+            if (descriptionField && descriptionField.value.trim() !== '') {
+                payload.room_charge_description = descriptionField.value.trim();
+            }
+        }
+
         const response = await fetch('api/restaurant-order-workflow.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                action: 'process_payment',
-                order_id: currentOrderId,
-                payment_method: paymentMethod,
-                amount_paid: total
-            })
+            body: JSON.stringify(payload)
         });
         
         const result = await response.json();
@@ -1017,14 +1404,46 @@ async function printCustomerReceipt() {
             alert('Error printing customer receipt: ' + result.message);
         }
     } catch (error) {
+        console.error('Customer receipt print error:', error);
         alert('Error: ' + error.message);
     }
+}
+
+function roomChargeSelectionValid() {
+    const paymentMethodInput = document.getElementById('paymentMethod');
+    if (!paymentMethodInput || paymentMethodInput.value !== 'room_charge') {
+        return true;
+    }
+
+    const select = document.getElementById('roomBookingSelect');
+    if (!select) {
+        return false;
+    }
+
+    return select.value !== '';
+}
+
+function handlePaymentMethodChange() {
+    const methodSelect = document.getElementById('paymentMethod');
+    const roomChargeSection = document.getElementById('roomChargeSection');
+    if (!methodSelect) {
+        return;
+    }
+
+    if (roomChargeSection) {
+        roomChargeSection.style.display = methodSelect.value === 'room_charge' ? 'block' : 'none';
+    }
+
+    updateButtonStates();
 }
 
 function updateButtonStates() {
     const hasItems = cart.length > 0;
     const hasOrder = currentOrderId !== null;
     const isPaid = orderStatus === 'paid';
+    const paymentMethodInput = document.getElementById('paymentMethod');
+    const paymentMethod = paymentMethodInput ? paymentMethodInput.value : 'cash';
+    const roomChargeReady = roomChargeSelectionValid();
     
     // Enable/disable buttons based on state with error handling
     try {
@@ -1138,6 +1557,19 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
+    const paymentMethodSelect = document.getElementById('paymentMethod');
+    if (paymentMethodSelect) {
+        paymentMethodSelect.addEventListener('change', handlePaymentMethodChange);
+        handlePaymentMethodChange();
+    }
+
+    const roomBookingSelect = document.getElementById('roomBookingSelect');
+    if (roomBookingSelect) {
+        roomBookingSelect.addEventListener('change', () => {
+            updateButtonStates();
+        });
+    }
+
     // Add debug logging for button clicks
     console.log('Page initialized. You can run testButtons() in console to debug.');
 });

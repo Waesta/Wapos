@@ -29,6 +29,7 @@ require_once __DIR__ . "/Database.php";
 require_once __DIR__ . "/Auth.php";
 require_once __DIR__ . "/currency-config.php";
 require_once __DIR__ . "/accounting-helpers.php";
+require_once __DIR__ . "/SystemManager.php";
 
 // Autoload application namespaces if vendor autoloader exists
 $composerAutoload = ROOT_PATH . '/vendor/autoload.php';
@@ -55,6 +56,7 @@ spl_autoload_register(function ($class) {
 try {
     $db = Database::getInstance();
     $auth = new Auth();
+    $systemManager = SystemManager::getInstance();
 } catch (Exception $e) {
     die("System initialization failed: " . $e->getMessage());
 }
@@ -67,6 +69,31 @@ function redirect($url) {
     }
     echo "<script>window.location.href=\"" . $url . "\";</script>";
     exit;
+}
+
+function requireModuleEnabled($moduleKey, $redirectUrl = '/wapos/index.php') {
+    global $systemManager, $auth;
+    if (empty($moduleKey)) {
+        return;
+    }
+
+    if (!isset($auth)) {
+        $auth = new Auth();
+    }
+
+    $userRole = $auth->getRole();
+    if (in_array($userRole, ['super_admin', 'developer'], true)) {
+        return;
+    }
+
+    if (!isset($systemManager)) {
+        $systemManager = SystemManager::getInstance();
+    }
+
+    if (!$systemManager->isModuleEnabled($moduleKey)) {
+        $_SESSION['error_message'] = 'The requested module is disabled for this deployment.';
+        redirect($redirectUrl);
+    }
 }
 
 function formatMoney($amount, $showCurrency = false) {
@@ -120,4 +147,43 @@ function showAlert($message, $type = 'info') {
     echo '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
     echo '</div>';
 }
+
+// Automatically guard module-restricted pages now that SystemManager is initialized
+if (php_sapi_name() !== 'cli') {
+    $modulePageMap = [
+        'pos.php' => 'pos',
+        'sales.php' => 'sales',
+        'register-reports.php' => 'sales',
+        'customers.php' => 'customers',
+        'products.php' => 'inventory',
+        'inventory.php' => 'inventory',
+        'goods-received.php' => 'inventory',
+        'restaurant.php' => 'restaurant',
+        'restaurant-reservations.php' => 'restaurant',
+        'restaurant-order.php' => 'restaurant',
+        'restaurant-payment.php' => 'restaurant',
+        'kitchen-display.php' => 'restaurant',
+        'manage-tables.php' => 'restaurant',
+        'rooms.php' => 'rooms',
+        'manage-rooms.php' => 'rooms',
+        'room-invoice.php' => 'rooms',
+        'room-invoice-pdf.php' => 'rooms',
+        'housekeeping.php' => 'housekeeping',
+        'maintenance.php' => 'maintenance',
+        'delivery.php' => 'delivery',
+        'delivery-dashboard.php' => 'delivery',
+        'delivery-pricing.php' => 'delivery',
+        'enhanced-delivery-tracking.php' => 'delivery',
+        'receipt-settings.php' => 'sales',
+        'manage-promotions.php' => 'sales',
+        'locations.php' => 'locations'
+    ];
+
+    $currentPath = $_SERVER['PHP_SELF'] ?? '';
+    $currentScript = basename(parse_url($currentPath, PHP_URL_PATH));
+    if (isset($modulePageMap[$currentScript])) {
+        requireModuleEnabled($modulePageMap[$currentScript]);
+    }
+}
+
 ?>

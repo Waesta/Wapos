@@ -24,7 +24,22 @@ $health = [
     'database' => false,
     'tables' => [],
     'permissions' => false,
-    'files' => []
+    'permission_counts' => [
+        'modules' => 0,
+        'actions' => 0
+    ],
+    'files' => [],
+    'stats' => [
+        'active_users' => null,
+        'total_roles' => null,
+        'total_tables' => count($allTables)
+    ],
+    'environment' => [
+        'php_version' => PHP_VERSION,
+        'server_name' => php_uname('n'),
+        'os' => php_uname('s') . ' ' . php_uname('r'),
+        'database_version' => null
+    ]
 ];
 
 // Check database connection
@@ -57,12 +72,7 @@ foreach ($essentialTables as $table) {
     }
 }
 
-// Check database connection
-$dbConnected = true;
-try {
-    $db->query("SELECT 1");
-} catch (Exception $e) {
-    $dbConnected = false;
+if (!$health['database']) {
     $allGood = false;
 }
 
@@ -120,9 +130,13 @@ foreach ($tableDescriptions as $table => $description) {
 try {
     $stmt = $db->query("SELECT COUNT(*) as count FROM permission_modules WHERE is_active = 1");
     $modules = $stmt->fetch(PDO::FETCH_ASSOC);
+    $health['permission_counts']['modules'] = (int)($modules['count'] ?? 0);
+
     $stmt = $db->query("SELECT COUNT(*) as count FROM permission_actions WHERE is_active = 1");
     $actions = $stmt->fetch(PDO::FETCH_ASSOC);
-    $health['permissions'] = (($modules['count'] ?? 0) > 0 && ($actions['count'] ?? 0) > 0);
+    $health['permission_counts']['actions'] = (int)($actions['count'] ?? 0);
+
+    $health['permissions'] = ($health['permission_counts']['modules'] > 0 && $health['permission_counts']['actions'] > 0);
 } catch (Exception $e) {
     $health['permissions'] = false;
 }
@@ -160,143 +174,212 @@ foreach ($health['files'] as $file => $info) {
 }
 
 $overallHealth = $health['database'] && $health['permissions'] && $tablesHealthy && $filesHealthy;
+
+// Additional statistics
+try {
+    $stmt = $db->query("SELECT COUNT(*) as count FROM users WHERE is_active = 1");
+    $result = $stmt->fetch(PDO::FETCH_ASSOC);
+    $health['stats']['active_users'] = (int)($result['count'] ?? 0);
+} catch (Exception $e) {
+    $health['stats']['active_users'] = null;
+}
+
+try {
+    $stmt = $db->query("SELECT COUNT(DISTINCT role) as count FROM users WHERE role IS NOT NULL AND role <> ''");
+    $result = $stmt->fetch(PDO::FETCH_ASSOC);
+    $health['stats']['total_roles'] = (int)($result['count'] ?? 0);
+} catch (Exception $e) {
+    $health['stats']['total_roles'] = null;
+}
+
+try {
+    $stmt = $db->query("SELECT VERSION() AS version");
+    $result = $stmt->fetch(PDO::FETCH_ASSOC);
+    $health['environment']['database_version'] = $result['version'] ?? null;
+} catch (Exception $e) {
+    $health['environment']['database_version'] = null;
+}
+
+$missingTables = array_keys(array_filter($health['tables'], fn($info) => !$info['exists']));
+$missingFiles = array_keys(array_filter($health['files'], fn($info) => !$info['exists']));
 ?>
 
-<div class="row g-4">
-    <!-- Overall Status -->
-    <div class="col-12">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-<?= $overallHealth ? 'success' : 'danger' ?> text-white">
-                <h5 class="mb-0">
-                    <i class="bi bi-<?= $overallHealth ? 'check-circle-fill' : 'x-circle-fill' ?> me-2"></i>
-                    System Health: <?= $overallHealth ? 'HEALTHY' : 'ISSUES DETECTED' ?>
-                </h5>
+<div class="stack-lg">
+    <section class="card border-0 shadow-sm">
+        <div class="card-header bg-<?= $overallHealth ? 'success' : 'danger' ?> text-white d-flex justify-content-between align-items-center">
+            <div>
+                <h5 class="mb-1"><i class="bi bi-<?= $overallHealth ? 'check-circle-fill' : 'x-circle-fill' ?> me-2"></i>System Health</h5>
+                <p class="mb-0 small">Status checked at <?= date('Y-m-d H:i:s') ?></p>
             </div>
-            <div class="card-body">
-                <?php if ($overallHealth): ?>
-                <div class="alert alert-success">
-                    <h6><i class="bi bi-check-circle me-2"></i>All Systems Operational</h6>
-                    <p class="mb-0">Your WAPOS system is running smoothly with no detected issues.</p>
-                </div>
-                <?php else: ?>
-                <div class="alert alert-danger">
-                    <h6><i class="bi bi-exclamation-triangle me-2"></i>System Issues Detected</h6>
-                    <p class="mb-0">Some components need attention. Please review the details below.</p>
-                </div>
+            <div class="text-end">
+                <span class="badge bg-dark">PHP <?= htmlspecialchars($health['environment']['php_version']) ?></span>
+                <?php if (!empty($health['environment']['database_version'])): ?>
+                    <span class="badge bg-dark ms-2">MySQL <?= htmlspecialchars($health['environment']['database_version']) ?></span>
                 <?php endif; ?>
             </div>
         </div>
-    </div>
-
-    <!-- Database Health -->
-    <div class="col-md-6">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-primary text-white">
-                <h5 class="mb-0"><i class="bi bi-database me-2"></i>Database Health</h5>
+        <div class="card-body">
+            <?php if ($overallHealth): ?>
+            <div class="alert alert-success d-flex align-items-start gap-3">
+                <i class="bi bi-emoji-laughing fs-3"></i>
+                <div>
+                    <h6 class="mb-1">All systems operational</h6>
+                    <p class="mb-0">Your WAPOS deployment is healthy. Keep monitoring regularly.</p>
+                </div>
             </div>
-            <div class="card-body">
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <span>Connection</span>
-                        <span class="badge bg-<?= $health['database'] ? 'success' : 'danger' ?>">
-                            <?= $health['database'] ? 'Connected' : 'Failed' ?>
-                        </span>
+            <?php else: ?>
+            <div class="alert alert-danger d-flex align-items-start gap-3">
+                <i class="bi bi-activity fs-3"></i>
+                <div>
+                    <h6 class="mb-1">Attention required</h6>
+                    <p class="mb-0">We detected <?= count($missingTables) + count($missingFiles) ?> critical item(s) that need attention. Review the panels below to resolve them.</p>
+                </div>
+            </div>
+            <?php endif; ?>
+
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <div class="app-card" data-elevation="md">
+                        <p class="text-muted small mb-1">Active Users</p>
+                        <h4 class="fw-bold mb-0">
+                            <?= $health['stats']['active_users'] !== null ? number_format($health['stats']['active_users']) : '<span class="text-muted">n/a</span>' ?>
+                        </h4>
                     </div>
                 </div>
-                
-                <h6>Essential Tables:</h6>
-                <?php foreach ($health['tables'] as $table => $info): ?>
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <div>
-                        <span class="fw-bold"><?= htmlspecialchars($table) ?></span><br>
-                        <small class="text-muted"><?= htmlspecialchars($info['description']) ?></small>
-                        <?php if ($info['exists'] && isset($info['count'])): ?>
-                        <br><small class="text-info"><?= $info['count'] ?> records</small>
+                <div class="col-md-3">
+                    <div class="app-card" data-elevation="md">
+                        <p class="text-muted small mb-1">Distinct Roles</p>
+                        <h4 class="fw-bold mb-0">
+                            <?= $health['stats']['total_roles'] !== null ? number_format($health['stats']['total_roles']) : '<span class="text-muted">n/a</span>' ?>
+                        </h4>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="app-card" data-elevation="md">
+                        <p class="text-muted small mb-1">Tables Online</p>
+                        <h4 class="fw-bold mb-0">
+                            <?= number_format($health['stats']['total_tables']) ?>
+                        </h4>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="app-card" data-elevation="md">
+                        <p class="text-muted small mb-1">Permissions</p>
+                        <h4 class="fw-bold mb-0">
+                            <?= number_format($health['permission_counts']['modules']) ?> modules / <?= number_format($health['permission_counts']['actions']) ?> actions
+                        </h4>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <div class="row g-4">
+        <section class="col-md-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-database me-2"></i>Database Health</h5>
+                    <span class="badge bg-<?= $health['database'] ? 'success' : 'danger' ?>"><?= $health['database'] ? 'Connected' : 'Offline' ?></span>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small">Server: <?= htmlspecialchars($health['environment']['server_name']) ?> • OS: <?= htmlspecialchars($health['environment']['os']) ?></p>
+                    <h6 class="fw-semibold">Essential Tables</h6>
+                    <div class="list-group list-group-flush">
+                        <?php foreach ($health['tables'] as $table => $info): ?>
+                            <div class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <div class="fw-semibold text-uppercase small text-muted"><?= htmlspecialchars($table) ?></div>
+                                    <div><?= htmlspecialchars($info['description']) ?></div>
+                                    <?php if ($info['exists'] && isset($info['count'])): ?>
+                                        <div class="small text-muted">Records: <?= number_format((int)$info['count']) ?></div>
+                                    <?php endif; ?>
+                                </div>
+                                <span class="badge bg-<?= $info['exists'] ? 'success' : 'danger' ?>">
+                                    <?= $info['exists'] ? 'OK' : 'Missing' ?>
+                                </span>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="col-md-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-gear me-2"></i>System Components</h5>
+                    <span class="badge bg-<?= $health['permissions'] ? 'success' : 'danger' ?>">
+                        <?= $health['permissions'] ? 'Permissions OK' : 'Permissions Issue' ?>
+                    </span>
+                </div>
+                <div class="card-body">
+                    <h6 class="fw-semibold">Core Files</h6>
+                    <div class="list-group list-group-flush mb-3">
+                        <?php foreach ($health['files'] as $file => $info): ?>
+                            <div class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <div class="fw-semibold small text-uppercase text-muted"><?= htmlspecialchars($file) ?></div>
+                                    <div><?= htmlspecialchars($info['description']) ?></div>
+                                </div>
+                                <span class="badge bg-<?= $info['exists'] ? 'success' : 'danger' ?>">
+                                    <?= $info['exists'] ? 'Present' : 'Missing' ?>
+                                </span>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+
+                    <?php if (!$overallHealth): ?>
+                        <h6 class="fw-semibold">Issues Detected</h6>
+                        <?php if (empty($missingTables) && empty($missingFiles)): ?>
+                            <div class="alert alert-warning">No missing tables or files found. Review the permissions system or database connection.</div>
+                        <?php else: ?>
+                            <ul class="list-unstyled small">
+                                <?php foreach ($missingTables as $table): ?>
+                                    <li><i class="bi bi-exclamation-octagon text-danger me-2"></i>Table <strong><?= htmlspecialchars($table) ?></strong> is missing.</li>
+                                <?php endforeach; ?>
+                                <?php foreach ($missingFiles as $file): ?>
+                                    <li><i class="bi bi-file-earmark-excel text-danger me-2"></i>File <strong><?= htmlspecialchars($file) ?></strong> is missing.</li>
+                                <?php endforeach; ?>
+                            </ul>
                         <?php endif; ?>
-                    </div>
-                    <span class="badge bg-<?= $info['exists'] ? 'success' : 'danger' ?>">
-                        <?= $info['exists'] ? 'OK' : 'Missing' ?>
-                    </span>
+                    <?php endif; ?>
                 </div>
-                <?php endforeach; ?>
             </div>
-        </div>
+        </section>
     </div>
 
-    <!-- System Components -->
-    <div class="col-md-6">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-info text-white">
-                <h5 class="mb-0"><i class="bi bi-gear me-2"></i>System Components</h5>
-            </div>
-            <div class="card-body">
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <span>Permissions System</span>
-                        <span class="badge bg-<?= $health['permissions'] ? 'success' : 'danger' ?>">
-                            <?= $health['permissions'] ? 'Working' : 'Error' ?>
-                        </span>
-                    </div>
-                </div>
-                
-                <h6>Core Files:</h6>
-                <?php foreach ($health['files'] as $file => $info): ?>
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <div>
-                        <span class="small fw-bold"><?= htmlspecialchars($file) ?></span><br>
-                        <small class="text-muted"><?= htmlspecialchars($info['description']) ?></small>
-                    </div>
-                    <span class="badge bg-<?= $info['exists'] ? 'success' : 'danger' ?>">
-                        <?= $info['exists'] ? 'OK' : 'Missing' ?>
-                    </span>
-                </div>
-                <?php endforeach; ?>
-            </div>
+    <section class="card border-0 shadow-sm">
+        <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="bi bi-tools me-2"></i>Quick Actions</h5>
+            <button class="btn btn-light btn-sm" onclick="location.reload()">
+                <i class="bi bi-arrow-repeat me-1"></i>Refresh
+            </button>
         </div>
-    </div>
-
-    <!-- Quick Actions -->
-    <div class="col-12">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-secondary text-white">
-                <h5 class="mb-0"><i class="bi bi-tools me-2"></i>Quick Actions</h5>
-            </div>
-            <div class="card-body">
-                <div class="row g-2">
-                    <div class="col-md-2">
-                        <a href="fix-system-health-issues.php" class="btn btn-success w-100">
-                            <i class="bi bi-wrench me-2"></i>Fix Issues
-                        </a>
-                    </div>
-                    <div class="col-md-2">
-                        <a href="permissions.php" class="btn btn-outline-primary w-100">
-                            <i class="bi bi-shield-lock me-2"></i>Permissions
-                        </a>
-                    </div>
-                    <div class="col-md-2">
-                        <a href="users.php" class="btn btn-outline-success w-100">
-                            <i class="bi bi-people me-2"></i>Users
-                        </a>
-                    </div>
-                    <div class="col-md-2">
-                        <a href="inventory.php" class="btn btn-outline-info w-100">
-                            <i class="bi bi-boxes me-2"></i>Inventory
-                        </a>
-                    </div>
-                    <div class="col-md-2">
-                        <a href="settings.php" class="btn btn-outline-warning w-100">
-                            <i class="bi bi-gear me-2"></i>Settings
-                        </a>
-                    </div>
-                    <div class="col-md-2">
-                        <button class="btn btn-outline-secondary w-100" onclick="location.reload()">
-                            <i class="bi bi-arrow-clockwise me-2"></i>Refresh
-                        </button>
-                    </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <a href="fix-system-health-issues.php" class="btn btn-success w-100">
+                        <i class="bi bi-wrench-adjustable-circle me-2"></i>Fix Issues
+                    </a>
+                </div>
+                <div class="col-md-3">
+                    <a href="permissions.php" class="btn btn-outline-primary w-100">
+                        <i class="bi bi-shield-lock me-2"></i>Manage Permissions
+                    </a>
+                </div>
+                <div class="col-md-3">
+                    <a href="users.php" class="btn btn-outline-success w-100">
+                        <i class="bi bi-people me-2"></i>User Directory
+                    </a>
+                </div>
+                <div class="col-md-3">
+                    <a href="settings.php" class="btn btn-outline-warning w-100">
+                        <i class="bi bi-gear-wide-connected me-2"></i>System Settings
+                    </a>
                 </div>
             </div>
         </div>
-    </div>
+    </section>
 </div>
 
 <?php include 'includes/footer.php'; ?>

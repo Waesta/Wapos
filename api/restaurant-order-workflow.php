@@ -77,6 +77,9 @@ function placeOrder($db, $data, $auth) {
             'zone' => null,
         ];
 
+        $pricingService = null;
+        $auditRequestId = null;
+
         if ($orderType === 'delivery') {
             $pricingService = new \App\Services\DeliveryPricingService($db);
             $deliveryPricing = $pricingService->calculateFee($data, $deliveryLat, $deliveryLng);
@@ -84,6 +87,8 @@ function placeOrder($db, $data, $auth) {
             if ($deliveryPricing['calculated_fee'] !== null) {
                 $deliveryFee = $manualDeliveryFee !== null ? $manualDeliveryFee : (float)$deliveryPricing['calculated_fee'];
             }
+
+            $auditRequestId = $deliveryPricing['audit_request_id'] ?? null;
         }
 
         $totalAmount = max(0, round($subtotal + $taxAmount + $deliveryFee - $discountAmount, 2));
@@ -132,6 +137,9 @@ function placeOrder($db, $data, $auth) {
 
         if ($orderType === 'delivery') {
             ensureDeliveryRecord($db, $orderId, $data, $deliveryPricing, $deliveryLat, $deliveryLng, $deliveryFee);
+            if ($pricingService && $auditRequestId) {
+                $pricingService->attachAuditToOrder($auditRequestId, $orderId);
+            }
         }
         
         // Update table status if dine-in
@@ -152,7 +160,9 @@ function placeOrder($db, $data, $auth) {
             'print_results' => $printResults,
             'delivery_fee' => $deliveryFee,
             'total_amount' => $totalAmount,
-            'delivery_pricing' => $deliveryPricing,
+            'delivery_pricing' => array_merge($deliveryPricing, [
+                'audit_request_id' => $auditRequestId,
+            ]),
         ];
         
     } catch (Exception $e) {
@@ -162,38 +172,318 @@ function placeOrder($db, $data, $auth) {
 }
 
 function processPayment($db, $data, $auth) {
-    $orderId = $data['order_id'];
-    $paymentMethod = $data['payment_method'];
-    $amountPaid = $data['amount_paid'];
-    
-    // Get order details
-    $order = $db->fetchOne("SELECT * FROM orders WHERE id = ?", [$orderId]);
+    $orderId = isset($data['order_id']) ? (int)$data['order_id'] : 0;
+    if ($orderId <= 0) {
+        throw new Exception('Order ID is required.');
+    }
+
+    $order = $db->fetchOne('SELECT * FROM orders WHERE id = ?', [$orderId]);
     if (!$order) {
         throw new Exception('Order not found');
     }
-    
+
     if ($order['payment_status'] === 'paid') {
         throw new Exception('Order already paid');
     }
-    
-    // Update order with payment information
-    $db->query("
-        UPDATE orders 
-        SET payment_method = ?, 
-            payment_status = 'paid', 
-            status = 'preparing',
-            updated_at = CURRENT_TIMESTAMP 
-        WHERE id = ?
-    ", [$paymentMethod, $orderId]);
-    
-    // Handle automatic printing for payment completion
-    $printResults = handleAutomaticPrinting($db, $orderId, 'payment_completed');
-    
+
+    $items = $db->fetchAll('SELECT * FROM order_items WHERE order_id = ?', [$orderId]);
+    if (!$items) {
+        throw new Exception('Order has no items to charge');
+    }
+
+    $pdo = $db->getConnection();
+    $billingService = new \App\Services\RestaurantBillingService($pdo);
+    $billingService->ensureSchema();
+
+    $paymentsInput = $data['payments'] ?? null;
+    $globalTip = array_key_exists('tip_amount', $data) ? (float)$data['tip_amount'] : null;
+
+    if (!is_array($paymentsInput) || empty($paymentsInput)) {
+        $legacyMethod = $data['payment_method'] ?? null;
+        if (!$legacyMethod) {
+            throw new Exception('Payment method is required.');
+        }
+
+        $legacyPayment = [
+            'payment_method' => $legacyMethod,
+            'amount' => (float)($data['amount_paid'] ?? 0),
+            'tip_amount' => isset($data['tip_amount']) ? (float)$data['tip_amount'] : 0.0,
+            'metadata' => []
+        ];
+
+        if ($legacyMethod === 'cash') {
+            if (isset($data['amount_received'])) {
+                $legacyPayment['metadata']['amount_received'] = (float)$data['amount_received'];
+            }
+            if (isset($data['change_amount'])) {
+                $legacyPayment['metadata']['change_amount'] = (float)$data['change_amount'];
+            }
+        } elseif ($legacyMethod === 'card') {
+            if (!empty($data['card_last_four'])) {
+                $legacyPayment['metadata']['card_last_four'] = substr(preg_replace('/\D/', '', (string)$data['card_last_four']), -4);
+            }
+            if (!empty($data['card_type'])) {
+                $legacyPayment['metadata']['card_type'] = $data['card_type'];
+            }
+            if (!empty($data['auth_code'])) {
+                $legacyPayment['metadata']['auth_code'] = $data['auth_code'];
+            }
+        } elseif ($legacyMethod === 'mobile_money') {
+            if (!empty($data['mobile_provider'])) {
+                $legacyPayment['metadata']['mobile_provider'] = $data['mobile_provider'];
+            }
+            if (!empty($data['mobile_number'])) {
+                $legacyPayment['metadata']['mobile_number'] = $data['mobile_number'];
+            }
+            if (!empty($data['transaction_id'])) {
+                $legacyPayment['metadata']['transaction_id'] = $data['transaction_id'];
+            }
+        } elseif ($legacyMethod === 'bank_transfer') {
+            if (!empty($data['bank_name'])) {
+                $legacyPayment['metadata']['bank_name'] = $data['bank_name'];
+            }
+            if (!empty($data['reference_number'])) {
+                $legacyPayment['metadata']['reference_number'] = $data['reference_number'];
+            }
+        }
+
+        if (!empty($data['room_booking_id'])) {
+            $legacyPayment['room_booking_id'] = (int)$data['room_booking_id'];
+        }
+        if (!empty($data['room_charge_description'])) {
+            $legacyPayment['room_charge_description'] = $data['room_charge_description'];
+        }
+
+        $paymentsInput = [$legacyPayment];
+        $globalTip = $legacyPayment['tip_amount'];
+    }
+
+    if ($globalTip !== null && $globalTip < 0) {
+        throw new Exception('Tip amount cannot be negative.');
+    }
+
+    if ($globalTip !== null) {
+        foreach ($paymentsInput as $index => &$entry) {
+            $entry['tip_amount'] = $index === 0 ? (float)$globalTip : 0.0;
+        }
+        unset($entry);
+    }
+
+    $normalizedPayments = [];
+    $totalAmount = 0.0;
+    $totalTip = 0.0;
+    $roomChargePayment = null;
+
+    foreach ($paymentsInput as $index => $payment) {
+        $method = strtolower(trim((string)($payment['payment_method'] ?? '')));
+        if ($method === '') {
+            throw new Exception('Payment method is required for entry #' . ($index + 1));
+        }
+
+        $amount = isset($payment['amount']) ? (float)$payment['amount'] : 0.0;
+        if ($amount < 0) {
+            throw new Exception('Payment amount cannot be negative (entry #' . ($index + 1) . ').');
+        }
+
+        $tipAmount = isset($payment['tip_amount']) ? (float)$payment['tip_amount'] : 0.0;
+        if ($tipAmount < 0) {
+            throw new Exception('Tip amount cannot be negative (entry #' . ($index + 1) . ').');
+        }
+
+        $metadata = $payment['metadata'] ?? [];
+        if (is_string($metadata)) {
+            $decoded = json_decode($metadata, true);
+            $metadata = (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) ? $decoded : [];
+        } elseif (!is_array($metadata)) {
+            $metadata = [];
+        }
+
+        $recordedBy = isset($payment['recorded_by_user_id']) ? (int)$payment['recorded_by_user_id'] : (int)$auth->getUserId();
+
+        if ($method === 'room_charge') {
+            $roomBookingId = $payment['room_booking_id'] ?? ($data['room_booking_id'] ?? null);
+            $roomBookingId = $roomBookingId !== null ? (int)$roomBookingId : null;
+
+            if (!$roomBookingId || $roomBookingId <= 0) {
+                throw new Exception('Room selection is required for room charge payments.');
+            }
+
+            if ($tipAmount > 0) {
+                throw new Exception('Tips cannot be applied to room charge payments. Record the tip with another payment method.');
+            }
+
+            if ($roomChargePayment !== null) {
+                throw new Exception('Only one room charge payment can be applied per order.');
+            }
+
+            if (count($paymentsInput) > 1) {
+                throw new Exception('Room charge payments cannot be combined with other payment methods for the same order.');
+            }
+
+            $description = trim((string)($payment['room_charge_description'] ?? $data['room_charge_description'] ?? ''));
+            $roomChargePayment = [
+                'room_booking_id' => $roomBookingId,
+                'description' => $description,
+                'amount' => $amount,
+            ];
+
+            $metadata['room_booking_id'] = $roomBookingId;
+            if ($description !== '') {
+                $metadata['room_charge_description'] = $description;
+            }
+        }
+
+        if ($method === 'cash') {
+            if (isset($payment['amount_received'])) {
+                $metadata['amount_received'] = (float)$payment['amount_received'];
+            }
+            if (isset($payment['change_amount'])) {
+                $metadata['change_amount'] = (float)$payment['change_amount'];
+            }
+        } elseif ($method === 'card') {
+            if (!empty($payment['card_last_four'])) {
+                $metadata['card_last_four'] = substr(preg_replace('/\D/', '', (string)$payment['card_last_four']), -4);
+            }
+            if (!empty($payment['card_type'])) {
+                $metadata['card_type'] = $payment['card_type'];
+            }
+            if (!empty($payment['auth_code'])) {
+                $metadata['auth_code'] = $payment['auth_code'];
+            }
+        } elseif ($method === 'mobile_money') {
+            if (!empty($payment['mobile_provider'])) {
+                $metadata['mobile_provider'] = $payment['mobile_provider'];
+            }
+            if (!empty($payment['mobile_number'])) {
+                $metadata['mobile_number'] = $payment['mobile_number'];
+            }
+            if (!empty($payment['transaction_id'])) {
+                $metadata['transaction_id'] = $payment['transaction_id'];
+            }
+        } elseif ($method === 'bank_transfer') {
+            if (!empty($payment['bank_name'])) {
+                $metadata['bank_name'] = $payment['bank_name'];
+            }
+            if (!empty($payment['reference_number'])) {
+                $metadata['reference_number'] = $payment['reference_number'];
+            }
+        }
+
+        $totalAmount += $amount;
+        $totalTip += $tipAmount;
+
+        $normalizedPayments[] = [
+            'payment_method' => $method,
+            'amount' => round($amount, 2),
+            'tip_amount' => round($tipAmount, 2),
+            'metadata' => !empty($metadata) ? $metadata : null,
+            'recorded_by_user_id' => $recordedBy,
+        ];
+    }
+
+    if (empty($normalizedPayments)) {
+        throw new Exception('No payments supplied.');
+    }
+
+    $orderTotal = (float)$order['total_amount'];
+    $amountRounded = round($totalAmount, 2);
+    $tipRounded = round($totalTip, 2);
+
+    if ($amountRounded < $orderTotal - 0.01) {
+        throw new Exception('Payments do not cover the order total. Please adjust the split amounts.');
+    }
+
+    $paymentStatus = ($amountRounded + 0.009 >= $orderTotal) ? 'paid' : 'partial';
+    $paymentMethodLabel = count($normalizedPayments) > 1 ? 'split' : $normalizedPayments[0]['payment_method'];
+
+    $transactionActive = false;
+    try {
+        $db->beginTransaction();
+        $transactionActive = true;
+
+        if ($roomChargePayment !== null) {
+            if (abs($roomChargePayment['amount'] - $orderTotal) > 0.01) {
+                throw new Exception('Room charge must cover the full order total.');
+            }
+
+            $accountingService = new \App\Services\AccountingService($pdo);
+            $salesService = new \App\Services\SalesService($pdo, $accountingService);
+
+            $saleItems = [];
+            foreach ($items as $item) {
+                $saleItems[] = [
+                    'product_id' => (int)$item['product_id'],
+                    'qty' => (float)$item['quantity'],
+                    'price' => (float)$item['unit_price'],
+                    'tax_rate' => 0,
+                    'discount' => 0,
+                ];
+            }
+
+            $saleResult = $salesService->createSale([
+                'user_id' => $auth->getUserId(),
+                'customer_name' => $order['customer_name'] ?? null,
+                'customer_phone' => $order['customer_phone'] ?? null,
+                'items' => $saleItems,
+                'totals' => [
+                    'subtotal' => (float)$order['subtotal'],
+                    'tax' => (float)$order['tax_amount'],
+                    'discount' => (float)$order['discount_amount'],
+                    'grand' => (float)$order['total_amount'],
+                ],
+                'amount_paid' => 0.0,
+                'change_amount' => 0.0,
+                'payment_method' => 'room_charge',
+                'room_booking_id' => $roomChargePayment['room_booking_id'],
+                'room_charge_description' => $roomChargePayment['description'] !== '' ? $roomChargePayment['description'] : 'Restaurant order ' . $order['order_number'],
+                'notes' => $data['notes'] ?? null,
+            ]);
+
+            if (!($saleResult['success'] ?? false)) {
+                throw new Exception($saleResult['message'] ?? 'Unable to create room charge sale.');
+            }
+        }
+
+        $billingTotals = $billingService->replaceOrderPayments($orderId, $normalizedPayments, $paymentMethodLabel, $paymentStatus);
+
+        if ($paymentStatus === 'paid') {
+            $db->query('UPDATE orders SET status = "preparing" WHERE id = ?', [$orderId]);
+        }
+
+        $db->commit();
+        $transactionActive = false;
+    } catch (Exception $e) {
+        if ($transactionActive && $db->inTransaction()) {
+            $db->rollback();
+        }
+        throw $e;
+    }
+
+    $printResults = $paymentStatus === 'paid' ? handleAutomaticPrinting($db, $orderId, 'payment_completed') : [];
+
+    $tenderedTotal = 0.0;
+    foreach ($normalizedPayments as $payment) {
+        $metadata = $payment['metadata'] ?? [];
+        if ($payment['payment_method'] === 'cash' && is_array($metadata) && isset($metadata['amount_received'])) {
+            $tenderedTotal += (float)$metadata['amount_received'];
+        } else {
+            $tenderedTotal += $payment['amount'] + $payment['tip_amount'];
+        }
+    }
+
+    $changeDue = max(0, round($tenderedTotal - ($orderTotal + $tipRounded), 2));
+
     return [
         'success' => true,
         'order_id' => $orderId,
         'message' => 'Payment processed successfully',
-        'print_results' => $printResults
+        'payment_status' => $paymentStatus,
+        'amount_paid' => $amountRounded,
+        'tip_amount' => $tipRounded,
+        'balance_remaining' => max(0, round($orderTotal - $amountRounded, 2)),
+        'total_tendered' => round($tenderedTotal, 2),
+        'change_due' => $changeDue,
+        'print_results' => $printResults,
     ];
 }
 

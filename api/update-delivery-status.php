@@ -1,6 +1,8 @@
 <?php
 require_once '../includes/bootstrap.php';
 
+use App\Services\DeliveryTrackingService;
+
 header('Content-Type: application/json');
 
 if (!$auth->isLoggedIn()) {
@@ -16,6 +18,7 @@ if (!$data || !isset($data['order_id']) || !isset($data['status'])) {
 }
 
 $db = Database::getInstance();
+$trackingService = new DeliveryTrackingService($db->getConnection());
 
 try {
     $db->beginTransaction();
@@ -32,11 +35,12 @@ try {
         throw new Exception('Delivery record not found');
     }
     
+    $newStatus = $data['status'];
     // Update delivery status
-    $updateData = ['status' => $data['status']];
+    $updateData = ['status' => $newStatus];
     
     // Set timestamps based on status
-    switch ($data['status']) {
+    switch ($newStatus) {
         case 'picked-up':
             $updateData['picked_up_at'] = date('Y-m-d H:i:s');
             break;
@@ -81,7 +85,7 @@ try {
     );
     
     // Update rider's delivery count and rating if delivered
-    if ($data['status'] === 'delivered' && $delivery['rider_id']) {
+    if ($newStatus === 'delivered' && $delivery['rider_id']) {
         $db->query("
             UPDATE riders 
             SET total_deliveries = total_deliveries + 1,
@@ -89,8 +93,24 @@ try {
             WHERE id = ?
         ", [$delivery['rider_id']]);
     }
-    
+
     $db->commit();
+
+    $historyNotes = $data['notes'] ?? null;
+    if ($newStatus === 'failed' && !$historyNotes) {
+        $historyNotes = $data['reason'] ?? 'Marked as failed';
+    }
+
+    // Record timeline entry
+    try {
+        $trackingService->recordStatusHistory((int)$delivery['id'], $newStatus, [
+            'notes' => $historyNotes,
+            'user_id' => $auth->getUserId(),
+        ]);
+    } catch (Exception $inner) {
+        // Timeline recording failure should not break response
+        error_log('Failed to record delivery status history: ' . $inner->getMessage());
+    }
     
     echo json_encode([
         'success' => true,

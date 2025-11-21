@@ -42,11 +42,13 @@ $systemHealth = [
 $recentActivities = $db->fetchAll("
     SELECT 
         pal.action_type,
+        COALESCE(sm.display_name, sm.name, 'General') AS module_name,
         pal.created_at,
         u.full_name as user_name,
         pal.risk_level
     FROM permission_audit_log pal
     LEFT JOIN users u ON pal.user_id = u.id
+    LEFT JOIN system_modules sm ON pal.module_id = sm.id
     WHERE pal.action_type IN ('permission_changed', 'sensitive_action', 'policy_violation')
     ORDER BY pal.created_at DESC
     LIMIT 10
@@ -82,373 +84,443 @@ include '../includes/header.php';
 ?>
 
 <style>
-.metric-card {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    border-radius: 15px;
-    padding: 1.5rem;
-    margin-bottom: 1rem;
-}
-.metric-card .metric-value {
-    font-size: 2.5rem;
-    font-weight: bold;
-    margin-bottom: 0.5rem;
-}
-.health-indicator {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    display: inline-block;
-    margin-right: 8px;
-}
-.health-good { background-color: #28a745; }
-.health-warning { background-color: #ffc107; }
-.health-danger { background-color: #dc3545; }
+    .admin-shell {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-xl);
+    }
+    .admin-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        align-items: center;
+        gap: var(--spacing-md);
+    }
+    .admin-toolbar h1 {
+        margin: 0;
+        font-size: var(--text-2xl);
+    }
+    .admin-toolbar p {
+        margin: 0;
+        color: var(--color-text-muted);
+    }
+    .admin-metrics {
+        display: grid;
+        gap: var(--spacing-md);
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    }
+    .admin-metric-card {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        background: var(--color-surface);
+        box-shadow: var(--shadow-sm);
+        padding: var(--spacing-md);
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+    }
+    .admin-metric-card h3 {
+        font-size: var(--text-2xl);
+        margin: 0;
+    }
+    .admin-metric-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 44px;
+        height: 44px;
+        border-radius: var(--radius-pill);
+        font-size: var(--text-lg);
+    }
+    .admin-layout {
+        display: grid;
+        gap: var(--spacing-lg);
+    }
+    @media (min-width: 1200px) {
+        .admin-layout {
+            grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+        }
+    }
+    .admin-card {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        background: var(--color-surface);
+        box-shadow: var(--shadow-sm);
+        display: flex;
+        flex-direction: column;
+    }
+    .admin-card header {
+        padding: var(--spacing-md);
+        border-bottom: 1px solid var(--color-border-subtle);
+    }
+    .admin-card header h5,
+    .admin-card header h6 {
+        margin: 0;
+    }
+    .admin-card .card-body {
+        padding: var(--spacing-md);
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-md);
+    }
+    .admin-financial-grid {
+        display: grid;
+        gap: var(--spacing-md);
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    }
+    .admin-financial-cell {
+        border: 1px solid var(--color-border-subtle);
+        border-radius: var(--radius-md);
+        background: var(--color-surface-subtle);
+        padding: var(--spacing-md);
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-xs);
+    }
+    .admin-actions {
+        display: grid;
+        gap: var(--spacing-sm);
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    }
+    .admin-health-list {
+        display: grid;
+        gap: var(--spacing-sm);
+    }
+    .admin-health-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: var(--spacing-sm) var(--spacing-md);
+        border: 1px solid var(--color-border-subtle);
+        border-radius: var(--radius-md);
+        background: var(--color-surface-subtle);
+    }
+    .admin-health-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        display: inline-block;
+    }
+    .admin-health-dot--good { background-color: var(--color-success); }
+    .admin-health-dot--warn { background-color: var(--color-warning); }
+    .admin-health-dot--bad { background-color: var(--color-danger); }
+    .admin-activity-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+    }
+    .admin-activity-item {
+        border: 1px solid var(--color-border-subtle);
+        border-radius: var(--radius-md);
+        padding: var(--spacing-sm) var(--spacing-md);
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: var(--spacing-md);
+        background: var(--color-surface-subtle);
+    }
+    .admin-activity-meta {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-xxs);
+    }
+    .admin-grid {
+        display: grid;
+        gap: var(--spacing-lg);
+    }
+    @media (min-width: 992px) {
+        .admin-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+    .admin-inventory-grid {
+        display: grid;
+        gap: var(--spacing-sm);
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+    .admin-quick-actions {
+        display: grid;
+        gap: var(--spacing-sm);
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    }
 </style>
 
-<!-- Admin Dashboard Header -->
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <h2 class="mb-0">
-            <i class="bi bi-shield-lock-fill text-primary me-2"></i>
-            Administrative Dashboard
-        </h2>
-        <p class="text-muted mb-0">Complete system overview and control</p>
-    </div>
-    <div class="btn-group">
-        <a href="<?= APP_URL ?>/status.php" class="btn btn-outline-primary">
-            <i class="bi bi-cpu me-1"></i>System Status
-        </a>
-        <a href="<?= APP_URL ?>/permissions.php" class="btn btn-outline-success">
-            <i class="bi bi-shield-check me-1"></i>Permissions
-        </a>
-        <a href="<?= APP_URL ?>/users.php" class="btn btn-outline-info">
-            <i class="bi bi-people me-1"></i>Users
-        </a>
-        <a href="<?= APP_URL ?>/products.php" class="btn btn-outline-secondary">
-            <i class="bi bi-box me-1"></i>Products
-        </a>
-        <a href="<?= APP_URL ?>/locations.php" class="btn btn-outline-warning">
-            <i class="bi bi-geo-alt me-1"></i>Locations
-        </a>
-        <a href="<?= APP_URL ?>/settings.php" class="btn btn-outline-dark">
-            <i class="bi bi-gear me-1"></i>Settings
-        </a>
-    </div>
-</div>
+<div class="admin-shell container-fluid py-4">
+    <section class="admin-toolbar">
+        <div class="stack-sm">
+            <h1><i class="bi bi-shield-lock-fill text-primary me-2"></i>Administrative Dashboard</h1>
+            <p>Complete system overview and control center for admins and developers.</p>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <a href="<?= APP_URL ?>/status.php" class="btn btn-outline-primary btn-icon">
+                <i class="bi bi-cpu"></i>System Status
+            </a>
+            <a href="<?= APP_URL ?>/permissions.php" class="btn btn-outline-success btn-icon">
+                <i class="bi bi-shield-check"></i>Permissions
+            </a>
+            <a href="<?= APP_URL ?>/users.php" class="btn btn-outline-info btn-icon">
+                <i class="bi bi-people"></i>Users
+            </a>
+            <a href="<?= APP_URL ?>/products.php" class="btn btn-outline-secondary btn-icon">
+                <i class="bi bi-box"></i>Products
+            </a>
+            <a href="<?= APP_URL ?>/locations.php" class="btn btn-outline-warning btn-icon">
+                <i class="bi bi-geo-alt"></i>Locations
+            </a>
+            <a href="<?= APP_URL ?>/settings.php" class="btn btn-outline-dark btn-icon">
+                <i class="bi bi-gear"></i>Settings
+            </a>
+        </div>
+    </section>
 
-<!-- System Overview Cards -->
-<div class="row g-3 mb-4">
-    <div class="col-md-3">
-        <div class="metric-card text-center">
-            <div class="metric-value"><?= number_format($systemStats['users']) ?></div>
-            <div class="metric-label">Active Users</div>
-            <small class="opacity-75">System accounts</small>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="metric-card text-center">
-            <div class="metric-value"><?= number_format($systemStats['total_sales']) ?></div>
-            <div class="metric-label">Total Sales</div>
-            <small class="opacity-75">All transactions</small>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="metric-card text-center">
-            <div class="metric-value"><?= number_format($systemStats['products']) ?></div>
-            <div class="metric-label">Products</div>
-            <small class="opacity-75">Active inventory</small>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="metric-card text-center">
-            <div class="metric-value"><?= number_format($systemStats['locations']) ?></div>
-            <div class="metric-label">Locations</div>
-            <small class="opacity-75">Store locations</small>
-        </div>
-    </div>
-</div>
+    <section class="admin-metrics">
+        <article class="admin-metric-card">
+            <div class="d-flex justify-content-between align-items-start">
+                <div class="stack-xs">
+                    <span class="text-muted text-uppercase small">Active Users</span>
+                    <h3><?= number_format($systemStats['users'] ?? 0) ?></h3>
+                </div>
+                <span class="admin-metric-icon bg-primary bg-opacity-10 text-primary">
+                    <i class="bi bi-people"></i>
+                </span>
+            </div>
+            <span class="text-muted small">Accounts with access today.</span>
+        </article>
+        <article class="admin-metric-card">
+            <div class="d-flex justify-content-between align-items-start">
+                <div class="stack-xs">
+                    <span class="text-muted text-uppercase small">Total Sales</span>
+                    <h3><?= number_format($systemStats['total_sales'] ?? 0) ?></h3>
+                </div>
+                <span class="admin-metric-icon bg-success bg-opacity-10 text-success">
+                    <i class="bi bi-receipt"></i>
+                </span>
+            </div>
+            <span class="text-muted small">All-time transactions recorded.</span>
+        </article>
+        <article class="admin-metric-card">
+            <div class="d-flex justify-content-between align-items-start">
+                <div class="stack-xs">
+                    <span class="text-muted text-uppercase small">Products</span>
+                    <h3><?= number_format($systemStats['products'] ?? 0) ?></h3>
+                </div>
+                <span class="admin-metric-icon bg-info bg-opacity-10 text-info">
+                    <i class="bi bi-box-seam"></i>
+                </span>
+            </div>
+            <span class="text-muted small">Active inventory items.</span>
+        </article>
+        <article class="admin-metric-card">
+            <div class="d-flex justify-content-between align-items-start">
+                <div class="stack-xs">
+                    <span class="text-muted text-uppercase small">Locations</span>
+                    <h3><?= number_format($systemStats['locations'] ?? 0) ?></h3>
+                </div>
+                <span class="admin-metric-icon bg-warning bg-opacity-10 text-warning">
+                    <i class="bi bi-geo"></i>
+                </span>
+            </div>
+            <span class="text-muted small">Operational venues online.</span>
+        </article>
+    </section>
 
-<!-- Financial Overview -->
-<div class="row g-4 mb-4">
-    <div class="col-md-8">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-success text-white">
+    <section class="admin-layout">
+        <article class="admin-card">
+            <header>
                 <h5 class="mb-0"><i class="bi bi-graph-up me-2"></i>Financial Overview</h5>
-            </div>
+            </header>
             <div class="card-body">
-                <div class="row text-center g-3">
-                    <div class="col-md-4">
-                        <div class="border-end">
-                            <div class="h3 text-success mb-1"><?= formatMoney($financials['today']) ?></div>
-                            <div class="text-muted small">Today's Revenue</div>
-                        </div>
+                <div class="admin-financial-grid">
+                    <div class="admin-financial-cell">
+                        <small class="text-muted text-uppercase">Today's Revenue</small>
+                        <h4 class="text-success mb-0"><?= formatMoney($financials['today'] ?? 0) ?></h4>
                     </div>
-                    <div class="col-md-4">
-                        <div class="border-end">
-                            <div class="h3 text-primary mb-1"><?= formatMoney($financials['month']) ?></div>
-                            <div class="text-muted small">This Month</div>
-                        </div>
+                    <div class="admin-financial-cell">
+                        <small class="text-muted text-uppercase">Month to Date</small>
+                        <h4 class="text-primary mb-0"><?= formatMoney($financials['month'] ?? 0) ?></h4>
                     </div>
-                    <div class="col-md-4">
-                        <div class="h3 text-info mb-1"><?= formatMoney($financials['year']) ?></div>
-                        <div class="text-muted small">This Year</div>
+                    <div class="admin-financial-cell">
+                        <small class="text-muted text-uppercase">Year to Date</small>
+                        <h4 class="text-info mb-0"><?= formatMoney($financials['year'] ?? 0) ?></h4>
                     </div>
                 </div>
-                
-                <hr>
-                
-                <div class="row g-2">
-                    <div class="col-md-6">
-                        <a href="<?= APP_URL ?>/reports.php" class="btn btn-outline-primary w-100">
-                            <i class="bi bi-bar-chart me-2"></i>Detailed Reports
-                        </a>
-                    </div>
-                    <div class="col-md-6">
-                        <a href="<?= APP_URL ?>/accounting.php" class="btn btn-outline-success w-100">
-                            <i class="bi bi-calculator me-2"></i>Accounting
-                        </a>
-                    </div>
+                <div class="admin-actions">
+                    <a href="<?= APP_URL ?>/reports.php" class="btn btn-outline-primary btn-icon">
+                        <i class="bi bi-bar-chart"></i>Detailed Reports
+                    </a>
+                    <a href="<?= APP_URL ?>/accounting.php" class="btn btn-outline-success btn-icon">
+                        <i class="bi bi-calculator"></i>Accounting Suite
+                    </a>
                 </div>
             </div>
+        </article>
+
+        <div class="stack-lg">
+            <article class="admin-card">
+                <header>
+                    <h6 class="mb-0"><i class="bi bi-heart-pulse me-2"></i>System Health</h6>
+                </header>
+                <div class="card-body">
+                    <div class="admin-health-list">
+                        <div class="admin-health-item">
+                            <span>Initialization</span>
+                            <span class="admin-health-dot <?= $systemHealth['initialized'] ? 'admin-health-dot--good' : 'admin-health-dot--bad' ?>"></span>
+                        </div>
+                        <div class="admin-health-item">
+                            <span>Modules</span>
+                            <span class="badge bg-primary"><?= number_format($systemHealth['modules_count'] ?? 0) ?></span>
+                        </div>
+                        <div class="admin-health-item">
+                            <span>Actions</span>
+                            <span class="badge bg-success"><?= number_format($systemHealth['actions_count'] ?? 0) ?></span>
+                        </div>
+                        <div class="admin-health-item">
+                            <span>Relationships</span>
+                            <span class="badge bg-info"><?= number_format($systemHealth['relationships_count'] ?? 0) ?></span>
+                        </div>
+                    </div>
+                    <a href="<?= APP_URL ?>/status.php" class="btn btn-outline-info btn-icon align-self-start">
+                        <i class="bi bi-gear"></i>Full Diagnostics
+                    </a>
+                </div>
+            </article>
+
+            <article class="admin-card">
+                <header>
+                    <h6 class="mb-0"><i class="bi bi-shield-exclamation me-2"></i>Security Activities</h6>
+                </header>
+                <div class="card-body">
+                    <?php if (!empty($recentActivities)): ?>
+                        <div class="admin-activity-list">
+                            <?php foreach ($recentActivities as $activity): ?>
+                                <div class="admin-activity-item">
+                                    <div class="admin-activity-meta">
+                                        <span class="fw-semibold small"><?= ucwords(str_replace('_', ' ', $activity['action_type'])) ?></span>
+                                        <small class="text-muted"><?= htmlspecialchars($activity['user_name'] ?? 'System') ?><?php if (!empty($activity['module_name'])): ?> → <?= htmlspecialchars($activity['module_name']) ?><?php endif; ?></small>
+                                        <small class="text-muted"><?= formatDate($activity['created_at'], 'M j, H:i') ?></small>
+                                    </div>
+                                    <?php
+                                        $riskLevel = $activity['risk_level'] ?? 'normal';
+                                        $riskClass = match ($riskLevel) {
+                                            'critical' => 'danger',
+                                            'high' => 'warning',
+                                            'medium' => 'info',
+                                            default => 'secondary',
+                                        };
+                                    ?>
+                                    <span class="badge bg-<?= $riskClass ?>"><?= ucfirst($riskLevel) ?></span>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php else: ?>
+                        <div class="text-center text-muted py-4">
+                            <i class="bi bi-shield-check fs-1"></i>
+                            <p class="mt-3 mb-0">No security escalations logged.</p>
+                        </div>
+                    <?php endif; ?>
+                    <a href="<?= APP_URL ?>/permissions.php" class="btn btn-outline-warning btn-icon align-self-start">
+                        <i class="bi bi-eye"></i>View Audit Log
+                    </a>
+                </div>
+            </article>
         </div>
-    </div>
-    
-    <div class="col-md-4">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-info text-white">
-                <h5 class="mb-0"><i class="bi bi-heart-pulse me-2"></i>System Health</h5>
-            </div>
+    </section>
+
+    <section class="admin-grid">
+        <article class="admin-card">
+            <header>
+                <h6 class="mb-0"><i class="bi bi-people me-2"></i>User Activity (Today)</h6>
+            </header>
             <div class="card-body">
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <span>System Status</span>
-                        <span class="health-indicator <?= $systemHealth['initialized'] ? 'health-good' : 'health-danger' ?>"></span>
+                <?php if (!empty($userActivity)): ?>
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>User</th>
+                                    <th>Role</th>
+                                    <th class="text-center">Sales</th>
+                                    <th class="text-end">Revenue</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($userActivity as $user): ?>
+                                    <tr>
+                                        <td class="fw-semibold small"><?= htmlspecialchars($user['full_name']) ?></td>
+                                        <td><span class="badge bg-secondary small"><?= ucfirst($user['role']) ?></span></td>
+                                        <td class="text-center"><span class="badge bg-info"><?= (int)$user['sales_count'] ?></span></td>
+                                        <td class="text-end"><small><?= formatMoney($user['sales_total'] ?? 0) ?></small></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
                     </div>
-                </div>
-                
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <span>Modules</span>
-                        <span class="badge bg-primary"><?= $systemHealth['modules_count'] ?></span>
+                <?php else: ?>
+                    <div class="text-center text-muted py-4">
+                        <i class="bi bi-person-x fs-1"></i>
+                        <p class="mt-3 mb-0">No user activity captured yet today.</p>
                     </div>
-                </div>
-                
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <span>Actions</span>
-                        <span class="badge bg-success"><?= $systemHealth['actions_count'] ?></span>
+                <?php endif; ?>
+                <a href="<?= APP_URL ?>/users.php" class="btn btn-outline-primary btn-icon align-self-start">
+                    <i class="bi bi-people"></i>Manage Users
+                </a>
+            </div>
+        </article>
+
+        <article class="admin-card">
+            <header>
+                <h6 class="mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Inventory Alerts</h6>
+            </header>
+            <div class="card-body">
+                <?php if (!empty($lowStock)): ?>
+                    <div class="admin-inventory-grid">
+                        <?php foreach ($lowStock as $item): ?>
+                            <div class="alert alert-warning mb-0">
+                                <div class="fw-semibold small text-truncate"><?= htmlspecialchars($item['name']) ?></div>
+                                <small class="text-danger">Stock <?= (int)$item['stock_quantity'] ?> • Min <?= (int)$item['min_stock_level'] ?></small>
+                            </div>
+                        <?php endforeach; ?>
                     </div>
-                </div>
-                
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <span>Relationships</span>
-                        <span class="badge bg-info"><?= $systemHealth['relationships_count'] ?></span>
+                <?php else: ?>
+                    <div class="text-center text-muted py-4">
+                        <i class="bi bi-check-circle fs-1 text-success"></i>
+                        <p class="mt-3 mb-0">All tracked items are above minimum levels.</p>
                     </div>
-                </div>
-                
-                <a href="<?= APP_URL ?>/status.php" class="btn btn-outline-info w-100">
-                    <i class="bi bi-gear me-2"></i>Full Diagnostics
+                <?php endif; ?>
+                <a href="<?= APP_URL ?>/products.php" class="btn btn-outline-danger btn-icon align-self-start">
+                    <i class="bi bi-box-seam"></i>Manage Inventory
+                </a>
+            </div>
+        </article>
+    </section>
+
+    <section class="admin-card">
+        <header>
+            <h6 class="mb-0"><i class="bi bi-lightning-charge me-2"></i>Quick Administrative Actions</h6>
+        </header>
+        <div class="card-body">
+            <div class="admin-quick-actions">
+                <a href="<?= APP_URL ?>/users.php" class="btn btn-outline-primary btn-icon">
+                    <i class="bi bi-person-plus"></i>Add User
+                </a>
+                <a href="<?= APP_URL ?>/permissions.php" class="btn btn-outline-success btn-icon">
+                    <i class="bi bi-shield-plus"></i>Permissions
+                </a>
+                <a href="<?= APP_URL ?>/products.php" class="btn btn-outline-info btn-icon">
+                    <i class="bi bi-plus-square"></i>Add Product
+                </a>
+                <a href="<?= APP_URL ?>/locations.php" class="btn btn-outline-warning btn-icon">
+                    <i class="bi bi-geo-alt"></i>Locations
+                </a>
+                <a href="<?= APP_URL ?>/settings.php" class="btn btn-outline-secondary btn-icon">
+                    <i class="bi bi-gear"></i>Settings
+                </a>
+                <a href="<?= APP_URL ?>/status.php" class="btn btn-outline-danger btn-icon">
+                    <i class="bi bi-cpu"></i>System
                 </a>
             </div>
         </div>
-    </div>
-</div>
-
-<!-- Management Sections -->
-<div class="row g-4 mb-4">
-    <!-- Recent Admin Activities -->
-    <div class="col-md-6">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-warning text-dark">
-                <h5 class="mb-0"><i class="bi bi-shield-exclamation me-2"></i>Security Activities</h5>
-            </div>
-            <div class="card-body">
-                <?php if (!empty($recentActivities)): ?>
-                <div class="list-group list-group-flush">
-                    <?php foreach ($recentActivities as $activity): ?>
-                    <div class="list-group-item border-0 px-0">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div class="flex-grow-1">
-                                <div class="fw-bold small">
-                                    <?= ucwords(str_replace('_', ' ', $activity['action_type'])) ?>
-                                </div>
-                                <div class="text-muted small">
-                                    <?= htmlspecialchars($activity['user_name'] ?? 'System') ?>
-                                    <?php if ($activity['module_name']): ?>
-                                        → <?= htmlspecialchars($activity['module_name']) ?>
-                                    <?php endif; ?>
-                                </div>
-                                <div class="text-muted small">
-                                    <?= formatDate($activity['created_at'], 'M j, H:i') ?>
-                                </div>
-                            </div>
-                            <span class="badge bg-<?= 
-                                $activity['risk_level'] === 'critical' ? 'danger' : 
-                                ($activity['risk_level'] === 'high' ? 'warning' : 'secondary') 
-                            ?>">
-                                <?= ucfirst($activity['risk_level']) ?>
-                            </span>
-                        </div>
-                    </div>
-                    <?php endforeach; ?>
-                </div>
-                <?php else: ?>
-                <div class="text-center text-muted py-3">
-                    <i class="bi bi-shield-check fs-1"></i>
-                    <p class="mt-2">No recent security activities</p>
-                </div>
-                <?php endif; ?>
-                
-                <div class="mt-3">
-                    <a href="<?= APP_URL ?>/permissions.php" class="btn btn-outline-warning w-100">
-                        <i class="bi bi-eye me-2"></i>View Audit Log
-                    </a>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- User Activity -->
-    <div class="col-md-6">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-primary text-white">
-                <h5 class="mb-0"><i class="bi bi-people me-2"></i>User Activity (Today)</h5>
-            </div>
-            <div class="card-body">
-                <?php if (!empty($userActivity)): ?>
-                <div class="table-responsive">
-                    <table class="table table-sm mb-0">
-                        <thead>
-                            <tr>
-                                <th>User</th>
-                                <th>Role</th>
-                                <th>Sales</th>
-                                <th>Revenue</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($userActivity as $user): ?>
-                            <tr>
-                                <td>
-                                    <div class="fw-bold small"><?= htmlspecialchars($user['full_name']) ?></div>
-                                </td>
-                                <td>
-                                    <span class="badge bg-secondary small"><?= ucfirst($user['role']) ?></span>
-                                </td>
-                                <td class="text-center">
-                                    <span class="badge bg-info"><?= $user['sales_count'] ?></span>
-                                </td>
-                                <td class="text-end">
-                                    <small><?= formatMoney($user['sales_total']) ?></small>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-                <?php else: ?>
-                <div class="text-center text-muted py-3">
-                    <i class="bi bi-person-x fs-1"></i>
-                    <p class="mt-2">No user activity today</p>
-                </div>
-                <?php endif; ?>
-                
-                <div class="mt-3">
-                    <a href="<?= APP_URL ?>/users.php" class="btn btn_outline-primary w-100">
-                        <i class="bi bi-people me-2"></i>Manage Users
-                    </a>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Inventory Alerts -->
-<?php if (!empty($lowStock)): ?>
-<div class="row g-4 mb-4">
-    <div class="col-12">
-        <div class="card border-0 shadow-sm border-start border-danger border-4">
-            <div class="card-header bg-light">
-                <h5 class="mb-0 text-danger">
-                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                    Inventory Alerts (<?= count($lowStock) ?> items)
-                </h5>
-            </div>
-            <div class="card-body">
-                <div class="row g-2">
-                    <?php foreach ($lowStock as $item): ?>
-                    <div class="col-md-2">
-                        <div class="alert alert-warning mb-0 text-center">
-                            <div class="fw-bold small"><?= htmlspecialchars($item['name']) ?></div>
-                            <div class="text-danger">
-                                <strong><?= $item['stock_quantity'] ?></strong> / <?= $item['min_stock_level'] ?>
-                            </div>
-                        </div>
-                    </div>
-                    <?php endforeach; ?>
-                </div>
-                <div class="mt-3">
-                    <a href="<?= APP_URL ?>/products.php" class="btn btn-outline-danger">
-                        <i class="bi bi-box-seam me-2"></i>Manage Inventory
-                    </a>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-<?php endif; ?>
-
-<!-- Quick Actions -->
-<div class="row g-4">
-    <div class="col-12">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-dark text-white">
-                <h5 class="mb-0"><i class="bi bi-lightning-charge me-2"></i>Quick Administrative Actions</h5>
-            </div>
-            <div class="card-body">
-                <div class="row g-2">
-                    <div class="col-md-2">
-                        <a href="<?= APP_URL ?>/users.php" class="btn btn-outline-primary w-100">
-                            <i class="bi bi-person-plus d-block fs-4 mb-2"></i>
-                            <small>Add User</small>
-                        </a>
-                    </div>
-                    <div class="col-md-2">
-                        <a href="<?= APP_URL ?>/permissions.php" class="btn btn-outline-success w-100">
-                            <i class="bi bi-shield-plus d-block fs-4 mb-2"></i>
-                            <small>Permissions</small>
-                        </a>
-                    </div>
-                    <div class="col-md-2">
-                        <a href="<?= APP_URL ?>/products.php" class="btn btn-outline-info w-100">
-                            <i class="bi bi-plus-square d-block fs-4 mb-2"></i>
-                            <small>Add Product</small>
-                        </a>
-                    </div>
-                    <div class="col-md-2">
-                        <a href="<?= APP_URL ?>/locations.php" class="btn btn-outline-warning w-100">
-                            <i class="bi bi-geo-alt-fill d-block fs-4 mb-2"></i>
-                            <small>Locations</small>
-                        </a>
-                    </div>
-                    <div class="col-md-2">
-                        <a href="<?= APP_URL ?>/settings.php" class="btn btn-outline-secondary w-100">
-                            <i class="bi bi-gear-fill d-block fs-4 mb-2"></i>
-                            <small>Settings</small>
-                        </a>
-                    </div>
-                    <div class="col-md-2">
-                        <a href="<?= APP_URL ?>/status.php" class="btn btn-outline-danger w-100">
-                            <i class="bi bi-cpu-fill d-block fs-4 mb-2"></i>
-                            <small>System</small>
-                        </a>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+    </section>
 </div>
 
 <?php include '../includes/footer.php'; ?>

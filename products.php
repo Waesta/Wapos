@@ -77,6 +77,84 @@ $products = $db->fetchAll("
 $categories = $db->fetchAll("SELECT * FROM categories WHERE is_active = 1 ORDER BY name");
 $suppliers = $db->fetchAll("SELECT * FROM suppliers WHERE is_active = 1 ORDER BY name");
 
+// Catalog metrics & health indicators
+$totalProducts = count($products);
+$activeProducts = 0;
+$inactiveProducts = 0;
+$lowStockProducts = [];
+$outOfStockProducts = [];
+$totalStockValue = 0;
+$totalCostValue = 0;
+$totalSellingValue = 0;
+$categoryBreakdown = [];
+$negativeMarginProducts = [];
+
+foreach ($products as $product) {
+    $isActive = (int)$product['is_active'] === 1;
+    $stockQty = (float)($product['stock_quantity'] ?? 0);
+    $minLevel = (float)($product['min_stock_level'] ?? 0);
+    $cost = (float)($product['cost_price'] ?? 0);
+    $price = (float)($product['selling_price'] ?? 0);
+    $margin = $price - $cost;
+    $stockValue = $stockQty * $cost;
+
+    if ($isActive) {
+        $activeProducts++;
+    } else {
+        $inactiveProducts++;
+    }
+
+    if ($stockQty <= $minLevel) {
+        $lowStockProducts[] = $product;
+    }
+
+    if ($stockQty <= 0) {
+        $outOfStockProducts[] = $product;
+    }
+
+    if ($price > 0) {
+        $totalSellingValue += $price * $stockQty;
+    }
+    if ($cost > 0) {
+        $totalCostValue += $cost * $stockQty;
+    }
+
+    $totalStockValue += $stockValue;
+
+    if ($margin < 0.01) {
+        $negativeMarginProducts[] = $product;
+    }
+
+    $categoryKey = $product['category_name'] ?? 'Uncategorized';
+    if (!isset($categoryBreakdown[$categoryKey])) {
+        $categoryBreakdown[$categoryKey] = [
+            'count' => 0,
+            'stock_value' => 0,
+            'active' => 0,
+        ];
+    }
+
+    $categoryBreakdown[$categoryKey]['count']++;
+    $categoryBreakdown[$categoryKey]['stock_value'] += $stockValue;
+    if ($isActive) {
+        $categoryBreakdown[$categoryKey]['active']++;
+    }
+}
+
+ksort($categoryBreakdown);
+
+$averageMargin = $totalProducts > 0 ? ($totalSellingValue - $totalCostValue) / ($totalProducts ?: 1) : 0;
+$marginPercent = $totalCostValue > 0 ? (($totalSellingValue - $totalCostValue) / $totalCostValue) * 100 : 0;
+$lowStockCount = count($lowStockProducts);
+$outOfStockCount = count($outOfStockProducts);
+$negativeMarginCount = count($negativeMarginProducts);
+
+usort($lowStockProducts, function ($a, $b) {
+    return ($a['stock_quantity'] <=> $b['stock_quantity']);
+});
+
+$topCategories = array_slice($categoryBreakdown, 0, 5, true);
+
 $pageTitle = 'Products';
 include 'includes/header.php';
 ?>
@@ -88,17 +166,170 @@ include 'includes/header.php';
     <div class="alert alert-danger"><?= $_SESSION['error_message']; unset($_SESSION['error_message']); ?></div>
 <?php endif; ?>
 
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="mb-0"><i class="bi bi-box-seam me-2"></i>Products Management</h4>
-    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#productModal" onclick="resetForm()">
-        <i class="bi bi-plus-circle me-2"></i>Add Product
-    </button>
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 mb-4">
+    <div>
+        <h4 class="mb-0"><i class="bi bi-box-seam me-2"></i>Products Management</h4>
+        <small class="text-muted">Maintain catalog data, margins, and stock health</small>
+    </div>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-secondary" onclick="location.href='inventory.php'">
+            <i class="bi bi-arrow-left-right me-2"></i>Inventory Ops
+        </button>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#productModal" onclick="resetForm()">
+            <i class="bi bi-plus-circle me-2"></i>Add Product
+        </button>
+    </div>
+</div>
+
+<!-- Summary Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <small class="text-muted text-uppercase">Active Catalog</small>
+                <h3 class="mb-0"><?= $activeProducts ?> / <?= $totalProducts ?></h3>
+                <span class="badge bg-success-subtle text-success mt-2">Active</span>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <small class="text-muted text-uppercase">Stock Value</small>
+                <h3 class="mb-0">KES <?= formatMoney($totalStockValue) ?></h3>
+                <span class="badge bg-primary-subtle text-primary mt-2">On Hand</span>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <small class="text-muted text-uppercase">Margin Health</small>
+                <h3 class="mb-0">KES <?= formatMoney($averageMargin) ?></h3>
+                <span class="badge bg-info-subtle text-info mt-2">Avg / item · <?= number_format($marginPercent, 1) ?>%</span>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <small class="text-muted text-uppercase">Exceptions</small>
+                <h3 class="mb-0"><?= $lowStockCount + $negativeMarginCount ?></h3>
+                <span class="badge bg-warning-subtle text-warning mt-2">Low Stock: <?= $lowStockCount ?></span>
+                <span class="badge bg-danger-subtle text-danger ms-2">Negative Margin: <?= $negativeMarginCount ?></span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<?php if ($lowStockCount > 0): ?>
+<div class="alert alert-warning border-0 shadow-sm">
+    <div class="d-flex align-items-start gap-3">
+        <i class="bi bi-exclamation-triangle-fill fs-3"></i>
+        <div>
+            <h5 class="mb-1">Low Stock Watchlist</h5>
+            <p class="mb-2">Review reorder levels for these items to avoid stock-outs.</p>
+            <div class="row g-2">
+                <?php foreach (array_slice($lowStockProducts, 0, 6) as $product): ?>
+                    <div class="col-md-4">
+                        <strong><?= htmlspecialchars($product['name']) ?></strong>
+                        <div class="small text-muted">On hand: <?= $product['stock_quantity'] ?> · Reorder at <?= $product['min_stock_level'] ?></div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
+<div class="row g-3 mb-4">
+    <div class="col-lg-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white">
+                <h6 class="mb-0">Category Mix</h6>
+            </div>
+            <div class="card-body">
+                <?php if (!empty($topCategories)): ?>
+                    <ul class="list-group list-group-flush">
+                        <?php foreach ($topCategories as $category => $stats): ?>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong><?= htmlspecialchars($category) ?></strong>
+                                <div class="small text-muted"><?= $stats['active'] ?> active of <?= $stats['count'] ?> products</div>
+                            </div>
+                            <span class="badge bg-light text-dark">KES <?= formatMoney($stats['stock_value']) ?></span>
+                        </li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php else: ?>
+                    <p class="text-muted mb-0">No category data available.</p>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white">
+                <h6 class="mb-0">Margin Exceptions</h6>
+            </div>
+            <div class="card-body">
+                <?php if ($negativeMarginCount > 0): ?>
+                <div class="table-responsive" style="max-height:220px;">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Product</th>
+                                <th>Cost</th>
+                                <th>Price</th>
+                                <th>Margin</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach (array_slice($negativeMarginProducts, 0, 6) as $product): ?>
+                            <?php $margin = $product['selling_price'] - $product['cost_price']; ?>
+                            <tr>
+                                <td><?= htmlspecialchars($product['name']) ?></td>
+                                <td><?= formatMoney($product['cost_price']) ?></td>
+                                <td><?= formatMoney($product['selling_price']) ?></td>
+                                <td class="text-danger">KES <?= formatMoney($margin) ?></td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <?php else: ?>
+                    <p class="text-muted mb-0">No negative margin products detected.</p>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
 </div>
 
 <div class="card border-0 shadow-sm">
+    <div class="card-header bg-white d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+        <h5 class="mb-0">Product Catalog</h5>
+        <div class="d-flex flex-wrap gap-2">
+            <div class="input-group input-group-sm" style="max-width:220px;">
+                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                <input type="text" class="form-control" id="productSearch" placeholder="Search name or SKU">
+            </div>
+            <select class="form-select form-select-sm" id="categoryFilter" style="max-width:180px;">
+                <option value="">All Categories</option>
+                <?php foreach ($categories as $cat): ?>
+                <option value="<?= htmlspecialchars($cat['name']) ?>"><?= htmlspecialchars($cat['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <select class="form-select form-select-sm" id="statusFilter" style="max-width:160px;">
+                <option value="">All Status</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="low-stock">Low Stock</option>
+            </select>
+        </div>
+    </div>
     <div class="card-body">
         <div class="table-responsive">
-            <table class="table table-hover">
+            <table class="table table-hover" id="productsTable">
                 <thead class="table-light">
                     <tr>
                         <th>SKU</th>
@@ -106,6 +337,7 @@ include 'includes/header.php';
                         <th>Category</th>
                         <th>Cost</th>
                         <th>Price</th>
+                        <th>Margin</th>
                         <th>Stock</th>
                         <th>Status</th>
                         <th>Actions</th>
@@ -113,12 +345,20 @@ include 'includes/header.php';
                 </thead>
                 <tbody>
                     <?php foreach ($products as $product): ?>
-                    <tr>
+                    <?php
+                        $marginValue = ($product['selling_price'] ?? 0) - ($product['cost_price'] ?? 0);
+                        $rowStatus = $product['is_active'] ? 'active' : 'inactive';
+                        if ($product['stock_quantity'] <= $product['min_stock_level']) {
+                            $rowStatus = 'low-stock';
+                        }
+                    ?>
+                    <tr data-category="<?= htmlspecialchars($product['category_name'] ?? '') ?>" data-status="<?= $rowStatus ?>" data-search="<?= htmlspecialchars(strtolower($product['name'] . ' ' . $product['sku'])) ?>">
                         <td><?= htmlspecialchars($product['sku']) ?></td>
                         <td><strong><?= htmlspecialchars($product['name']) ?></strong></td>
                         <td><?= htmlspecialchars($product['category_name'] ?? '-') ?></td>
                         <td>KES <?= formatMoney($product['cost_price']) ?></td>
                         <td class="fw-bold">KES <?= formatMoney($product['selling_price']) ?></td>
+                        <td class="<?= $marginValue < 0 ? 'text-danger' : 'text-muted' ?>">KES <?= formatMoney($marginValue) ?></td>
                         <td>
                             <?php if ($product['stock_quantity'] <= $product['min_stock_level']): ?>
                                 <span class="badge bg-warning text-dark"><?= $product['stock_quantity'] ?></span>
@@ -143,6 +383,9 @@ include 'includes/header.php';
                     <?php endforeach; ?>
                 </tbody>
             </table>
+        </div>
+        <div id="productsEmptyState" class="alert alert-info text-center" style="display:none;">
+            No products match the current filters.
         </div>
     </div>
 </div>
@@ -235,6 +478,12 @@ include 'includes/header.php';
 </div>
 
 <script>
+const productSearchInput = document.getElementById('productSearch');
+const categoryFilter = document.getElementById('categoryFilter');
+const statusFilter = document.getElementById('statusFilter');
+const productRows = Array.from(document.querySelectorAll('#productsTable tbody tr'));
+const emptyState = document.getElementById('productsEmptyState');
+
 function resetForm() {
     document.getElementById('productForm').reset();
     document.getElementById('formAction').value = 'add';
@@ -258,7 +507,7 @@ function editProduct(product) {
     document.getElementById('min_stock_level').value = product.min_stock_level;
     document.getElementById('unit').value = product.unit;
     document.getElementById('is_active').checked = product.is_active == 1;
-    
+
     new bootstrap.Modal(document.getElementById('productModal')).show();
 }
 
@@ -274,6 +523,48 @@ function deleteProduct(id, name) {
         document.body.appendChild(form);
         form.submit();
     }
+}
+
+function filterProducts() {
+    const searchTerm = (productSearchInput?.value || '').trim().toLowerCase();
+    const selectedCategory = (categoryFilter?.value || '').toLowerCase();
+    const selectedStatus = statusFilter?.value || '';
+
+    let visibleCount = 0;
+
+    productRows.forEach(row => {
+        const matchesSearch = !searchTerm || (row.dataset.search || '').includes(searchTerm);
+        const matchesCategory = !selectedCategory || (row.dataset.category || '').toLowerCase() === selectedCategory;
+        const matchesStatus = !selectedStatus || row.dataset.status === selectedStatus;
+
+        if (matchesSearch && matchesCategory && matchesStatus) {
+            row.style.display = '';
+            visibleCount++;
+        } else {
+            row.style.display = 'none';
+        }
+    });
+
+    if (emptyState) {
+        emptyState.style.display = visibleCount === 0 ? '' : 'none';
+    }
+
+    return visibleCount;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    productSearchInput?.addEventListener('input', debounce(filterProducts, 150));
+    categoryFilter?.addEventListener('change', filterProducts);
+    statusFilter?.addEventListener('change', filterProducts);
+    filterProducts();
+});
+
+function debounce(fn, delay) {
+    let timeout;
+    return (...args) => {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => fn.apply(this, args), delay);
+    };
 }
 </script>
 

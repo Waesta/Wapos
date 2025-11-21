@@ -27,11 +27,86 @@ $items = $db->fetchAll("
     ORDER BY oi.id
 ", [$orderId]);
 
+// Existing partial payments if any
+$existingPayments = [];
+$pdo = $db->getConnection();
+try {
+    $stmt = $pdo->prepare('SHOW TABLES LIKE "order_payments"');
+    $stmt->execute();
+    if ($stmt->fetchColumn()) {
+        $existingPayments = $db->fetchAll(
+            "SELECT payment_method, amount, tip_amount, metadata, created_at
+             FROM order_payments
+             WHERE order_id = ? ORDER BY id ASC",
+            [$orderId]
+        );
+        foreach ($existingPayments as &$paymentRow) {
+            if (!empty($paymentRow['metadata'])) {
+                $decoded = json_decode($paymentRow['metadata'], true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    $paymentRow['metadata'] = $decoded;
+                }
+            }
+        }
+        unset($paymentRow);
+    }
+} catch (Throwable $e) {
+    $existingPayments = [];
+}
+
 // Get settings
 $settingsRaw = $db->fetchAll("SELECT setting_key, setting_value FROM settings");
 $settings = [];
 foreach ($settingsRaw as $setting) {
     $settings[$setting['setting_key']] = $setting['setting_value'];
+}
+
+// Checked-in rooms for room charge payments (matches retail POS experience)
+$checkedInRooms = [];
+try {
+    $pdo = $db->getConnection();
+    $tablesStmt = $pdo->query("SHOW TABLES LIKE 'room_bookings'");
+    if ($tablesStmt && $tablesStmt->fetchColumn()) {
+        $roomsStmt = $pdo->prepare(
+            "SELECT b.id, b.booking_number, b.guest_name, b.guest_phone, r.room_number
+             FROM room_bookings b
+             JOIN rooms r ON b.room_id = r.id
+             WHERE b.status = 'checked_in'
+             ORDER BY r.room_number ASC, b.booking_number ASC"
+        );
+        $roomsStmt->execute();
+        $rows = $roomsStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($rows as $row) {
+            $guestName = trim((string)($row['guest_name'] ?? ''));
+            $roomNumber = trim((string)($row['room_number'] ?? ''));
+            $bookingNumber = trim((string)($row['booking_number'] ?? ''));
+
+            $labelParts = [];
+            if ($roomNumber !== '') {
+                $labelParts[] = 'Room ' . $roomNumber;
+            }
+            if ($guestName !== '') {
+                $labelParts[] = $guestName;
+            }
+
+            $label = implode(' · ', $labelParts);
+            if ($bookingNumber !== '') {
+                $label .= ($label !== '' ? ' ' : '') . '(' . $bookingNumber . ')';
+            }
+
+            if ($label === '') {
+                $label = 'Booking #' . (int) $row['id'];
+            }
+
+            $checkedInRooms[] = [
+                'id' => (int) $row['id'],
+                'label' => $label,
+            ];
+        }
+    }
+} catch (Throwable $e) {
+    $checkedInRooms = [];
 }
 
 $pageTitle = 'Process Payment - Order ' . $order['order_number'];
@@ -122,109 +197,43 @@ include 'includes/header.php';
                         
                         <div class="row">
                             <div class="col-md-6">
-                                <h6 class="text-primary">Payment Method</h6>
-                                <div class="mb-3">
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="paymentMethod" id="cash" value="cash" checked>
-                                        <label class="form-check-label" for="cash">
-                                            <i class="bi bi-cash-stack me-2"></i>Cash
-                                        </label>
-                                    </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="paymentMethod" id="card" value="card">
-                                        <label class="form-check-label" for="card">
-                                            <i class="bi bi-credit-card me-2"></i>Credit/Debit Card
-                                        </label>
-                                    </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="paymentMethod" id="mobile_money" value="mobile_money">
-                                        <label class="form-check-label" for="mobile_money">
-                                            <i class="bi bi-phone me-2"></i>Mobile Money
-                                        </label>
-                                    </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="paymentMethod" id="bank_transfer" value="bank_transfer">
-                                        <label class="form-check-label" for="bank_transfer">
-                                            <i class="bi bi-bank me-2"></i>Bank Transfer
-                                        </label>
-                                    </div>
+                                <h6 class="text-primary d-flex justify-content-between align-items-center">
+                                    <span>Payments</span>
+                                    <button type="button" class="btn btn-sm btn-outline-primary" id="addPaymentBtn">
+                                        <i class="bi bi-plus-circle me-1"></i>Add Payment
+                                    </button>
+                                </h6>
+                                <div class="table-responsive mb-3">
+                                    <table class="table table-sm align-middle" id="paymentsTable">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th style="width: 18%">Method</th>
+                                                <th style="width: 16%" class="text-end">Amount</th>
+                                                <th style="width: 16%" class="text-end">Tip</th>
+                                                <th style="width: 30%">Details</th>
+                                                <th style="width: 12%" class="text-center">Primary</th>
+                                                <th style="width: 8%"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
+                                <div class="alert alert-secondary small" id="paymentsHelp">
+                                    <strong>Instructions:</strong> Add one or more payments to cover the order total. Use the tip column to record gratuity for the primary payment. Room charge must be a single payment covering the entire bill.
                                 </div>
                             </div>
                             
                             <div class="col-md-6">
                                 <h6 class="text-primary">Payment Details</h6>
                                 
-                                <!-- Cash Payment Details -->
-                                <div id="cashDetails" class="payment-details">
-                                    <div class="mb-3">
-                                        <label for="amountReceived" class="form-label">Amount Received</label>
-                                        <div class="input-group">
-                                            <span class="input-group-text">KES</span>
-                                            <input type="number" class="form-control" id="amountReceived" 
-                                                   value="<?= $order['total_amount'] ?>" step="0.01" min="0">
-                                        </div>
+                                <div class="payment-detail-panel" id="paymentDetailPanel" hidden>
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <h6 class="text-primary mb-0" id="paymentDetailTitle">Payment Details</h6>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" id="closePaymentDetailBtn">
+                                            <i class="bi bi-x"></i>
+                                        </button>
                                     </div>
-                                    <div class="mb-3">
-                                        <label class="form-label">Change Due</label>
-                                        <div class="input-group">
-                                            <span class="input-group-text">KES</span>
-                                            <input type="text" class="form-control" id="changeDue" readonly>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <!-- Card Payment Details -->
-                                <div id="cardDetails" class="payment-details d-none">
-                                    <div class="mb-3">
-                                        <label for="cardNumber" class="form-label">Card Number (Last 4 digits)</label>
-                                        <input type="text" class="form-control" id="cardNumber" placeholder="****" maxlength="4">
-                                    </div>
-                                    <div class="mb-3">
-                                        <label for="cardType" class="form-label">Card Type</label>
-                                        <select class="form-select" id="cardType">
-                                            <option value="visa">Visa</option>
-                                            <option value="mastercard">Mastercard</option>
-                                            <option value="amex">American Express</option>
-                                            <option value="other">Other</option>
-                                        </select>
-                                    </div>
-                                    <div class="mb-3">
-                                        <label for="authCode" class="form-label">Authorization Code</label>
-                                        <input type="text" class="form-control" id="authCode" placeholder="Optional">
-                                    </div>
-                                </div>
-                                
-                                <!-- Mobile Money Details -->
-                                <div id="mobileDetails" class="payment-details d-none">
-                                    <div class="mb-3">
-                                        <label for="mobileProvider" class="form-label">Provider</label>
-                                        <select class="form-select" id="mobileProvider">
-                                            <option value="mpesa">M-Pesa</option>
-                                            <option value="airtel">Airtel Money</option>
-                                            <option value="tkash">T-Kash</option>
-                                            <option value="other">Other</option>
-                                        </select>
-                                    </div>
-                                    <div class="mb-3">
-                                        <label for="mobileNumber" class="form-label">Phone Number</label>
-                                        <input type="tel" class="form-control" id="mobileNumber" placeholder="0700000000">
-                                    </div>
-                                    <div class="mb-3">
-                                        <label for="transactionId" class="form-label">Transaction ID</label>
-                                        <input type="text" class="form-control" id="transactionId" placeholder="Optional">
-                                    </div>
-                                </div>
-                                
-                                <!-- Bank Transfer Details -->
-                                <div id="bankDetails" class="payment-details d-none">
-                                    <div class="mb-3">
-                                        <label for="bankName" class="form-label">Bank Name</label>
-                                        <input type="text" class="form-control" id="bankName" placeholder="Bank name">
-                                    </div>
-                                    <div class="mb-3">
-                                        <label for="referenceNumber" class="form-label">Reference Number</label>
-                                        <input type="text" class="form-control" id="referenceNumber" placeholder="Transfer reference">
-                                    </div>
+                                    <div id="paymentDetailContent"></div>
                                 </div>
                             </div>
                         </div>
@@ -317,103 +326,36 @@ include 'includes/header.php';
 </div>
 
 <script>
-// Payment method switching
-document.querySelectorAll('input[name="paymentMethod"]').forEach(radio => {
-    radio.addEventListener('change', function() {
-        // Hide all payment details
-        document.querySelectorAll('.payment-details').forEach(detail => {
-            detail.classList.add('d-none');
-        });
-        
-        // Show selected payment details
-        const selectedMethod = this.value;
-        const detailsMap = {
-            'cash': 'cashDetails',
-            'card': 'cardDetails',
-            'mobile_money': 'mobileDetails',
-            'bank_transfer': 'bankDetails'
-        };
-        
-        if (detailsMap[selectedMethod]) {
-            document.getElementById(detailsMap[selectedMethod]).classList.remove('d-none');
-        }
-    });
-});
-
-// Calculate change for cash payments
-document.getElementById('amountReceived').addEventListener('input', function() {
-    const totalAmount = parseFloat(document.getElementById('totalAmount').value);
-    const amountReceived = parseFloat(this.value) || 0;
-    const change = amountReceived - totalAmount;
-    
-    document.getElementById('changeDue').value = change >= 0 ? change.toFixed(2) : '0.00';
-    
-    // Highlight if insufficient payment
-    if (change < 0) {
-        this.classList.add('is-invalid');
-    } else {
-        this.classList.remove('is-invalid');
-    }
-});
-
 async function processPayment() {
     const orderId = document.getElementById('orderId').value;
     const totalAmount = parseFloat(document.getElementById('totalAmount').value);
-    const paymentMethod = document.querySelector('input[name="paymentMethod"]:checked').value;
-    
-    // Validate payment based on method
-    let paymentData = {
+    const payments = collectPayments();
+
+    if (!payments || !payments.length) {
+        alert('Please add at least one payment.');
+        return;
+    }
+
+    const payload = {
         order_id: orderId,
-        payment_method: paymentMethod,
-        amount_paid: totalAmount,
+        payments,
         notes: document.getElementById('paymentNotes').value
     };
-    
-    // Add method-specific data
-    if (paymentMethod === 'cash') {
-        const amountReceived = parseFloat(document.getElementById('amountReceived').value);
-        if (amountReceived < totalAmount) {
-            alert('Insufficient payment amount');
-            return;
-        }
-        paymentData.amount_received = amountReceived;
-        paymentData.change_amount = amountReceived - totalAmount;
-    } else if (paymentMethod === 'card') {
-        paymentData.card_last_four = document.getElementById('cardNumber').value;
-        paymentData.card_type = document.getElementById('cardType').value;
-        paymentData.auth_code = document.getElementById('authCode').value;
-    } else if (paymentMethod === 'mobile_money') {
-        paymentData.mobile_provider = document.getElementById('mobileProvider').value;
-        paymentData.mobile_number = document.getElementById('mobileNumber').value;
-        paymentData.transaction_id = document.getElementById('transactionId').value;
-    } else if (paymentMethod === 'bank_transfer') {
-        paymentData.bank_name = document.getElementById('bankName').value;
-        paymentData.reference_number = document.getElementById('referenceNumber').value;
-    }
-    
+
     try {
         const response = await fetch('api/restaurant-order-workflow.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 action: 'process_payment',
-                ...paymentData
+                ...payload
             })
         });
         
         const result = await response.json();
         
         if (result.success) {
-            alert('Payment processed successfully!');
-            
-            // Ask if want to print receipt
-            if (confirm('Print customer receipt?')) {
-                window.open('print-customer-receipt.php?id=' + orderId, '_blank', 'width=400,height=600');
-            }
-            
-            // Redirect to restaurant main page
-            window.location.href = 'restaurant.php';
-            
+            showPaymentSuccess(result);
         } else {
             alert('Error processing payment: ' + result.message);
         }
@@ -422,8 +364,396 @@ async function processPayment() {
     }
 }
 
-// Initialize change calculation
-document.getElementById('amountReceived').dispatchEvent(new Event('input'));
+function collectPayments() {
+    const rows = document.querySelectorAll('#paymentsTable tbody tr');
+    const payments = [];
+    let primaryAssigned = false;
+    let totalAmount = 0;
+    let totalTip = 0;
+
+    rows.forEach(row => {
+        const method = row.dataset.method;
+        const amountInput = row.querySelector('.payment-amount');
+        const tipInput = row.querySelector('.payment-tip');
+        const details = row.dataset.details ? JSON.parse(row.dataset.details) : {};
+        const amount = parseFloat(amountInput.value) || 0;
+        const tip = parseFloat(tipInput.value) || 0;
+        const isPrimary = row.querySelector('.primary-payment').checked;
+
+        if (!method || amount <= 0) {
+            return;
+        }
+
+        if (method === 'room_charge' && tip > 0) {
+            alert('Tips cannot be applied to room charge payments.');
+            throw new Error('Tip on room charge');
+        }
+
+        if (isPrimary && primaryAssigned) {
+            row.querySelector('.primary-payment').checked = false;
+        }
+
+        if (isPrimary) {
+            primaryAssigned = true;
+        }
+
+        payments.push({
+            payment_method: method,
+            amount: amount,
+            tip_amount: isPrimary ? tip : 0,
+            metadata: Object.keys(details).length ? details : undefined,
+            room_booking_id: details.room_booking_id,
+            room_charge_description: details.room_charge_description,
+        });
+
+        totalAmount += amount;
+        totalTip += isPrimary ? tip : 0;
+    });
+
+    if (!payments.length) {
+        return null;
+    }
+
+    const orderTotal = parseFloat(document.getElementById('totalAmount').value);
+    const totalDue = orderTotal;
+
+    if (totalAmount < totalDue - 0.01) {
+        alert('Split amounts do not cover the order total.');
+        return null;
+    }
+
+    if (!primaryAssigned) {
+        payments[0].tip_amount = payments[0].tip_amount || totalTip;
+    }
+
+    return payments;
+}
+
+function showPaymentSuccess(result) {
+    const receiptPrompt = result.payment_status === 'paid'
+        ? 'Payment processed successfully! Print customer receipt?'
+        : `Payment recorded as ${result.payment_status}. Print receipt?`;
+
+    const shouldPrint = confirm(receiptPrompt);
+    if (shouldPrint) {
+        window.open('print-customer-receipt.php?id=' + result.order_id, '_blank', 'width=400,height=600');
+    }
+
+    if (result.change_due > 0) {
+        alert(`Change due: ${result.change_due.toFixed(2)}`);
+    }
+
+    window.location.href = 'restaurant.php';
+}
+
+const paymentTemplates = {
+    cash: () => ({
+        title: 'Cash Payment',
+        fields: `
+            <div class="mb-3">
+                <label class="form-label">Amount Received</label>
+                <input type="number" class="form-control form-control-sm" name="amount_received" min="0" step="0.01" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Change to Return (optional)</label>
+                <input type="number" class="form-control form-control-sm" name="change_amount" min="0" step="0.01">
+            </div>
+        `,
+    }),
+    card: () => ({
+        title: 'Card Payment',
+        fields: `
+            <div class="mb-3">
+                <label class="form-label">Card Type</label>
+                <select class="form-select form-select-sm" name="card_type">
+                    <option value="visa">Visa</option>
+                    <option value="mastercard">Mastercard</option>
+                    <option value="amex">American Express</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Last 4 Digits</label>
+                <input type="text" class="form-control form-control-sm" name="card_last_four" maxlength="4" pattern="\\d{4}" placeholder="1234">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Auth Code (optional)</label>
+                <input type="text" class="form-control form-control-sm" name="auth_code">
+            </div>
+        `,
+    }),
+    mobile_money: () => ({
+        title: 'Mobile Money',
+        fields: `
+            <div class="mb-3">
+                <label class="form-label">Provider</label>
+                <select class="form-select form-select-sm" name="mobile_provider">
+                    <option value="mpesa">M-Pesa</option>
+                    <option value="airtel">Airtel Money</option>
+                    <option value="tkash">T-Kash</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Phone Number</label>
+                <input type="tel" class="form-control form-control-sm" name="mobile_number" placeholder="0700000000">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Transaction ID</label>
+                <input type="text" class="form-control form-control-sm" name="transaction_id">
+            </div>
+        `,
+    }),
+    bank_transfer: () => ({
+        title: 'Bank Transfer',
+        fields: `
+            <div class="mb-3">
+                <label class="form-label">Bank Name</label>
+                <input type="text" class="form-control form-control-sm" name="bank_name">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Reference Number</label>
+                <input type="text" class="form-control form-control-sm" name="reference_number">
+            </div>
+        `,
+    }),
+    room_charge: () => ({
+        title: 'Room Charge',
+        fields: `
+            <?php if (!empty($checkedInRooms)): ?>
+            <div class="mb-3">
+                <label class="form-label">Checked-in Room</label>
+                <select class="form-select form-select-sm" name="room_booking_id" required>
+                    <option value="">Select a checked-in room...</option>
+                    <?php foreach ($checkedInRooms as $room): ?>
+                        <option value="<?= (int) $room['id'] ?>">
+                            <?= htmlspecialchars($room['label']) ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Folio Note (optional)</label>
+                <input type="text" class="form-control form-control-sm" name="room_charge_description" maxlength="120" placeholder="e.g. Dinner at restaurant">
+            </div>
+            <?php else: ?>
+            <div class="alert alert-warning">
+                <div class="small mb-1"><i class="bi bi-exclamation-triangle me-1"></i>No checked-in rooms available.</div>
+                <div class="small">Check in a guest before charging orders to a room.</div>
+            </div>
+            <?php endif; ?>
+        `,
+    }),
+};
+
+function openPaymentDetailModal(method, preset = {}) {
+    const templateFactory = paymentTemplates[method];
+    if (!templateFactory) {
+        document.getElementById('paymentDetailPanel').hidden = true;
+        return;
+    }
+
+    const template = templateFactory();
+    const titleEl = document.getElementById('paymentDetailTitle');
+    const contentEl = document.getElementById('paymentDetailContent');
+
+    titleEl.textContent = template.title;
+    contentEl.innerHTML = template.fields;
+    document.getElementById('paymentDetailPanel').hidden = false;
+
+    Object.entries(preset).forEach(([key, value]) => {
+        const input = contentEl.querySelector(`[name="${key}"]`);
+        if (input) {
+            input.value = value;
+        }
+    });
+}
+
+function closePaymentDetailPanel() {
+    document.getElementById('paymentDetailPanel').hidden = true;
+    document.getElementById('paymentDetailContent').innerHTML = '';
+}
+
+document.getElementById('closePaymentDetailBtn').addEventListener('click', closePaymentDetailPanel);
+
+document.getElementById('addPaymentBtn').addEventListener('click', () => {
+    openPaymentEditor();
+});
+
+function openPaymentEditor(existingRow = null) {
+    const dialog = document.createElement('div');
+    dialog.className = 'modal fade';
+    dialog.innerHTML = `
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">${existingRow ? 'Edit Payment' : 'Add Payment'}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="paymentForm">
+                        <div class="mb-3">
+                            <label class="form-label">Payment Method</label>
+                            <select class="form-select" name="payment_method" required>
+                                <option value="cash">Cash</option>
+                                <option value="card">Credit/Debit Card</option>
+                                <option value="mobile_money">Mobile Money</option>
+                                <option value="bank_transfer">Bank Transfer</option>
+                                <option value="room_charge">Charge to Room</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Amount</label>
+                            <input type="number" class="form-control" name="amount" min="0" step="0.01" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Tip (gratuity)</label>
+                            <input type="number" class="form-control" name="tip_amount" min="0" step="0.01" value="0">
+                            <div class="form-text">Tip is applied only to the primary payment. Others will record zero tip.</div>
+                        </div>
+                        <div id="methodSpecificFields"></div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="savePaymentBtn">
+                        <i class="bi bi-save me-2"></i>Save Payment
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(dialog);
+    const modal = new bootstrap.Modal(dialog);
+    const form = dialog.querySelector('#paymentForm');
+    const methodSelect = form.querySelector('select[name="payment_method"]');
+    const methodFieldsContainer = form.querySelector('#methodSpecificFields');
+
+    function renderMethodFields(method, preset = {}) {
+        const template = paymentTemplates[method];
+        methodFieldsContainer.innerHTML = template ? template().fields : '';
+
+        Object.entries(preset).forEach(([key, value]) => {
+            const input = methodFieldsContainer.querySelector(`[name="${key}"]`);
+            if (input) {
+                input.value = value;
+            }
+        });
+    }
+
+    methodSelect.addEventListener('change', () => {
+        renderMethodFields(methodSelect.value);
+    });
+
+    let existingData = null;
+    if (existingRow) {
+        existingData = JSON.parse(existingRow.dataset.details || '{}');
+        existingData.amount = existingRow.querySelector('.payment-amount').value;
+        existingData.tip_amount = existingRow.querySelector('.payment-tip').value;
+        methodSelect.value = existingRow.dataset.method;
+        renderMethodFields(methodSelect.value, existingData);
+        form.querySelector('input[name="amount"]').value = existingData.amount;
+        form.querySelector('input[name="tip_amount"]').value = existingData.tip_amount;
+    } else {
+        renderMethodFields(methodSelect.value);
+    }
+
+    dialog.querySelector('#savePaymentBtn').addEventListener('click', () => {
+        if (!form.reportValidity()) {
+            return;
+        }
+
+        const formData = new FormData(form);
+        const payment = Object.fromEntries(formData.entries());
+        payment.amount = parseFloat(payment.amount || '0');
+        payment.tip_amount = parseFloat(payment.tip_amount || '0');
+
+        const method = payment.payment_method;
+        delete payment.payment_method;
+
+        addOrUpdatePaymentRow({ method, payment }, existingRow);
+        modal.hide();
+    });
+
+    dialog.addEventListener('hidden.bs.modal', () => {
+        dialog.remove();
+    });
+
+    modal.show();
+}
+
+function addOrUpdatePaymentRow({ method, payment }, existingRow = null) {
+    const tableBody = document.querySelector('#paymentsTable tbody');
+    const row = existingRow || document.createElement('tr');
+
+    row.dataset.method = method;
+    row.dataset.details = JSON.stringify(payment);
+
+    const detailsPreview = Object.entries(payment)
+        .filter(([key]) => !['amount', 'tip_amount'].includes(key))
+        .map(([key, value]) => `<span class="badge bg-light text-dark me-1">${key.replace(/_/g, ' ')}: ${value}</span>`)
+        .join('');
+
+    row.innerHTML = `
+        <td class="text-capitalize">${method.replace('_', ' ')}</td>
+        <td class="text-end">
+            <input type="number" class="form-control form-control-sm payment-amount" value="${payment.amount ?? 0}" min="0" step="0.01">
+        </td>
+        <td class="text-end">
+            <input type="number" class="form-control form-control-sm payment-tip" value="${payment.tip_amount ?? 0}" min="0" step="0.01">
+        </td>
+        <td>${detailsPreview || '<span class="text-muted">No extra details</span>'}</td>
+        <td class="text-center">
+            <input type="radio" name="primaryPayment" class="form-check-input primary-payment" ${!document.querySelector('.primary-payment:checked') ? 'checked' : ''}>
+        </td>
+        <td class="text-end">
+            <div class="btn-group btn-group-sm">
+                <button type="button" class="btn btn-outline-secondary" data-action="edit"><i class="bi bi-pencil"></i></button>
+                <button type="button" class="btn btn-outline-danger" data-action="remove"><i class="bi bi-trash"></i></button>
+            </div>
+        </td>
+    `;
+
+    if (!existingRow) {
+        tableBody.appendChild(row);
+    }
+}
+
+document.querySelector('#paymentsTable tbody').addEventListener('click', event => {
+    const button = event.target.closest('button[data-action]');
+    if (!button) return;
+
+    const row = button.closest('tr');
+    const action = button.getAttribute('data-action');
+
+    if (action === 'edit') {
+        openPaymentEditor(row);
+    } else if (action === 'remove') {
+        row.remove();
+    }
+});
+
+function seedExistingPayments() {
+    const seed = <?= json_encode($existingPayments, JSON_THROW_ON_ERROR); ?>;
+    if (!Array.isArray(seed) || !seed.length) {
+        addOrUpdatePaymentRow({ method: 'cash', payment: { amount: <?= (float)$order['total_amount'] ?>, tip_amount: 0 } });
+        return;
+    }
+
+    seed.forEach(payment => {
+        const method = payment.payment_method;
+        const payload = {
+            amount: parseFloat(payment.amount ?? 0),
+            tip_amount: parseFloat(payment.tip_amount ?? 0),
+            ...(payment.metadata && typeof payment.metadata === 'object' ? payment.metadata : {})
+        };
+
+        addOrUpdatePaymentRow({ method, payment: payload });
+    });
+}
+
+seedExistingPayments();
 </script>
 
 <?php include 'includes/footer.php'; ?>

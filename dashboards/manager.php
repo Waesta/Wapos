@@ -81,347 +81,400 @@ include '../includes/header.php';
 ?>
 
 <style>
-.manager-metric {
-    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-    color: white;
-    border-radius: 12px;
-    padding: 1.25rem;
-}
-.performance-card {
-    transition: transform 0.2s;
-}
-.performance-card:hover {
-    transform: translateY(-2px);
-}
+    .manager-shell {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-xl);
+    }
+    .manager-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        align-items: center;
+        gap: var(--spacing-md);
+    }
+    .manager-toolbar h1 {
+        margin: 0;
+        font-size: var(--text-2xl);
+    }
+    .manager-toolbar p {
+        margin: 0;
+        color: var(--color-text-muted);
+    }
+    .manager-metrics {
+        display: grid;
+        gap: var(--spacing-md);
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    }
+    .manager-metric-card {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        background: var(--color-surface);
+        box-shadow: var(--shadow-sm);
+        padding: var(--spacing-md);
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+    }
+    .manager-metric-card h3 {
+        font-size: var(--text-2xl);
+        margin: 0;
+    }
+    .manager-metric-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 44px;
+        height: 44px;
+        border-radius: var(--radius-pill);
+        font-size: var(--text-lg);
+    }
+    .manager-layout {
+        display: grid;
+        gap: var(--spacing-lg);
+    }
+    @media (min-width: 1200px) {
+        .manager-layout {
+            grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+        }
+    }
+    .manager-card {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        background: var(--color-surface);
+        box-shadow: var(--shadow-sm);
+        display: flex;
+        flex-direction: column;
+    }
+    .manager-card header {
+        padding: var(--spacing-md);
+        border-bottom: 1px solid var(--color-border-subtle);
+    }
+    .manager-card header h5,
+    .manager-card header h6 {
+        margin: 0;
+    }
+    .manager-card .card-body {
+        padding: var(--spacing-md);
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-md);
+    }
+    .manager-table-wrapper {
+        border: 1px solid var(--color-border-subtle);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+    }
+    .manager-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+    }
+    .manager-list-item {
+        border: 1px solid var(--color-border-subtle);
+        border-radius: var(--radius-md);
+        padding: var(--spacing-sm) var(--spacing-md);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: var(--color-surface-subtle);
+    }
+    .manager-grid {
+        display: grid;
+        gap: var(--spacing-sm);
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    }
+    .manager-grid .card {
+        border-radius: var(--radius-md);
+        border: 1px solid var(--color-border-subtle);
+        box-shadow: none;
+    }
+    .manager-alerts {
+        display: grid;
+        gap: var(--spacing-sm);
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+    .manager-alerts .alert {
+        margin: 0;
+        border-radius: var(--radius-md);
+    }
+    .manager-actions {
+        display: grid;
+        gap: var(--spacing-sm);
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    }
 </style>
 
-<!-- Manager Dashboard Header -->
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <h2 class="mb-0">
-            <i class="bi bi-briefcase-fill text-success me-2"></i>
-            Manager Dashboard
-        </h2>
-        <p class="text-muted mb-0">Daily operations and team oversight</p>
-    </div>
-    <div class="btn-group">
-        <a href="reports.php" class="btn btn-outline-primary">
-            <i class="bi bi-graph-up me-1"></i>Reports
-        </a>
-        <a href="accounting.php" class="btn btn-outline-success">
-            <i class="bi bi-calculator me-1"></i>Accounting
-        </a>
-        <a href="users.php" class="btn btn-outline-info">
-            <i class="bi bi-people me-1"></i>Team
-        </a>
-    </div>
-</div>
+<div class="manager-shell container-fluid py-4">
+    <section class="manager-toolbar">
+        <div class="stack-sm">
+            <h1><i class="bi bi-briefcase-fill text-success me-2"></i>Manager Dashboard</h1>
+            <p>Track daily operations, team output, and revenue health at a glance.</p>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <a href="reports.php" class="btn btn-outline-primary btn-icon">
+                <i class="bi bi-graph-up"></i>Reports
+            </a>
+            <a href="accounting.php" class="btn btn-outline-success btn-icon">
+                <i class="bi bi-calculator"></i>Accounting
+            </a>
+            <a href="users.php" class="btn btn-outline-info btn-icon">
+                <i class="bi bi-people"></i>Team
+            </a>
+        </div>
+    </section>
 
-<!-- Daily Performance Metrics -->
-<div class="row g-3 mb-4">
-    <div class="col-md-3">
-        <div class="manager-metric text-center">
-            <div class="h2 mb-1"><?= number_format($dailyStats['sales_count']) ?></div>
-            <div class="fw-bold">Sales Today</div>
-            <small class="opacity-75">Transactions</small>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="manager-metric text-center">
-            <div class="h2 mb-1"><?= formatMoney($dailyStats['sales_revenue'], false) ?></div>
-            <div class="fw-bold">Revenue Today</div>
-            <small class="opacity-75">Total earnings</small>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="manager-metric text-center">
-            <div class="h2 mb-1"><?= number_format($dailyStats['customers_served']) ?></div>
-            <div class="fw-bold">Customers</div>
-            <small class="opacity-75">Served today</small>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="manager-metric text-center">
-            <div class="h2 mb-1"><?= formatMoney($dailyStats['avg_order'], false) ?></div>
-            <div class="fw-bold">Avg Order</div>
-            <small class="opacity-75">Per transaction</small>
-        </div>
-    </div>
-</div>
-
-<!-- Main Content Row -->
-<div class="row g-4 mb-4">
-    <!-- Team Performance -->
-    <div class="col-md-6">
-        <div class="card border-0 shadow-sm performance-card">
-            <div class="card-header bg-primary text-white">
-                <h5 class="mb-0"><i class="bi bi-people me-2"></i>Team Performance (Today)</h5>
+    <section class="manager-metrics">
+        <article class="manager-metric-card">
+            <div class="d-flex justify-content-between align-items-start">
+                <div class="stack-xs">
+                    <span class="text-muted text-uppercase small">Sales Today</span>
+                    <h3><?= number_format($dailyStats['sales_count'] ?? 0) ?></h3>
+                </div>
+                <span class="manager-metric-icon bg-success bg-opacity-10 text-success">
+                    <i class="bi bi-cart-check"></i>
+                </span>
             </div>
+            <span class="text-muted small">Transactions captured so far.</span>
+        </article>
+        <article class="manager-metric-card">
+            <div class="d-flex justify-content-between align-items-start">
+                <div class="stack-xs">
+                    <span class="text-muted text-uppercase small">Revenue Today</span>
+                    <h3><?= formatMoney($dailyStats['sales_revenue'] ?? 0, false) ?></h3>
+                </div>
+                <span class="manager-metric-icon bg-primary bg-opacity-10 text-primary">
+                    <i class="bi bi-cash-coin"></i>
+                </span>
+            </div>
+            <span class="text-muted small">Gross takings from all channels.</span>
+        </article>
+        <article class="manager-metric-card">
+            <div class="d-flex justify-content-between align-items-start">
+                <div class="stack-xs">
+                    <span class="text-muted text-uppercase small">Customers Served</span>
+                    <h3><?= number_format($dailyStats['customers_served'] ?? 0) ?></h3>
+                </div>
+                <span class="manager-metric-icon bg-info bg-opacity-10 text-info">
+                    <i class="bi bi-people"></i>
+                </span>
+            </div>
+            <span class="text-muted small">Unique customers handled today.</span>
+        </article>
+        <article class="manager-metric-card">
+            <div class="d-flex justify-content-between align-items-start">
+                <div class="stack-xs">
+                    <span class="text-muted text-uppercase small">Average Order</span>
+                    <h3><?= formatMoney($dailyStats['avg_order'] ?? 0, false) ?></h3>
+                </div>
+                <span class="manager-metric-icon bg-warning bg-opacity-10 text-warning">
+                    <i class="bi bi-speedometer2"></i>
+                </span>
+            </div>
+            <span class="text-muted small">Ticket size across today’s sales.</span>
+        </article>
+    </section>
+
+    <section class="manager-layout">
+        <article class="manager-card">
+            <header>
+                <h5 class="mb-0"><i class="bi bi-people me-2"></i>Team Performance (Today)</h5>
+            </header>
             <div class="card-body">
                 <?php if (!empty($teamPerformance)): ?>
-                <div class="table-responsive">
-                    <table class="table table-sm mb-0">
-                        <thead>
-                            <tr>
-                                <th>Staff Member</th>
-                                <th>Role</th>
-                                <th class="text-center">Sales</th>
-                                <th class="text-end">Revenue</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($teamPerformance as $staff): ?>
-                            <tr>
-                                <td>
-                                    <div class="fw-bold"><?= htmlspecialchars($staff['full_name']) ?></div>
-                                </td>
-                                <td>
-                                    <span class="badge bg-<?= $staff['role'] === 'cashier' ? 'info' : 'success' ?>">
-                                        <?= ucfirst($staff['role']) ?>
-                                    </span>
-                                </td>
-                                <td class="text-center">
-                                    <span class="badge bg-primary"><?= $staff['sales_count'] ?></span>
-                                </td>
-                                <td class="text-end">
-                                    <strong><?= formatMoney($staff['sales_total']) ?></strong>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
+                    <div class="manager-table-wrapper">
+                        <table class="table table-sm mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Staff</th>
+                                    <th>Role</th>
+                                    <th class="text-center">Sales</th>
+                                    <th class="text-end">Revenue</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($teamPerformance as $staff): ?>
+                                    <tr>
+                                        <td class="fw-semibold"><?= htmlspecialchars($staff['full_name']) ?></td>
+                                        <td>
+                                            <span class="badge bg-<?= $staff['role'] === 'cashier' ? 'info' : 'success' ?>">
+                                                <?= ucfirst($staff['role']) ?>
+                                            </span>
+                                        </td>
+                                        <td class="text-center">
+                                            <span class="badge bg-primary"><?= (int)$staff['sales_count'] ?></span>
+                                        </td>
+                                        <td class="text-end fw-semibold"><?= formatMoney($staff['sales_total'] ?? 0) ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
                 <?php else: ?>
-                <div class="text-center text-muted py-3">
-                    <i class="bi bi-person-workspace fs-1"></i>
-                    <p class="mt-2">No team activity today</p>
-                </div>
+                    <div class="text-center text-muted py-5">
+                        <i class="bi bi-person-workspace fs-1"></i>
+                        <p class="mt-3 mb-0">No team activity logged yet today.</p>
+                    </div>
                 <?php endif; ?>
-                
-                <div class="mt-3">
-                    <a href="users.php" class="btn btn-outline-primary w-100">
-                        <i class="bi bi-people me-2"></i>Manage Team
+                <a href="users.php" class="btn btn-outline-primary btn-icon align-self-start">
+                    <i class="bi bi-people"></i>Manage Team
+                </a>
+            </div>
+        </article>
+
+        <div class="stack-lg">
+            <article class="manager-card">
+                <header>
+                    <h6 class="mb-0"><i class="bi bi-receipt me-2"></i>Recent Orders</h6>
+                </header>
+                <div class="card-body">
+                    <?php if (!empty($recentOrders)): ?>
+                        <div class="manager-list">
+                            <?php foreach (array_slice($recentOrders, 0, 6) as $order): ?>
+                                <div class="manager-list-item">
+                                    <div class="stack-xs">
+                                        <span class="fw-semibold"><?= htmlspecialchars($order['sale_number']) ?></span>
+                                        <small class="text-muted">
+                                            <?= htmlspecialchars($order['cashier_name'] ?? 'Unknown') ?> • <?= formatDate($order['created_at'], 'H:i') ?>
+                                        </small>
+                                    </div>
+                                    <div class="text-end">
+                                        <strong><?= formatMoney($order['total_amount'] ?? 0) ?></strong>
+                                        <span class="badge bg-light text-muted border ms-2"><?= ucfirst($order['payment_method']) ?></span>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php else: ?>
+                        <div class="text-center text-muted py-3">
+                            <p class="mb-0">No orders recorded yet.</p>
+                        </div>
+                    <?php endif; ?>
+                    <a href="sales.php" class="btn btn-outline-success btn-icon align-self-start">
+                        <i class="bi bi-list-ul"></i>View All Sales
                     </a>
                 </div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Recent Orders -->
-    <div class="col-md-6">
-        <div class="card border-0 shadow-sm performance-card">
-            <div class="card-header bg-success text-white">
-                <h5 class="mb-0"><i class="bi bi-receipt me-2"></i>Recent Orders</h5>
-            </div>
-            <div class="card-body">
-                <?php if (!empty($recentOrders)): ?>
-                <div class="list-group list-group-flush">
-                    <?php foreach (array_slice($recentOrders, 0, 6) as $order): ?>
-                    <div class="list-group-item border-0 px-0">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <div class="fw-bold"><?= htmlspecialchars($order['sale_number']) ?></div>
-                                <small class="text-muted">
-                                    <?= htmlspecialchars($order['cashier_name'] ?? 'Unknown') ?>
-                                    • <?= formatDate($order['created_at'], 'H:i') ?>
-                                </small>
+            </article>
+
+            <article class="manager-card">
+                <header>
+                    <h6 class="mb-0"><i class="bi bi-calendar-month me-2"></i>Monthly Overview</h6>
+                </header>
+                <div class="card-body">
+                    <div class="manager-grid">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <small class="text-muted text-uppercase">Total Sales</small>
+                                <h4 class="mb-0 text-primary"><?= number_format($monthlyStats['sales'] ?? 0) ?></h4>
                             </div>
-                            <div class="text-end">
-                                <div class="fw-bold text-success"><?= formatMoney($order['total_amount']) ?></div>
-                                <small class="text-muted"><?= ucfirst($order['payment_method']) ?></small>
+                        </div>
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <small class="text-muted text-uppercase">Revenue</small>
+                                <h4 class="mb-0 text-success"><?= formatMoney($monthlyStats['revenue'] ?? 0) ?></h4>
                             </div>
                         </div>
                     </div>
-                    <?php endforeach; ?>
+                    <div class="manager-actions">
+                        <a href="reports.php" class="btn btn-outline-primary btn-icon">
+                            <i class="bi bi-bar-chart"></i>Detailed Reports
+                        </a>
+                        <a href="accounting.php" class="btn btn-outline-success btn-icon">
+                            <i class="bi bi-journal-text"></i>Financial Summary
+                        </a>
+                        <a href="customers.php" class="btn btn-outline-info btn-icon">
+                            <i class="bi bi-people"></i>Customer Analysis
+                        </a>
+                    </div>
                 </div>
-                <?php else: ?>
-                <div class="text-center text-muted py-3">
-                    <i class="bi bi-receipt fs-1"></i>
-                    <p class="mt-2">No recent orders</p>
-                </div>
-                <?php endif; ?>
-                
-                <div class="mt-3">
-                    <a href="sales.php" class="btn btn-outline-success w-100">
-                        <i class="bi bi-list-ul me-2"></i>View All Sales
-                    </a>
-                </div>
-            </div>
+            </article>
         </div>
-    </div>
-</div>
+    </section>
 
-<!-- Secondary Content Row -->
-<div class="row g-4 mb-4">
-    <!-- Top Products -->
-    <div class="col-md-6">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-info text-white">
-                <h5 class="mb-0"><i class="bi bi-trophy me-2"></i>Top Products (Today)</h5>
-            </div>
+    <section class="manager-grid">
+        <article class="manager-card">
+            <header>
+                <h6 class="mb-0"><i class="bi bi-trophy me-2"></i>Top Products (Today)</h6>
+            </header>
             <div class="card-body">
                 <?php if (!empty($topProducts)): ?>
-                <div class="row g-2">
-                    <?php foreach ($topProducts as $product): ?>
-                    <div class="col-md-6">
-                        <div class="card bg-light">
-                            <div class="card-body py-2">
-                                <div class="fw-bold small"><?= htmlspecialchars($product['product_name']) ?></div>
-                                <div class="d-flex justify-content-between">
-                                    <small class="text-muted">Sold: <?= $product['total_sold'] ?></small>
-                                    <small class="text-success"><?= formatMoney($product['total_revenue']) ?></small>
+                    <div class="manager-grid">
+                        <?php foreach ($topProducts as $product): ?>
+                            <div class="card bg-light">
+                                <div class="card-body py-3">
+                                    <div class="fw-semibold small text-truncate"><?= htmlspecialchars($product['product_name']) ?></div>
+                                    <div class="d-flex justify-content-between">
+                                        <small class="text-muted">Sold: <?= (int)$product['total_sold'] ?></small>
+                                        <small class="text-success"><?= formatMoney($product['total_revenue'] ?? 0) ?></small>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                        <?php endforeach; ?>
                     </div>
-                    <?php endforeach; ?>
-                </div>
                 <?php else: ?>
-                <div class="text-center text-muted py-3">
-                    <i class="bi bi-box fs-1"></i>
-                    <p class="mt-2">No sales data today</p>
-                </div>
+                    <div class="text-center text-muted py-4">
+                        <p class="mb-0">No product movement yet today.</p>
+                    </div>
                 <?php endif; ?>
-                
-                <div class="mt-3">
-                    <a href="products.php" class="btn btn-outline-info w-100">
-                        <i class="bi bi-box-seam me-2"></i>Manage Products
-                    </a>
-                </div>
+                <a href="products.php" class="btn btn-outline-info btn-icon align-self-start">
+                    <i class="bi bi-box-seam"></i>Manage Products
+                </a>
             </div>
-        </div>
-    </div>
-    
-    <!-- Inventory Alerts -->
-    <div class="col-md-6">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-warning text-dark">
-                <h5 class="mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Inventory Alerts</h5>
-            </div>
+        </article>
+
+        <article class="manager-card">
+            <header>
+                <h6 class="mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Inventory Alerts</h6>
+            </header>
             <div class="card-body">
                 <?php if (!empty($lowStock)): ?>
-                <div class="row g-2">
-                    <?php foreach ($lowStock as $item): ?>
-                    <div class="col-md-6">
-                        <div class="alert alert-warning mb-2 py-2">
-                            <div class="fw-bold small"><?= htmlspecialchars($item['name']) ?></div>
-                            <div class="text-danger small">
-                                Stock: <strong><?= $item['stock_quantity'] ?></strong> 
-                                (Min: <?= $item['min_stock_level'] ?>)
+                    <div class="manager-alerts">
+                        <?php foreach ($lowStock as $item): ?>
+                            <div class="alert alert-warning d-flex flex-column">
+                                <span class="fw-semibold small"><?= htmlspecialchars($item['name']) ?></span>
+                                <small class="text-danger">Stock <?= (int)$item['stock_quantity'] ?> • Min <?= (int)$item['min_stock_level'] ?></small>
                             </div>
-                        </div>
+                        <?php endforeach; ?>
                     </div>
-                    <?php endforeach; ?>
-                </div>
                 <?php else: ?>
-                <div class="text-center text-muted py-3">
-                    <i class="bi bi-check-circle fs-1 text-success"></i>
-                    <p class="mt-2">All inventory levels good</p>
-                </div>
+                    <div class="text-center text-muted py-4">
+                        <p class="mb-0">All inventory levels look healthy.</p>
+                    </div>
                 <?php endif; ?>
-                
-                <div class="mt-3">
-                    <a href="products.php" class="btn btn-outline-warning w-100">
-                        <i class="bi bi-boxes me-2"></i>Check Inventory
-                    </a>
-                </div>
+                <a href="products.php" class="btn btn-outline-warning btn-icon align-self-start">
+                    <i class="bi bi-boxes"></i>Check Inventory
+                </a>
             </div>
-        </div>
-    </div>
-</div>
+        </article>
+    </section>
 
-<!-- Monthly Overview -->
-<div class="row g-4 mb-4">
-    <div class="col-12">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-dark text-white">
-                <h5 class="mb-0"><i class="bi bi-calendar-month me-2"></i>Monthly Performance</h5>
-            </div>
-            <div class="card-body">
-                <div class="row text-center g-3">
-                    <div class="col-md-6">
-                        <div class="border-end">
-                            <div class="h3 text-primary mb-1"><?= number_format($monthlyStats['sales']) ?></div>
-                            <div class="text-muted">Total Sales This Month</div>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="h3 text-success mb-1"><?= formatMoney($monthlyStats['revenue']) ?></div>
-                        <div class="text-muted">Monthly Revenue</div>
-                    </div>
-                </div>
-                
-                <div class="row g-2 mt-3">
-                    <div class="col-md-4">
-                        <a href="reports.php" class="btn btn-outline-primary w-100">
-                            <i class="bi bi-graph-up me-2"></i>Detailed Reports
-                        </a>
-                    </div>
-                    <div class="col-md-4">
-                        <a href="accounting.php" class="btn btn-outline-success w-100">
-                            <i class="bi bi-calculator me-2"></i>Financial Summary
-                        </a>
-                    </div>
-                    <div class="col-md-4">
-                        <a href="customers.php" class="btn btn-outline-info w-100">
-                            <i class="bi bi-people me-2"></i>Customer Analysis
-                        </a>
-                    </div>
-                </div>
+    <section class="manager-card">
+        <header>
+            <h6 class="mb-0"><i class="bi bi-lightning-charge me-2"></i>Quick Manager Actions</h6>
+        </header>
+        <div class="card-body">
+            <div class="manager-actions">
+                <a href="pos.php" class="btn btn-outline-primary btn-icon">
+                    <i class="bi bi-cart-plus"></i>New Sale
+                </a>
+                <a href="restaurant.php" class="btn btn-outline-success btn-icon">
+                    <i class="bi bi-shop"></i>Restaurant Ops
+                </a>
+                <a href="products.php" class="btn btn-outline-info btn-icon">
+                    <i class="bi bi-box"></i>Inventory
+                </a>
+                <a href="customers.php" class="btn btn-outline-warning btn-icon">
+                    <i class="bi bi-people"></i>Customers
+                </a>
+                <a href="delivery.php" class="btn btn-outline-danger btn-icon">
+                    <i class="bi bi-truck"></i>Delivery
+                </a>
+                <a href="reports.php" class="btn btn-outline-secondary btn-icon">
+                    <i class="bi bi-graph-up"></i>Reports
+                </a>
             </div>
         </div>
-    </div>
-</div>
-
-<!-- Quick Manager Actions -->
-<div class="row g-4">
-    <div class="col-12">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-secondary text-white">
-                <h5 class="mb-0"><i class="bi bi-lightning-charge me-2"></i>Quick Manager Actions</h5>
-            </div>
-            <div class="card-body">
-                <div class="row g-2">
-                    <div class="col-md-2">
-                        <a href="pos.php" class="btn btn-outline-primary w-100">
-                            <i class="bi bi-cart-plus d-block fs-4 mb-2"></i>
-                            <small>New Sale</small>
-                        </a>
-                    </div>
-                    <div class="col-md-2">
-                        <a href="restaurant.php" class="btn btn-outline-success w-100">
-                            <i class="bi bi-shop d-block fs-4 mb-2"></i>
-                            <small>Restaurant</small>
-                        </a>
-                    </div>
-                    <div class="col-md-2">
-                        <a href="products.php" class="btn btn-outline-info w-100">
-                            <i class="bi bi-box-seam d-block fs-4 mb-2"></i>
-                            <small>Inventory</small>
-                        </a>
-                    </div>
-                    <div class="col-md-2">
-                        <a href="customers.php" class="btn btn-outline-warning w-100">
-                            <i class="bi bi-people d-block fs-4 mb-2"></i>
-                            <small>Customers</small>
-                        </a>
-                    </div>
-                    <div class="col-md-2">
-                        <a href="delivery.php" class="btn btn-outline-danger w-100">
-                            <i class="bi bi-truck d-block fs-4 mb-2"></i>
-                            <small>Delivery</small>
-                        </a>
-                    </div>
-                    <div class="col-md-2">
-                        <a href="reports.php" class="btn btn-outline-secondary w-100">
-                            <i class="bi bi-graph-up d-block fs-4 mb-2"></i>
-                            <small>Reports</small>
-                        </a>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+    </section>
 </div>
 
 <?php include '../includes/footer.php'; ?>

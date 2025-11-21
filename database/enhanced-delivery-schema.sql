@@ -1,5 +1,5 @@
--- Enhanced Delivery Tracking System Database Schema
--- This extends the existing delivery system with advanced tracking capabilities
+-- Delivery tracking schema adjustments for configurable SLA & workload features
+-- Safely add missing delivery columns and default settings consumed by the dashboard.
 
 -- Add columns to existing riders table
 ALTER TABLE riders 
@@ -31,7 +31,64 @@ ADD COLUMN IF NOT EXISTS customer_signature TEXT,
 ADD COLUMN IF NOT EXISTS delivery_attempts INT DEFAULT 0,
 ADD COLUMN IF NOT EXISTS failed_reason TEXT,
 ADD COLUMN IF NOT EXISTS weather_conditions VARCHAR(50),
-ADD COLUMN IF NOT EXISTS traffic_conditions VARCHAR(50);
+ADD COLUMN IF NOT EXISTS traffic_conditions VARCHAR(50),
+ADD COLUMN IF NOT EXISTS assigned_at DATETIME NULL,
+ADD COLUMN IF NOT EXISTS delivery_notes TEXT,
+ADD COLUMN IF NOT EXISTS delivery_zone_id INT UNSIGNED NULL,
+ADD COLUMN IF NOT EXISTS delivery_fee DECIMAL(10,2) NULL;
+
+ALTER TABLE deliveries
+ADD INDEX IF NOT EXISTS idx_delivery_zone (delivery_zone_id);
+
+SET @fk_exists := (
+    SELECT COUNT(*)
+    FROM information_schema.TABLE_CONSTRAINTS
+    WHERE CONSTRAINT_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'deliveries'
+      AND CONSTRAINT_NAME = 'fk_deliveries_zone'
+      AND CONSTRAINT_TYPE = 'FOREIGN KEY'
+);
+
+SET @fk_sql := IF(
+    @fk_exists = 0,
+    'ALTER TABLE deliveries ADD CONSTRAINT fk_deliveries_zone FOREIGN KEY (delivery_zone_id) REFERENCES delivery_zones(id) ON DELETE SET NULL',
+    'SELECT "fk_deliveries_zone already exists"'
+);
+
+PREPARE fk_stmt FROM @fk_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
+
+-- Delivery SLA / workload settings defaults
+INSERT INTO settings (setting_key, setting_value)
+SELECT 'delivery_max_active_jobs', '3'
+WHERE NOT EXISTS (
+    SELECT 1 FROM settings WHERE setting_key = 'delivery_max_active_jobs'
+);
+
+INSERT INTO settings (setting_key, setting_value)
+SELECT 'delivery_sla_pending_limit', '15'
+WHERE NOT EXISTS (
+    SELECT 1 FROM settings WHERE setting_key = 'delivery_sla_pending_limit'
+);
+
+INSERT INTO settings (setting_key, setting_value)
+SELECT 'delivery_sla_assigned_limit', '10'
+WHERE NOT EXISTS (
+    SELECT 1 FROM settings WHERE setting_key = 'delivery_sla_assigned_limit'
+);
+
+INSERT INTO settings (setting_key, setting_value)
+SELECT 'delivery_sla_delivery_limit', '45'
+WHERE NOT EXISTS (
+    SELECT 1 FROM settings WHERE setting_key = 'delivery_sla_delivery_limit'
+);
+
+INSERT INTO settings (setting_key, setting_value)
+SELECT 'delivery_sla_slack_minutes', '5'
+WHERE NOT EXISTS (
+    SELECT 1 FROM settings WHERE setting_key = 'delivery_sla_slack_minutes'
+);
 
 -- Rider location history for tracking
 CREATE TABLE IF NOT EXISTS rider_location_history (
@@ -47,6 +104,14 @@ CREATE TABLE IF NOT EXISTS rider_location_history (
     INDEX idx_rider_time (rider_id, recorded_at),
     INDEX idx_recorded_at (recorded_at)
 ) ENGINE=InnoDB;
+
+-- ---------------------------------------------------------------------------
+-- Delivery schema enhancements to support workload, SLA, and tracking features
+-- Usage:
+--   mysql -u <user> -p <database> < enhanced-delivery-schema.sql
+-- Ensure the application is in maintenance mode or downtime is scheduled before
+-- running this script on production to avoid locking issues.
+-- ---------------------------------------------------------------------------
 
 -- Delivery status history for detailed tracking
 CREATE TABLE IF NOT EXISTS delivery_status_history (
@@ -161,23 +226,6 @@ CREATE TABLE IF NOT EXISTS delivery_metrics (
     INDEX idx_date (metric_date)
 ) ENGINE=InnoDB;
 
--- Delivery zones for geographic organization
-CREATE TABLE IF NOT EXISTS delivery_zones (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    zone_name VARCHAR(100) NOT NULL,
-    zone_code VARCHAR(20) UNIQUE NOT NULL,
-    boundary_coordinates JSON NOT NULL,
-    base_delivery_fee DECIMAL(8, 2) DEFAULT 0,
-    per_km_rate DECIMAL(8, 2) DEFAULT 0,
-    estimated_delivery_time_minutes INT DEFAULT 30,
-    is_active BOOLEAN DEFAULT TRUE,
-    priority_level INT DEFAULT 1,
-    special_instructions TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_active (is_active),
-    INDEX idx_priority (priority_level)
-) ENGINE=InnoDB;
-
 -- Weather data for delivery optimization
 CREATE TABLE IF NOT EXISTS weather_data (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -214,56 +262,6 @@ CREATE TABLE IF NOT EXISTS delivery_feedback (
     INDEX idx_type_status (feedback_type, resolution_status),
     INDEX idx_rating (rating)
 ) ENGINE=InnoDB;
-
--- Create views for common queries
-CREATE OR REPLACE VIEW active_deliveries_view AS
-SELECT 
-    d.*,
-    o.order_number,
-    o.customer_name,
-    o.customer_phone,
-    o.total_amount,
-    r.name as rider_name,
-    r.phone as rider_phone,
-    r.vehicle_type,
-    r.current_latitude as rider_lat,
-    r.current_longitude as rider_lng,
-    r.is_online,
-    TIMESTAMPDIFF(MINUTE, d.created_at, NOW()) as elapsed_minutes,
-    dz.zone_name,
-    dz.estimated_delivery_time_minutes as zone_estimate
-FROM deliveries d
-JOIN orders o ON d.order_id = o.id
-LEFT JOIN riders r ON d.rider_id = r.id
-LEFT JOIN delivery_zones dz ON ST_Contains(
-    ST_GeomFromGeoJSON(dz.boundary_coordinates),
-    ST_Point(d.delivery_longitude, d.delivery_latitude)
-)
-WHERE d.status IN ('pending', 'assigned', 'picked-up', 'in-transit');
-
-CREATE OR REPLACE VIEW rider_performance_view AS
-SELECT 
-    r.id,
-    r.name,
-    r.phone,
-    r.vehicle_type,
-    r.is_online,
-    COUNT(d.id) as total_deliveries_today,
-    AVG(d.customer_rating) as avg_rating,
-    AVG(TIMESTAMPDIFF(MINUTE, d.created_at, d.actual_delivery_time)) as avg_delivery_time,
-    SUM(CASE WHEN d.status = 'delivered' THEN 1 ELSE 0 END) as successful_deliveries,
-    SUM(CASE WHEN d.status = 'failed' THEN 1 ELSE 0 END) as failed_deliveries
-FROM riders r
-LEFT JOIN deliveries d ON r.id = d.rider_id AND DATE(d.created_at) = CURDATE()
-WHERE r.is_active = 1
-GROUP BY r.id, r.name, r.phone, r.vehicle_type, r.is_online;
-
--- Insert sample delivery zones
-INSERT INTO delivery_zones (zone_name, zone_code, boundary_coordinates, base_delivery_fee, per_km_rate, estimated_delivery_time_minutes) VALUES
-('City Center', 'CC', '{"type":"Polygon","coordinates":[[[-1.2920,36.8219],[-1.2820,36.8219],[-1.2820,36.8319],[-1.2920,36.8319],[-1.2920,36.8219]]]}', 50.00, 10.00, 20),
-('Westlands', 'WL', '{"type":"Polygon","coordinates":[[[-1.2720,36.8119],[-1.2620,36.8119],[-1.2620,36.8219],[-1.2720,36.8219],[-1.2720,36.8119]]]}', 75.00, 15.00, 30),
-('Eastleigh', 'EL', '{"type":"Polygon","coordinates":[[[-1.2520,36.8419],[-1.2420,36.8419],[-1.2420,36.8519],[-1.2520,36.8519],[-1.2520,36.8419]]]}', 100.00, 20.00, 45)
-ON DUPLICATE KEY UPDATE zone_name = VALUES(zone_name);
 
 -- Create indexes for performance
 CREATE INDEX IF NOT EXISTS idx_deliveries_status_created ON deliveries(status, created_at);

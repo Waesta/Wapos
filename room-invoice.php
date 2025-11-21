@@ -2,21 +2,83 @@
 require_once 'includes/bootstrap.php';
 $auth->requireLogin();
 
-$db = Database::getInstance();
-$bookingId = $_GET['booking_id'] ?? 0;
+use App\Services\RoomBookingService;
 
-// Get booking details
-$booking = $db->fetchOne("
-    SELECT b.*, r.room_number, rt.name as room_type_name, u.full_name as booked_by
-    FROM bookings b
-    JOIN rooms r ON b.room_id = r.id
-    JOIN room_types rt ON r.room_type_id = rt.id
-    LEFT JOIN users u ON b.user_id = u.id
-    WHERE b.id = ?
-", [$bookingId]);
+$db = Database::getInstance();
+$pdo = $db->getConnection();
+$bookingService = new RoomBookingService($pdo);
+
+$bookingId = isset($_GET['booking_id']) ? (int)$_GET['booking_id'] : 0;
+if ($bookingId <= 0) {
+    die('Invalid booking reference');
+}
+
+$invoiceData = $bookingService->getInvoiceData($bookingId);
+$booking = $invoiceData['booking'];
+$folioEntries = $invoiceData['folio'] ?? [];
+$totals = $invoiceData['totals'] ?? ['total_charges' => 0, 'total_payments' => 0, 'balance_due' => 0];
+$mode = $invoiceData['mode'] ?? 'legacy';
+
+$redirectUrl = $_GET['redirect'] ?? 'rooms.php';
+if (!preg_match('/^[a-zA-Z0-9_\-\/\.]+$/', $redirectUrl)) {
+    $redirectUrl = 'rooms.php';
+}
 
 if (!$booking) {
     die('Booking not found');
+}
+
+$ratePerNight = (float)($booking['room_rate'] ?? $booking['rate_per_night'] ?? 0);
+$totalNights = (int)($booking['total_nights'] ?? 1);
+if ($totalNights <= 0) {
+    $totalNights = 1;
+}
+
+$totalCharges = (float)$totals['total_charges'];
+$totalPayments = (float)$totals['total_payments'];
+$balanceDue = (float)$totals['balance_due'];
+
+$paymentStatus = strtolower($booking['payment_status'] ?? '');
+if ($balanceDue <= 0.01) {
+    $paymentStatus = 'paid';
+} elseif ($paymentStatus === '') {
+    $paymentStatus = 'pending';
+}
+$statusBadgeClass = $paymentStatus === 'paid' ? 'status-paid' : 'status-pending';
+
+$displayTotalAmount = $totalCharges > 0 ? $totalCharges : (float)($booking['total_amount'] ?? 0);
+$displayPaidAmount = $totalPayments > 0 ? $totalPayments : (float)($booking['amount_paid'] ?? 0);
+$balanceClass = $balanceDue > 0.01 ? 'text-danger' : 'text-success';
+
+$checkInRecorded = $booking['actual_check_in'] ?? $booking['check_in_time'] ?? null;
+$checkOutRecorded = $booking['actual_check_out'] ?? $booking['check_out_time'] ?? null;
+
+$folioTypeLabels = [
+    'room_charge' => 'Room Charge',
+    'service' => 'Service',
+    'tax' => 'Tax',
+    'deposit' => 'Deposit',
+    'payment' => 'Payment',
+    'adjustment' => 'Adjustment',
+];
+
+$guestName = $booking['guest_name'] ?? '';
+$guestPhone = $booking['guest_phone'] ?? '';
+$guestEmail = $booking['guest_email'] ?? '';
+$guestIdNumber = $booking['guest_id_number'] ?? '';
+$bookingNumber = $booking['booking_number'] ?? '';
+$bookingCreatedAt = $booking['created_at'] ?? null;
+$roomNumber = $booking['room_number'] ?? '';
+$roomType = $booking['room_type_name'] ?? '';
+$checkInDate = $booking['check_in_date'] ?? null;
+$checkOutDate = $booking['check_out_date'] ?? null;
+$specialRequests = $booking['special_requests'] ?? '';
+
+$adultsCount = (int)($booking['adults'] ?? 1);
+$childrenCount = (int)($booking['children'] ?? 0);
+$guestCountLabel = $adultsCount . ' Adult' . ($adultsCount === 1 ? '' : 's');
+if ($childrenCount > 0) {
+    $guestCountLabel .= ', ' . $childrenCount . ' Child' . ($childrenCount === 1 ? '' : 'ren');
 }
 
 // Get settings
@@ -136,22 +198,22 @@ foreach ($settingsRaw as $setting) {
     <div class="invoice-info">
         <div>
             <h3>Guest Information</h3>
-            <p><strong>Name:</strong> <?= htmlspecialchars($booking['guest_name']) ?></p>
-            <p><strong>Phone:</strong> <?= htmlspecialchars($booking['guest_phone']) ?></p>
-            <?php if ($booking['guest_email']): ?>
-            <p><strong>Email:</strong> <?= htmlspecialchars($booking['guest_email']) ?></p>
+            <p><strong>Name:</strong> <?= htmlspecialchars($guestName) ?></p>
+            <p><strong>Phone:</strong> <?= htmlspecialchars($guestPhone) ?></p>
+            <?php if ($guestEmail): ?>
+            <p><strong>Email:</strong> <?= htmlspecialchars($guestEmail) ?></p>
             <?php endif; ?>
-            <?php if ($booking['guest_id_number']): ?>
-            <p><strong>ID Number:</strong> <?= htmlspecialchars($booking['guest_id_number']) ?></p>
+            <?php if ($guestIdNumber): ?>
+            <p><strong>ID Number:</strong> <?= htmlspecialchars($guestIdNumber) ?></p>
             <?php endif; ?>
         </div>
         <div style="text-align: right;">
             <h3>Booking Details</h3>
-            <p><strong>Booking #:</strong> <?= htmlspecialchars($booking['booking_number']) ?></p>
-            <p><strong>Date:</strong> <?= formatDate($booking['created_at'], 'd/m/Y') ?></p>
+            <p><strong>Booking #:</strong> <?= htmlspecialchars($bookingNumber) ?></p>
+            <p><strong>Date:</strong> <?= $bookingCreatedAt ? formatDate($bookingCreatedAt, 'd/m/Y') : '—' ?></p>
             <p><strong>Status:</strong> 
-                <span class="status-badge status-<?= $booking['payment_status'] === 'paid' ? 'paid' : 'pending' ?>">
-                    <?= ucfirst($booking['payment_status']) ?>
+                <span class="status-badge status-<?= ($paymentStatus === 'paid') ? 'paid' : 'pending' ?>">
+                    <?= ucfirst($paymentStatus) ?>
                 </span>
             </p>
         </div>
@@ -170,25 +232,25 @@ foreach ($settingsRaw as $setting) {
         <tbody>
             <tr>
                 <td>
-                    <strong>Room <?= htmlspecialchars($booking['room_number']) ?></strong><br>
-                    <?= htmlspecialchars($booking['room_type_name']) ?>
+                    <strong>Room <?= htmlspecialchars($roomNumber) ?></strong><br>
+                    <?= htmlspecialchars($roomType) ?>
                 </td>
                 <td>
-                    Check-in: <?= formatDate($booking['check_in_date'], 'd/m/Y') ?><br>
-                    Check-out: <?= formatDate($booking['check_out_date'], 'd/m/Y') ?><br>
-                    Guests: <?= $booking['adults'] ?> Adults<?= $booking['children'] > 0 ? ', ' . $booking['children'] . ' Children' : '' ?>
+                    Check-in: <?= $checkInDate ? formatDate($checkInDate, 'd/m/Y') : '—' ?><br>
+                    Check-out: <?= $checkOutDate ? formatDate($checkOutDate, 'd/m/Y') : '—' ?><br>
+                    Guests: <?= htmlspecialchars($guestCountLabel) ?>
                 </td>
-                <td>KES <?= formatMoney($booking['room_rate']) ?></td>
-                <td><?= $booking['total_nights'] ?></td>
-                <td>KES <?= formatMoney($booking['total_amount']) ?></td>
+                <td><?= formatCurrency($ratePerNight) ?></td>
+                <td><?= $totalNights ?></td>
+                <td><?= formatCurrency($displayTotalAmount) ?></td>
             </tr>
         </tbody>
     </table>
 
-    <?php if ($booking['special_requests']): ?>
+    <?php if (!empty($specialRequests)): ?>
     <div style="margin-bottom: 20px;">
         <strong>Special Requests:</strong>
-        <p><?= nl2br(htmlspecialchars($booking['special_requests'])) ?></p>
+        <p><?= nl2br(htmlspecialchars($specialRequests)) ?></p>
     </div>
     <?php endif; ?>
 
@@ -196,30 +258,30 @@ foreach ($settingsRaw as $setting) {
         <table>
             <tr>
                 <td><strong>Subtotal:</strong></td>
-                <td><strong>KES <?= formatMoney($booking['total_amount']) ?></strong></td>
+                <td><strong><?= formatCurrency($displayTotalAmount) ?></strong></td>
             </tr>
             <tr class="total-row">
                 <td>TOTAL:</td>
-                <td>KES <?= formatMoney($booking['total_amount']) ?></td>
+                <td><?= formatCurrency($displayTotalAmount) ?></td>
             </tr>
             <tr>
                 <td>Amount Paid:</td>
-                <td>KES <?= formatMoney($booking['amount_paid']) ?></td>
+                <td><?= formatCurrency($displayPaidAmount) ?></td>
             </tr>
-            <?php if ($booking['amount_paid'] < $booking['total_amount']): ?>
-            <tr style="color: #dc3545;">
+            <?php if ($balanceDue > 0.01): ?>
+            <tr class="<?= $balanceClass ?>">
                 <td><strong>Balance Due:</strong></td>
-                <td><strong>KES <?= formatMoney($booking['total_amount'] - $booking['amount_paid']) ?></strong></td>
+                <td><strong><?= formatCurrency($balanceDue) ?></strong></td>
             </tr>
             <?php endif; ?>
         </table>
     </div>
 
-    <?php if ($booking['check_in_time']): ?>
+    <?php if ($checkInRecorded): ?>
     <div style="margin-top: 30px;">
-        <p><strong>Checked In:</strong> <?= formatDate($booking['check_in_time'], 'd/m/Y H:i') ?></p>
-        <?php if ($booking['check_out_time']): ?>
-        <p><strong>Checked Out:</strong> <?= formatDate($booking['check_out_time'], 'd/m/Y H:i') ?></p>
+        <p><strong>Checked In:</strong> <?= formatDate($checkInRecorded, 'd/m/Y H:i') ?></p>
+        <?php if ($checkOutRecorded): ?>
+        <p><strong>Checked Out:</strong> <?= formatDate($checkOutRecorded, 'd/m/Y H:i') ?></p>
         <?php endif; ?>
     </div>
     <?php endif; ?>
@@ -236,7 +298,7 @@ foreach ($settingsRaw as $setting) {
         <button onclick="window.print()" style="padding: 10px 30px; font-size: 16px; cursor: pointer; margin-right: 10px;">
             Print Invoice
         </button>
-        <button onclick="window.close()" style="padding: 10px 30px; font-size: 16px; cursor: pointer;">
+        <button onclick="window.location.href='<?= htmlspecialchars($redirectUrl, ENT_QUOTES, 'UTF-8') ?>'" style="padding: 10px 30px; font-size: 16px; cursor: pointer;">
             Close
         </button>
     </div>

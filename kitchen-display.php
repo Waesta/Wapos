@@ -40,245 +40,300 @@ include 'includes/header.php';
 ?>
 
 <style>
-    .kitchen-container {
-        background: #f8f9fa;
+    .kitchen-shell {
         min-height: 100vh;
-        padding: 20px 0;
+        background: var(--color-surface-subtle);
+        padding: var(--spacing-lg) 0 var(--spacing-xl);
     }
-    .order-card {
-        transition: all 0.3s ease;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        margin-bottom: 20px;
+    .kitchen-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+        align-items: center;
+        margin-bottom: var(--spacing-xl);
     }
-    .order-pending { border-left: 5px solid #ffc107; }
-    .order-preparing { border-left: 5px solid #17a2b8; }
-    .order-ready { border-left: 5px solid #28a745; }
-    
-    .item-card {
-        background: white;
-        border-radius: 8px;
-        margin-bottom: 10px;
-        padding: 12px;
-        border-left: 4px solid #dee2e6;
-        transition: all 0.2s ease;
+    .kitchen-toolbar h1 {
+        font-size: var(--text-2xl);
+        margin: 0;
     }
-    .item-pending { border-left-color: #ffc107; }
-    .item-preparing { border-left-color: #17a2b8; }
-    .item-ready { border-left-color: #28a745; }
-    
-    .timer-badge {
-        font-family: 'Courier New', monospace;
-        font-weight: bold;
+    .kitchen-toolbar p {
+        margin: 0;
+        color: var(--color-text-muted);
     }
-    
-    .order-header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border-radius: 12px 12px 0 0;
-        padding: 15px 20px;
+    .kitchen-toolbar .btn-icon {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--spacing-xs);
     }
-    
-    .status-buttons .btn {
-        margin: 2px;
-        border-radius: 20px;
-        font-size: 12px;
-        padding: 4px 12px;
+    .kitchen-stats-grid {
+        display: grid;
+        gap: var(--spacing-md);
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+        margin-bottom: var(--spacing-xl);
     }
-    
-    .progress-ring {
-        width: 60px;
-        height: 60px;
+    .kitchen-stat-card {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        background: var(--color-surface);
+        box-shadow: var(--shadow-sm);
+        padding: var(--spacing-md);
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-xs);
     }
-    
-    .kitchen-stats {
-        background: white;
-        border-radius: 12px;
-        padding: 20px;
-        margin-bottom: 20px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    .kitchen-stat-card h3 {
+        margin: 0;
+        font-size: var(--text-2xl);
+        font-weight: 700;
     }
-    
-    @media (max-width: 768px) {
-        .order-card {
-            margin-bottom: 15px;
-        }
-        .kitchen-container {
-            padding: 10px;
-        }
+    .kitchen-orders-grid {
+        display: grid;
+        gap: var(--spacing-lg);
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    }
+    .kitchen-order-card {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        background: var(--color-surface);
+        box-shadow: var(--shadow-md);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        transition: transform var(--transition-base), box-shadow var(--transition-base);
+    }
+    .kitchen-order-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-lg);
+    }
+    .kitchen-order-header {
+        padding: var(--spacing-md);
+        display: flex;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+        background: linear-gradient(135deg, var(--color-primary-500), var(--color-primary-700));
+        color: var(--color-white);
+    }
+    .kitchen-order-header h2 {
+        margin: 0;
+        font-size: var(--text-lg);
+        font-weight: 600;
+    }
+    .kitchen-order-meta {
+        font-size: var(--text-sm);
+        opacity: 0.85;
+    }
+    .kitchen-order-timer .timer-badge {
+        font-family: 'JetBrains Mono', 'Courier New', monospace;
+        font-weight: 700;
+        font-size: var(--text-base);
+        padding: var(--spacing-xs) var(--spacing-sm);
+        border-radius: var(--radius-pill);
+        background: rgba(255, 255, 255, 0.12);
+        color: var(--color-white);
+        display: inline-flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+    }
+    .kitchen-order-body {
+        padding: var(--spacing-md);
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-md);
+    }
+    .kitchen-item-card {
+        border: 1px solid var(--color-border-subtle);
+        border-radius: var(--radius-md);
+        padding: var(--spacing-sm) var(--spacing-md);
+        display: flex;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+        background: var(--color-surface-subtle);
+    }
+    .kitchen-item-card[data-status="pending"] {
+        border-left: 4px solid var(--color-warning-500);
+    }
+    .kitchen-item-card[data-status="preparing"] {
+        border-left: 4px solid var(--color-info-500);
+    }
+    .kitchen-item-card[data-status="ready"] {
+        border-left: 4px solid var(--color-success-500);
+    }
+    .kitchen-item-title {
+        font-size: var(--text-md);
+        font-weight: 600;
+        margin-bottom: var(--spacing-xs);
+    }
+    .kitchen-item-modifiers {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-xs);
+    }
+    .kitchen-item-modifiers .badge {
+        background: var(--color-surface);
+        border: 1px solid var(--color-border-subtle);
+        color: var(--color-text-muted);
+        font-size: var(--text-xs);
+        padding: 0.25rem 0.5rem;
+    }
+    .kitchen-item-actions {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-xs);
+    }
+    .kitchen-progress {
+        border-top: 1px solid var(--color-border-subtle);
+        padding-top: var(--spacing-sm);
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+    }
+    .kitchen-progress small {
+        color: var(--color-text-muted);
+    }
+    .kitchen-progress .progress {
+        height: 6px;
+        border-radius: var(--radius-pill);
+    }
+    .kitchen-empty {
+        text-align: center;
+        padding: var(--spacing-2xl) 0;
+        color: var(--color-text-muted);
     }
 </style>
 
-<div class="kitchen-container">
+<div class="kitchen-shell">
     <div class="container-fluid">
-        <!-- Header -->
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <div>
-                <h2 class="mb-0">
-                    <i class="bi bi-fire text-danger me-2"></i>Kitchen Display System
-                </h2>
-                <p class="text-muted mb-0">Real-time order management</p>
+        <header class="kitchen-toolbar">
+            <div class="stack-sm">
+                <h1><i class="bi bi-fire text-danger"></i> Kitchen Display</h1>
+                <p>Track tickets and handoff ready dishes without leaving the line.</p>
             </div>
-            <div class="d-flex gap-2">
-                <button class="btn btn-outline-primary" onclick="refreshOrders()">
-                    <i class="bi bi-arrow-clockwise me-2"></i>Refresh
+            <div class="d-flex flex-wrap gap-2">
+                <button class="btn btn-outline-primary btn-icon" onclick="refreshOrders()">
+                    <i class="bi bi-arrow-clockwise"></i>Refresh
                 </button>
-                <button class="btn btn-outline-secondary" onclick="toggleSound()">
-                    <i class="bi bi-volume-up me-2" id="soundIcon"></i>Sound
+                <button class="btn btn-outline-secondary btn-icon" onclick="toggleSound()">
+                    <i class="bi bi-volume-up" id="soundIcon"></i>Sound
                 </button>
             </div>
-        </div>
+        </header>
 
-        <!-- Kitchen Stats -->
-        <div class="row mb-4">
-            <div class="col-md-3">
-                <div class="kitchen-stats text-center">
-                    <i class="bi bi-clock-history text-warning fs-1"></i>
-                    <h3 class="mt-2 mb-0" id="pendingCount"><?= count(array_filter($orders, fn($o) => $o['status'] === 'pending')) ?></h3>
-                    <p class="text-muted mb-0">Pending</p>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="kitchen-stats text-center">
-                    <i class="bi bi-fire text-info fs-1"></i>
-                    <h3 class="mt-2 mb-0" id="preparingCount"><?= count(array_filter($orders, fn($o) => $o['status'] === 'preparing')) ?></h3>
-                    <p class="text-muted mb-0">Preparing</p>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="kitchen-stats text-center">
-                    <i class="bi bi-check-circle text-success fs-1"></i>
-                    <h3 class="mt-2 mb-0" id="readyCount"><?= count(array_filter($orders, fn($o) => $o['status'] === 'ready')) ?></h3>
-                    <p class="text-muted mb-0">Ready</p>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="kitchen-stats text-center">
-                    <i class="bi bi-speedometer2 text-primary fs-1"></i>
-                    <h3 class="mt-2 mb-0" id="avgTime">--</h3>
-                    <p class="text-muted mb-0">Avg Time</p>
-                </div>
-            </div>
-        </div>
+        <section class="kitchen-stats-grid">
+            <article class="kitchen-stat-card">
+                <i class="bi bi-clock-history text-warning fs-2"></i>
+                <h3 id="pendingCount"><?= count(array_filter($orders, fn($o) => $o['status'] === 'pending')) ?></h3>
+                <span class="text-muted">Waiting</span>
+            </article>
+            <article class="kitchen-stat-card">
+                <i class="bi bi-fire text-info fs-2"></i>
+                <h3 id="preparingCount"><?= count(array_filter($orders, fn($o) => $o['status'] === 'preparing')) ?></h3>
+                <span class="text-muted">In Kitchen</span>
+            </article>
+            <article class="kitchen-stat-card">
+                <i class="bi bi-check-circle text-success fs-2"></i>
+                <h3 id="readyCount"><?= count(array_filter($orders, fn($o) => $o['status'] === 'ready')) ?></h3>
+                <span class="text-muted">Ready to Serve</span>
+            </article>
+            <article class="kitchen-stat-card">
+                <i class="bi bi-speedometer2 text-primary fs-2"></i>
+                <h3 id="avgTime">--</h3>
+                <span class="text-muted">Avg Prep Time</span>
+            </article>
+        </section>
 
-        <!-- Orders Grid -->
-        <div class="row" id="ordersGrid">
+        <section id="ordersGrid" class="kitchen-orders-grid">
             <?php if (empty($orders)): ?>
-                <div class="col-12">
-                    <div class="text-center py-5">
-                        <i class="bi bi-inbox fs-1 text-muted"></i>
-                        <h4 class="mt-3 text-muted">No Active Orders</h4>
-                        <p class="text-muted">Kitchen is all caught up!</p>
-                    </div>
+                <div class="kitchen-empty">
+                    <i class="bi bi-inbox fs-1"></i>
+                    <h4 class="mt-3 mb-0">No Active Orders</h4>
+                    <p>Kitchen is all caught up!</p>
                 </div>
             <?php else: ?>
                 <?php foreach ($orders as $order): ?>
-                <div class="col-lg-4 col-md-6" data-order-id="<?= $order['id'] ?>">
-                    <div class="order-card order-<?= $order['status'] ?>">
-                        <!-- Order Header -->
-                        <div class="order-header">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <div>
-                                    <h5 class="mb-1"><?= htmlspecialchars($order['order_number']) ?></h5>
-                                    <p class="mb-0 opacity-75">
-                                        <?php if ($order['order_type'] === 'dine-in'): ?>
-                                            <i class="bi bi-table me-1"></i>Table <?= htmlspecialchars($order['table_number'] ?? 'N/A') ?>
-                                        <?php else: ?>
-                                            <i class="bi bi-bag-check me-1"></i>Takeout
-                                            <?php if ($order['customer_name']): ?>
-                                                - <?= htmlspecialchars($order['customer_name']) ?>
-                                            <?php endif; ?>
-                                        <?php endif; ?>
-                                    </p>
+                    <article class="kitchen-order-card" data-order-id="<?= $order['id'] ?>" data-status="<?= htmlspecialchars($order['status']) ?>">
+                        <div class="kitchen-order-header">
+                            <div class="stack-xs">
+                                <h2><?= htmlspecialchars($order['order_number']) ?></h2>
+                                <div class="kitchen-order-meta">
+                                    <?php if ($order['order_type'] === 'dine-in'): ?>
+                                        <i class="bi bi-table"></i> Table <?= htmlspecialchars($order['table_number'] ?? 'N/A') ?>
+                                    <?php else: ?>
+                                        <i class="bi bi-bag-check"></i> Takeout<?= $order['customer_name'] ? ' • ' . htmlspecialchars($order['customer_name']) : '' ?>
+                                    <?php endif; ?>
                                 </div>
-                                <div class="text-end">
-                                    <div class="timer-badge badge bg-light text-dark" data-time="<?= $order['created_at'] ?>">
-                                        00:00
-                                    </div>
-                                    <div class="mt-1">
-                                        <span class="badge bg-<?= $order['status'] === 'pending' ? 'warning' : ($order['status'] === 'preparing' ? 'info' : 'success') ?>">
-                                            <?= ucfirst($order['status']) ?>
-                                        </span>
-                                    </div>
+                            </div>
+                            <div class="kitchen-order-timer text-end">
+                                <span class="timer-badge" data-time="<?= $order['created_at'] ?>">
+                                    <i class="bi bi-stopwatch"></i> 00:00
+                                </span>
+                                <div class="mt-2">
+                                    <span class="app-status" data-color="<?= $order['status'] === 'pending' ? 'warning' : ($order['status'] === 'preparing' ? 'info' : 'success') ?>">
+                                        <?= ucfirst($order['status']) ?>
+                                    </span>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Order Items -->
-                        <div class="p-3">
+                        <div class="kitchen-order-body">
                             <?php if (isset($orderItems[$order['id']])): ?>
                                 <?php foreach ($orderItems[$order['id']] as $item): ?>
-                                <div class="item-card item-<?= $item['status'] ?>">
-                                    <div class="d-flex justify-content-between align-items-start">
+                                    <div class="kitchen-item-card" data-status="<?= htmlspecialchars($item['status']) ?>">
                                         <div class="flex-grow-1">
-                                            <h6 class="mb-1">
-                                                <span class="badge bg-secondary me-2"><?= $item['quantity'] ?>x</span>
-                                                <?= htmlspecialchars($item['product_name']) ?>
-                                            </h6>
-                                            
+                                            <div class="d-flex align-items-center gap-2">
+                                                <span class="badge bg-dark text-white"><?= (float)$item['quantity'] ?>x</span>
+                                                <div class="kitchen-item-title mb-0"><?= htmlspecialchars($item['product_name']) ?></div>
+                                            </div>
                                             <?php if ($item['modifiers_data']): ?>
                                                 <?php $modifiers = json_decode($item['modifiers_data'], true); ?>
                                                 <?php if ($modifiers): ?>
-                                                    <div class="mb-2">
+                                                    <div class="kitchen-item-modifiers mt-2">
                                                         <?php foreach ($modifiers as $mod): ?>
-                                                            <small class="badge bg-light text-dark me-1">+ <?= htmlspecialchars($mod['name']) ?></small>
+                                                            <span class="badge">+ <?= htmlspecialchars($mod['name']) ?></span>
                                                         <?php endforeach; ?>
                                                     </div>
                                                 <?php endif; ?>
                                             <?php endif; ?>
-                                            
                                             <?php if ($item['special_instructions']): ?>
-                                                <div class="alert alert-warning py-1 px-2 mb-2">
-                                                    <small><i class="bi bi-exclamation-triangle me-1"></i><?= htmlspecialchars($item['special_instructions']) ?></small>
+                                                <div class="alert alert-warning py-1 px-2 mt-2 mb-0">
+                                                    <small><i class="bi bi-exclamation-triangle"></i> <?= htmlspecialchars($item['special_instructions']) ?></small>
                                                 </div>
                                             <?php endif; ?>
                                         </div>
-                                        
-                                        <div class="status-buttons">
+                                        <div class="kitchen-item-actions">
                                             <?php if ($item['status'] === 'pending'): ?>
-                                                <button class="btn btn-sm btn-info" onclick="updateItemStatus(<?= $item['id'] ?>, 'preparing')">
+                                                <button class="btn btn-info btn-sm" onclick="updateItemStatus(<?= $item['id'] ?>, 'preparing')">
                                                     <i class="bi bi-play-fill"></i> Start
                                                 </button>
                                             <?php elseif ($item['status'] === 'preparing'): ?>
-                                                <button class="btn btn-sm btn-success" onclick="updateItemStatus(<?= $item['id'] ?>, 'ready')">
+                                                <button class="btn btn-success btn-sm" onclick="updateItemStatus(<?= $item['id'] ?>, 'ready')">
                                                     <i class="bi bi-check"></i> Ready
                                                 </button>
                                             <?php else: ?>
-                                                <span class="badge bg-success">
-                                                    <i class="bi bi-check-circle"></i> Ready
-                                                </span>
+                                                <span class="app-status" data-color="success">Ready</span>
                                             <?php endif; ?>
                                         </div>
                                     </div>
-                                </div>
                                 <?php endforeach; ?>
                             <?php endif; ?>
-                            
-                            <!-- Order Actions -->
-                            <div class="mt-3 pt-3 border-top">
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <div>
-                                        <small class="text-muted">
-                                            Progress: <?= $order['ready_items'] ?>/<?= $order['total_items'] ?> items ready
-                                        </small>
-                                        <div class="progress mt-1" style="height: 4px;">
-                                            <div class="progress-bar bg-success" style="width: <?= $order['total_items'] > 0 ? ($order['ready_items'] / $order['total_items']) * 100 : 0 ?>%"></div>
-                                        </div>
-                                    </div>
-                                    
-                                    <?php if ($order['ready_items'] == $order['total_items'] && $order['status'] !== 'ready'): ?>
-                                        <button class="btn btn-success btn-sm" onclick="completeOrder(<?= $order['id'] ?>)">
-                                            <i class="bi bi-check-circle me-1"></i>Complete
-                                        </button>
-                                    <?php endif; ?>
+
+                            <div class="kitchen-progress">
+                                <small>Progress: <?= $order['ready_items'] ?>/<?= $order['total_items'] ?> items ready</small>
+                                <div class="progress">
+                                    <div class="progress-bar bg-success" role="progressbar" style="width: <?= $order['total_items'] > 0 ? ($order['ready_items'] / $order['total_items']) * 100 : 0 ?>%"></div>
                                 </div>
+                                <?php if ($order['ready_items'] == $order['total_items'] && $order['status'] !== 'ready'): ?>
+                                    <button class="btn btn-success btn-sm align-self-end" onclick="completeOrder(<?= $order['id'] ?>)">
+                                        <i class="bi bi-check-circle"></i> Complete Order
+                                    </button>
+                                <?php endif; ?>
                             </div>
                         </div>
-                    </div>
-                </div>
+                    </article>
                 <?php endforeach; ?>
             <?php endif; ?>
-        </div>
+        </section>
     </div>
 </div>
 

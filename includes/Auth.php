@@ -89,7 +89,20 @@ class Auth {
     }
     
     public function getRole() {
-        return $this->user['role'] ?? null;
+        if (!isset($this->user['role'])) {
+            return null;
+        }
+
+        $role = strtolower(trim($this->user['role']));
+        $role = str_replace([' ', '-'], '_', $role);
+
+        $roleAliases = [
+            'superadmin' => 'super_admin',
+            'superadministrator' => 'super_admin',
+            'super_administrator' => 'super_admin',
+        ];
+
+        return $roleAliases[$role] ?? $role;
     }
     
     public function hasRole($role) {
@@ -99,6 +112,11 @@ class Auth {
         
         $userRole = $this->getRole();
         
+        // Super admin has unrestricted access
+        if ($userRole === 'super_admin') {
+            return true;
+        }
+
         // Admin and developer have access to everything
         if ($userRole === 'admin' || $userRole === 'developer') {
             return true;

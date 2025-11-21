@@ -22,9 +22,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // Get riders
-$riders = $db->fetchAll("SELECT * FROM riders WHERE is_active = 1 ORDER BY name");
+$hasAssignedAtColumn = $db->fetchOne("SHOW COLUMNS FROM deliveries LIKE 'assigned_at'");
+$lastAssignedColumn = !empty($hasAssignedAtColumn) ? 'd2.assigned_at' : 'd2.updated_at';
+
+$riders = $db->fetchAll("
+    SELECT 
+        r.*, 
+        (
+            SELECT COUNT(*)
+            FROM deliveries d
+            WHERE d.rider_id = r.id
+              AND d.status IN ('assigned', 'picked-up', 'in-transit')
+        ) AS active_jobs,
+        (
+            SELECT MAX({$lastAssignedColumn})
+            FROM deliveries d2
+            WHERE d2.rider_id = r.id
+        ) AS last_assigned_at
+    FROM riders r
+    WHERE r.is_active = 1
+    ORDER BY r.name
+");
+
+$deliverySettingKeys = [
+    'delivery_max_active_jobs',
+    'delivery_sla_pending_limit',
+    'delivery_sla_assigned_limit',
+    'delivery_sla_delivery_limit',
+    'delivery_sla_slack_minutes',
+];
+$placeholders = implode(',', array_fill(0, count($deliverySettingKeys), '?'));
+$deliverySettingsRows = $db->fetchAll(
+    "SELECT setting_key, setting_value FROM settings WHERE setting_key IN ($placeholders)",
+    $deliverySettingKeys
+);
+$deliverySettings = [];
+foreach ($deliverySettingsRows as $row) {
+    $deliverySettings[$row['setting_key']] = $row['setting_value'];
+}
+
+$deliveryConfig = [
+    'max_active_jobs' => max(1, (int)($deliverySettings['delivery_max_active_jobs'] ?? 3)),
+    'sla' => [
+        'pending' => max(1, (int)($deliverySettings['delivery_sla_pending_limit'] ?? 15)),
+        'assigned' => max(1, (int)($deliverySettings['delivery_sla_assigned_limit'] ?? 10)),
+        'delivery' => max(1, (int)($deliverySettings['delivery_sla_delivery_limit'] ?? 45)),
+        'slack' => max(0, (int)($deliverySettings['delivery_sla_slack_minutes'] ?? 5)),
+    ],
+];
+
+$slaTargetsText = sprintf(
+    'SLA: pending %d min • assigned %d min • delivery %d min (+%d slack)',
+    $deliveryConfig['sla']['pending'],
+    $deliveryConfig['sla']['assigned'],
+    $deliveryConfig['sla']['delivery'],
+    $deliveryConfig['sla']['slack']
+);
+
+$availableRiderCount = count(array_filter($riders, fn($r) => strtolower($r['status'] ?? '') === 'available'));
+$busyRiderCount = count(array_filter($riders, fn($r) => strtolower($r['status'] ?? '') === 'busy'));
+$offlineRiderCount = count(array_filter($riders, fn($r) => !in_array(strtolower($r['status'] ?? ''), ['available', 'busy'], true)));
 
 $currencyConfig = CurrencyManager::getInstance()->getJavaScriptConfig();
+$csrfToken = generateCSRFToken();
 
 // Get delivery orders
 $deliveryOrders = $db->fetchAll("
@@ -67,6 +127,8 @@ include 'includes/header.php';
     <div class="alert alert-success"><?= $_SESSION['success_message']; unset($_SESSION['success_message']); ?></div>
 <?php endif; ?>
 
+<div id="alertContainer" class="position-fixed top-0 end-0 p-3" style="z-index: 2000;"></div>
+
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h4 class="mb-0"><i class="bi bi-truck me-2"></i>Delivery Management</h4>
     <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#riderModal">
@@ -98,7 +160,13 @@ include 'includes/header.php';
                     <div>
                         <p class="text-muted mb-1 small">Pending Orders</p>
                         <h3 class="mb-0 fw-bold text-warning" id="pendingOrdersCount"><?= count($deliveryOrders) ?></h3>
-                        <p class="mb-0 small text-muted" id="pendingBreakdown"></p>
+                        <div class="d-flex flex-column gap-1">
+                            <div class="d-flex align-items-center gap-2">
+                                <p class="mb-0 small text-muted" id="pendingBreakdown"></p>
+                                <span class="badge bg-danger-subtle text-danger small" id="slaRiskBadge" style="display:none;">0 SLA risk</span>
+                            </div>
+                            <span class="small text-muted" id="slaTargetsLabel"><?= htmlspecialchars($slaTargetsText) ?></span>
+                        </div>
                     </div>
                     <i class="bi bi-clock-history text-warning fs-1"></i>
                 </div>
@@ -145,12 +213,112 @@ include 'includes/header.php';
     </div>
 </div>
 
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-lg-3 col-md-6">
+                <label for="riderSearchInput" class="form-label text-muted small mb-1">Search Riders</label>
+                <input type="search" class="form-control" id="riderSearchInput" placeholder="Name, phone, or vehicle">
+            </div>
+            <div class="col-lg-2 col-md-3">
+                <label for="riderStatusFilter" class="form-label text-muted small mb-1">Rider Status</label>
+                <select class="form-select" id="riderStatusFilter">
+                    <option value="all">All statuses</option>
+                    <option value="available">Available</option>
+                    <option value="busy">Busy</option>
+                    <option value="offline">Offline</option>
+                </select>
+            </div>
+            <div class="col-lg-2 col-md-3">
+                <label for="riderSortSelect" class="form-label text-muted small mb-1">Sort Riders</label>
+                <select class="form-select" id="riderSortSelect">
+                    <option value="workload">Workload (ascending)</option>
+                    <option value="rating">Rating</option>
+                    <option value="name">Name</option>
+                    <option value="recent">Recently assigned</option>
+                </select>
+            </div>
+            <div class="col-lg-2 col-md-3">
+                <label for="maxRiderWorkload" class="form-label text-muted small mb-1">Max Active Jobs</label>
+                <select class="form-select" id="maxRiderWorkload">
+                    <option value="all">Any</option>
+                    <option value="0">0</option>
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3+</option>
+                </select>
+            </div>
+            <div class="col-lg-3 col-md-6 text-lg-end">
+                <button class="btn btn-outline-secondary mt-3 mt-lg-0" id="clearRiderFiltersBtn">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>Reset Rider Filters
+                </button>
+            </div>
+        </div>
+
+        <hr class="my-4">
+
+        <div class="row g-3 align-items-end">
+            <div class="col-lg-4 col-md-6">
+                <label for="orderSearchInput" class="form-label text-muted small mb-1">Search Delivery Orders</label>
+                <input type="search" class="form-control" id="orderSearchInput" placeholder="Order #, customer, phone, zone">
+            </div>
+            <div class="col-lg-3 col-md-3">
+                <label for="orderStatusFilter" class="form-label text-muted small mb-1">Order Status</label>
+                <select class="form-select" id="orderStatusFilter">
+                    <option value="all">All statuses</option>
+                    <option value="pending">Pending</option>
+                    <option value="assigned">Assigned</option>
+                    <option value="picked-up">Picked Up</option>
+                    <option value="in-transit">In Transit</option>
+                </select>
+            </div>
+            <div class="col-lg-3 col-md-3">
+                <label for="orderSortSelect" class="form-label text-muted small mb-1">Sort Orders</label>
+                <select class="form-select" id="orderSortSelect">
+                    <option value="age_desc">Longest waiting</option>
+                    <option value="age_asc">Newest</option>
+                    <option value="amount_desc">Amount (high → low)</option>
+                    <option value="amount_asc">Amount (low → high)</option>
+                </select>
+            </div>
+            <div class="col-lg-2 col-md-6">
+                <div class="form-check mt-4 pt-2">
+                    <input class="form-check-input" type="checkbox" id="orderUnassignedOnly">
+                    <label class="form-check-label small" for="orderUnassignedOnly">
+                        Show unassigned only
+                    </label>
+                </div>
+            </div>
+            <div class="col-lg-2 col-md-6">
+                <div class="form-check mt-4 pt-2">
+                    <input class="form-check-input" type="checkbox" id="orderSlaRiskOnly">
+                    <label class="form-check-label small" for="orderSlaRiskOnly">
+                        Show SLA risk only
+                    </label>
+                </div>
+            </div>
+            <div class="col-lg-12 text-lg-end">
+                <button class="btn btn-outline-secondary" id="clearOrderFiltersBtn">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>Reset Order Filters
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="row g-3">
     <!-- Riders List -->
     <div class="col-md-4">
         <div class="card border-0 shadow-sm">
-            <div class="card-header bg-white">
-                <h6 class="mb-0"><i class="bi bi-people me-2"></i>Available Riders</h6>
+            <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h6 class="mb-0"><i class="bi bi-people me-2"></i>Rider Workload</h6>
+                <div class="d-flex align-items-center gap-2 small">
+                    <span class="badge bg-success-subtle text-success" id="ridersAvailableBadge">Avail: <?= $availableRiderCount ?></span>
+                    <span class="badge bg-warning-subtle text-warning" id="ridersBusyBadge">Busy: <?= $busyRiderCount ?></span>
+                    <span class="badge bg-secondary-subtle text-secondary" id="ridersOfflineBadge">Offline: <?= $offlineRiderCount ?></span>
+                    <span class="badge bg-primary-subtle text-primary" id="maxActiveJobsBadge">Max active: <?= $deliveryConfig['max_active_jobs'] ?></span>
+                    <span class="badge bg-info-subtle text-info" id="avgIdleBadge">Avg idle: --</span>
+                </div>
             </div>
             <div class="card-body p-0">
                 <div class="list-group list-group-flush" id="ridersList">
@@ -335,6 +503,7 @@ include 'includes/header.php';
                             <option value="<?= $rider['id'] ?>"><?= htmlspecialchars($rider['name']) ?> - <?= htmlspecialchars($rider['vehicle_type']) ?></option>
                         <?php endforeach; ?>
                     </select>
+                    <div class="form-text" id="recommendedRiderHint" style="display:none;"></div>
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Estimated Delivery Time</label>
@@ -345,6 +514,7 @@ include 'includes/header.php';
                     <label class="form-label">Delivery Notes</label>
                     <textarea class="form-control" id="deliveryNotes" rows="2" placeholder="Special delivery instructions..."></textarea>
                 </div>
+                <div class="alert alert-light border small" id="assignmentOrderSummary" style="display:none;"></div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -375,10 +545,151 @@ include 'includes/header.php';
         </div>
     </div>
 <script>
+const initialRiders = <?= json_encode($riders) ?>;
+const initialOrders = <?= json_encode($deliveryOrders) ?>;
+const deliveryConfig = <?= json_encode($deliveryConfig) ?>;
+
 let currentOrderId = null;
-let latestRiders = <?= json_encode($riders) ?>;
+let latestRiders = Array.isArray(initialRiders) ? initialRiders : [];
 let supportsDeliveryMetrics = false;
 const currencyConfig = <?= json_encode($currencyConfig) ?>;
+const deliveryCsrfToken = '<?= $csrfToken ?>';
+
+let latestOrders = Array.isArray(initialOrders) ? initialOrders : [];
+let MAX_ACTIVE_JOBS = deliveryConfig.max_active_jobs ?? 3;
+let riderFilters = {
+    search: '',
+    status: 'all',
+    sort: 'workload',
+    maxWorkload: 'all'
+};
+
+let orderFilters = {
+    search: '',
+    status: 'all',
+    sort: 'age_desc',
+    unassignedOnly: false,
+    slaRiskOnly: false
+};
+
+let lastSlaRiskIds = new Set();
+
+function isRiderAssignable(rider) {
+    const status = (rider.status || '').toLowerCase();
+    if (status === 'available') {
+        return true;
+    }
+    return rider.activeJobs < MAX_ACTIVE_JOBS;
+}
+
+function registerFilterControls() {
+    const riderSearchInput = document.getElementById('riderSearchInput');
+    const riderStatusFilter = document.getElementById('riderStatusFilter');
+    const riderSortSelect = document.getElementById('riderSortSelect');
+    const maxRiderWorkload = document.getElementById('maxRiderWorkload');
+    const clearRiderFiltersBtn = document.getElementById('clearRiderFiltersBtn');
+
+    if (riderSearchInput) {
+        riderSearchInput.addEventListener('input', debounce(event => {
+            riderFilters.search = event.target.value.trim().toLowerCase();
+            renderRiders(latestRiders);
+        }, 150));
+    }
+
+    if (riderStatusFilter) {
+        riderStatusFilter.addEventListener('change', event => {
+            riderFilters.status = event.target.value;
+            renderRiders(latestRiders);
+        });
+    }
+
+    if (riderSortSelect) {
+        riderSortSelect.addEventListener('change', event => {
+            riderFilters.sort = event.target.value;
+            renderRiders(latestRiders);
+        });
+    }
+
+    if (maxRiderWorkload) {
+        maxRiderWorkload.addEventListener('change', event => {
+            riderFilters.maxWorkload = event.target.value;
+            renderRiders(latestRiders);
+        });
+    }
+
+    if (clearRiderFiltersBtn) {
+        clearRiderFiltersBtn.addEventListener('click', () => {
+            riderFilters = { search: '', status: 'all', sort: 'workload', maxWorkload: 'all' };
+            if (riderSearchInput) riderSearchInput.value = '';
+            if (riderStatusFilter) riderStatusFilter.value = 'all';
+            if (riderSortSelect) riderSortSelect.value = 'workload';
+            if (maxRiderWorkload) maxRiderWorkload.value = 'all';
+            renderRiders(latestRiders);
+        });
+    }
+
+    const orderSearchInput = document.getElementById('orderSearchInput');
+    const orderStatusFilter = document.getElementById('orderStatusFilter');
+    const orderSortSelect = document.getElementById('orderSortSelect');
+    const orderUnassignedOnly = document.getElementById('orderUnassignedOnly');
+    const orderSlaRiskOnly = document.getElementById('orderSlaRiskOnly');
+    const clearOrderFiltersBtn = document.getElementById('clearOrderFiltersBtn');
+
+    if (orderSearchInput) {
+        orderSearchInput.addEventListener('input', debounce(event => {
+            orderFilters.search = event.target.value.trim().toLowerCase();
+            renderOrders(latestOrders);
+        }, 150));
+    }
+
+    if (orderStatusFilter) {
+        orderStatusFilter.addEventListener('change', event => {
+            orderFilters.status = event.target.value;
+            renderOrders(latestOrders);
+        });
+    }
+
+    if (orderSortSelect) {
+        orderSortSelect.addEventListener('change', event => {
+            orderFilters.sort = event.target.value;
+            renderOrders(latestOrders);
+        });
+    }
+
+    if (orderUnassignedOnly) {
+        orderUnassignedOnly.addEventListener('change', event => {
+            orderFilters.unassignedOnly = event.target.checked;
+            renderOrders(latestOrders);
+        });
+    }
+
+    if (orderSlaRiskOnly) {
+        orderSlaRiskOnly.addEventListener('change', event => {
+            orderFilters.slaRiskOnly = event.target.checked;
+            renderOrders(latestOrders);
+        });
+    }
+
+    if (clearOrderFiltersBtn) {
+        clearOrderFiltersBtn.addEventListener('click', () => {
+            orderFilters = { search: '', status: 'all', sort: 'age_desc', unassignedOnly: false, slaRiskOnly: false };
+            if (orderSearchInput) orderSearchInput.value = '';
+            if (orderStatusFilter) orderStatusFilter.value = 'all';
+            if (orderSortSelect) orderSortSelect.value = 'age_desc';
+            if (orderUnassignedOnly) orderUnassignedOnly.checked = false;
+            if (orderSlaRiskOnly) orderSlaRiskOnly.checked = false;
+            renderOrders(latestOrders);
+        });
+    }
+}
+
+function debounce(fn, delay) {
+    let timeoutId;
+    return (...args) => {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => fn(...args), delay);
+    };
+}
 
 function formatCurrencyValue(value, withSymbol = true) {
     const amount = Number(value || 0);
@@ -398,16 +709,140 @@ function formatCurrencyValue(value, withSymbol = true) {
 
 function assignRider(orderId) {
     currentOrderId = orderId;
-    populateRiderSelect();
+    const order = findOrderById(orderId);
+    populateRiderSelect(order);
+    updateAssignmentSummary(order);
     new bootstrap.Modal(document.getElementById('assignRiderModal')).show();
 }
 
-function populateRiderSelect() {
+function getRecommendedRider(order, candidateList) {
+    const normalizedCandidates = (candidateList && candidateList.length ? candidateList : (latestRiders || []).map(normalizeRider))
+        .filter(isRiderAssignable);
+
+    if (order && Array.isArray(order.recommended_riders) && order.recommended_riders.length) {
+        const recommendedId = Number(order.recommended_rider_id ?? order.recommended_riders[0].rider_id);
+        const recommendationMeta = order.recommended_riders.find(rec => Number(rec.rider_id) === recommendedId) || order.recommended_riders[0];
+
+        let matched = normalizedCandidates.find(rider => Number(rider.id) === recommendedId);
+        if (!matched && latestRiders) {
+            const direct = latestRiders.find(rider => Number(rider.id) === recommendedId);
+            if (direct) {
+                matched = normalizeRider(direct);
+            }
+        }
+
+        if (matched) {
+            return {
+                ...matched,
+                recommendation: recommendationMeta
+            };
+        }
+    }
+
+    if (!normalizedCandidates.length) {
+        return null;
+    }
+
+    const fallback = [...normalizedCandidates].sort((a, b) => {
+        if (a.activeJobs !== b.activeJobs) {
+            return a.activeJobs - b.activeJobs;
+        }
+        if (b.rating !== a.rating) {
+            return b.rating - a.rating;
+        }
+        const aLast = a.lastAssignedAt ? new Date(a.lastAssignedAt).getTime() : 0;
+        const bLast = b.lastAssignedAt ? new Date(b.lastAssignedAt).getTime() : 0;
+        if (aLast !== bLast) {
+            return aLast - bLast;
+        }
+        return a.name.localeCompare(b.name);
+    })[0];
+
+    return fallback || null;
+}
+
+function populateRiderSelect(order) {
     const select = document.getElementById('selectedRider');
-    const availableRiders = (latestRiders || []).filter(rider => (rider.status || '') === 'available');
-    select.innerHTML = '<option value="">Choose rider...</option>' + availableRiders.map(rider => (
-        `<option value="${rider.id}">${escapeHtml(rider.name)} - ${escapeHtml(rider.vehicle_type || 'N/A')}</option>`
+    const assignableRiders = (latestRiders || []).map(normalizeRider).filter(isRiderAssignable);
+
+    assignableRiders.sort((a, b) => {
+        if (a.activeJobs !== b.activeJobs) {
+            return a.activeJobs - b.activeJobs;
+        }
+        if (b.rating !== a.rating) {
+            return b.rating - a.rating;
+        }
+        const aLast = a.lastAssignedAt ? new Date(a.lastAssignedAt).getTime() : 0;
+        const bLast = b.lastAssignedAt ? new Date(b.lastAssignedAt).getTime() : 0;
+        if (aLast !== bLast) {
+            return aLast - bLast;
+        }
+        return a.name.localeCompare(b.name);
+    });
+
+    const recommended = getRecommendedRider(order, assignableRiders);
+
+    select.innerHTML = '<option value="">Choose rider...</option>' + assignableRiders.map(rider => (
+        `<option value="${rider.id}">${escapeHtml(rider.name)} - ${escapeHtml(rider.vehicle_type || 'N/A')} (${rider.activeJobs} active)</option>`
     )).join('');
+
+    if (recommended) {
+        select.value = String(recommended.id);
+    } else {
+        select.value = '';
+    }
+
+    updateRecommendedHint(order, recommended);
+
+    return recommended;
+}
+
+function updateRecommendedHint(order, recommended) {
+    const hint = document.getElementById('recommendedRiderHint');
+    if (!hint) {
+        return;
+    }
+
+    if (!recommended) {
+        hint.textContent = '';
+        hint.style.display = 'none';
+        return;
+    }
+
+    const metrics = [];
+    metrics.push(`${recommended.activeJobs} active job${recommended.activeJobs === 1 ? '' : 's'}`);
+
+    if (recommended.rating) {
+        metrics.push(`rating ${(Number(recommended.rating)).toFixed(1)}`);
+    }
+
+    if (recommended.lastAssignedAt) {
+        const relative = formatRelativeTimeFromNow(recommended.lastAssignedAt);
+        if (relative) {
+            metrics.push(`last assigned ${relative}`);
+        }
+    }
+
+    if (recommended.recommendation) {
+        const score = recommended.recommendation.score ? Number(recommended.recommendation.score).toFixed(1) : null;
+        if (score) {
+            metrics.push(`score ${score}`);
+        }
+        if (recommended.recommendation.distance_display) {
+            metrics.push(`distance ${recommended.recommendation.distance_display}`);
+        }
+        if (recommended.recommendation.idle_display) {
+            metrics.push(recommended.recommendation.idle_display);
+        }
+    }
+
+    const sla = order.sla || {};
+    const slack = deliveryConfig.sla.slack;
+    const slaBadge = `<span class="badge bg-${sla.is_at_risk ? 'danger' : (sla.is_late ? 'warning' : 'secondary')}">SLA ${sla.is_at_risk ? 'risk' : (sla.is_late ? 'late' : 'ok')}</span>`;
+
+    const orderLabel = order ? ` for ${escapeHtml(order.order_number || `Order #${order.order_id || order.id}`)}` : '';
+    hint.innerHTML = `Suggested rider${orderLabel}: <strong>${escapeHtml(recommended.name)}</strong> (${metrics.join(' · ')}) ${slaBadge} (+${slack} min slack)`;
+    hint.style.display = 'block';
 }
 
 async function confirmAssignment() {
@@ -428,7 +863,8 @@ async function confirmAssignment() {
                 order_id: currentOrderId,
                 rider_id: riderId,
                 estimated_time: estimatedTime,
-                notes: notes
+                notes: notes,
+                csrf_token: deliveryCsrfToken
             })
         });
         
@@ -562,13 +998,35 @@ async function refreshDeliveryData() {
             throw new Error(data.message || 'Failed to fetch delivery data');
         }
         supportsDeliveryMetrics = Boolean(data.supportsDeliveryMetrics);
-        latestRiders = data.riders || latestRiders;
+        latestRiders = Array.isArray(data.riders) ? data.riders : latestRiders;
+        if (data.config) {
+            if (typeof data.config.max_active_jobs !== 'undefined') {
+                MAX_ACTIVE_JOBS = Number(data.config.max_active_jobs) || MAX_ACTIVE_JOBS;
+            }
+            if (data.config.sla) {
+                deliveryConfig.sla = {
+                    pending: Number(data.config.sla.pending_minutes_limit) || deliveryConfig.sla.pending,
+                    assigned: Number(data.config.sla.assigned_minutes_limit) || deliveryConfig.sla.assigned,
+                    delivery: Number(data.config.sla.delivery_minutes_limit) || deliveryConfig.sla.delivery,
+                    slack: Number(data.config.sla.slack_minutes) || deliveryConfig.sla.slack,
+                };
+            }
+        }
         updateStatsFromApi(data.stats || {});
-        renderRiders(data.riders || []);
-        renderOrders((data.deliveries || data.orders || []).map(delivery => ({
+        renderRiders(latestRiders);
+        const refreshedOrders = (data.deliveries || data.orders || []).map(delivery => ({
             ...delivery,
             delivery_status: delivery.delivery_status ?? delivery.status ?? 'pending'
-        })));
+        }));
+        renderOrders(refreshedOrders);
+
+        handleSlaNotifications(refreshedOrders);
+
+        if (currentOrderId) {
+            const currentOrder = findOrderById(currentOrderId);
+            updateAssignmentSummary(currentOrder);
+            updateRecommendedHint(currentOrder, getRecommendedRider(currentOrder));
+        }
     } catch (error) {
         console.error('Refresh error:', error);
     }
@@ -590,6 +1048,17 @@ function updateStatsFromApi(stats) {
         }
     }
 
+    const slaRiskBadge = document.getElementById('slaRiskBadge');
+    if (slaRiskBadge) {
+        const riskCount = stats.orders_at_risk ?? stats.orders_overdue ?? 0;
+        if (riskCount > 0) {
+            slaRiskBadge.textContent = `${riskCount} SLA risk`;
+            slaRiskBadge.style.display = 'inline-flex';
+        } else {
+            slaRiskBadge.style.display = 'none';
+        }
+    }
+
     const inTransit = stats.in_transit_active ?? stats.in_transit ?? 0;
     document.getElementById('inTransitCount').textContent = inTransit;
     const distanceSummary = document.getElementById('distanceSummary');
@@ -603,6 +1072,96 @@ function updateStatsFromApi(stats) {
 
     document.getElementById('activeRidersCount').textContent = stats.active_riders ?? 0;
     document.getElementById('todayDeliveredCount').textContent = stats.completed_today ?? stats.today_delivered ?? 0;
+
+    const availBadge = document.getElementById('ridersAvailableBadge');
+    if (availBadge && typeof stats.riders_available !== 'undefined') {
+        availBadge.textContent = `Avail: ${stats.riders_available}`;
+    }
+
+    const busyBadge = document.getElementById('ridersBusyBadge');
+    if (busyBadge && typeof stats.riders_busy !== 'undefined') {
+        busyBadge.textContent = `Busy: ${stats.riders_busy}`;
+    }
+
+    const offlineBadge = document.getElementById('ridersOfflineBadge');
+    if (offlineBadge && typeof stats.riders_offline !== 'undefined') {
+        offlineBadge.textContent = `Offline: ${stats.riders_offline}`;
+    }
+
+    const avgIdleBadge = document.getElementById('avgIdleBadge');
+    if (avgIdleBadge) {
+        if (typeof stats.avg_idle_minutes !== 'undefined') {
+            const minutes = Number(stats.avg_idle_minutes);
+            avgIdleBadge.textContent = `Avg idle: ${formatMinutesLabel(minutes)}`;
+            avgIdleBadge.style.display = 'inline-flex';
+        } else {
+            avgIdleBadge.textContent = 'Avg idle: --';
+        }
+    }
+
+    const maxActiveBadge = document.getElementById('maxActiveJobsBadge');
+    if (maxActiveBadge) {
+        maxActiveBadge.textContent = `Max active: ${MAX_ACTIVE_JOBS}`;
+    }
+
+    const slaLabel = document.getElementById('slaTargetsLabel');
+    if (slaLabel && deliveryConfig.sla) {
+        const slack = deliveryConfig.sla.slack;
+        slaLabel.textContent = `SLA: pending ${deliveryConfig.sla.pending} min • assigned ${deliveryConfig.sla.assigned} min • delivery ${deliveryConfig.sla.delivery} min (+${slack} min slack)`;
+    }
+}
+
+function normalizeRider(rider) {
+    const activeJobs = Number(rider.active_jobs ?? rider.active_deliveries ?? rider.current_jobs ?? 0);
+    const lastAssignedAt = rider.last_assigned_at || rider.assigned_at || rider.last_assignment || null;
+    return {
+        ...rider,
+        activeJobs,
+        lastAssignedAt,
+        idleMinutes: typeof rider.idle_minutes !== 'undefined' ? rider.idle_minutes : null,
+        rating: Number(rider.rating ?? 0)
+    };
+}
+
+function handleSlaNotifications(orders) {
+    const alertContainer = document.getElementById('alertContainer');
+    if (!alertContainer) {
+        return;
+    }
+
+    const currentRiskIds = new Set();
+    const newAlerts = [];
+
+    (orders || []).forEach(order => {
+        const sla = order.sla || {};
+        if (sla.is_at_risk || sla.is_late) {
+            const id = order.order_id || order.id;
+            currentRiskIds.add(id);
+            if (!lastSlaRiskIds.has(id)) {
+                newAlerts.push({
+                    id,
+                    orderNumber: order.order_number || id,
+                    customer: order.customer_name || 'Customer',
+                    delay: sla.delay_minutes || 0
+                });
+            }
+        }
+    });
+
+    newAlerts.slice(0, 3).forEach(alert => {
+        const div = document.createElement('div');
+        div.className = 'alert alert-danger alert-dismissible fade show';
+        div.innerHTML = `
+            <strong>SLA risk:</strong> Order #${escapeHtml(alert.orderNumber)} (${escapeHtml(alert.customer)})
+            ${alert.delay ? ` · ${alert.delay} min overdue` : ''}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        alertContainer.append(div);
+        setTimeout(() => div.classList.remove('show'), 5000);
+        setTimeout(() => div.remove(), 5500);
+    });
+
+    lastSlaRiskIds = currentRiskIds;
 }
 
 function renderRiders(riders) {
@@ -611,19 +1170,62 @@ function renderRiders(riders) {
         list.innerHTML = '<div class="list-group-item text-muted">No riders found.</div>';
         return;
     }
-    list.innerHTML = riders.map(rider => `
+    const filtered = riders
+        .map(normalizeRider)
+        .filter(rider => {
+            const matchesSearch = riderFilters.search === ''
+                || (rider.name && rider.name.toLowerCase().includes(riderFilters.search))
+                || (rider.phone && rider.phone.toLowerCase().includes(riderFilters.search))
+                || (rider.vehicle_type && rider.vehicle_type.toLowerCase().includes(riderFilters.search))
+                || (rider.vehicle_number && rider.vehicle_number.toLowerCase().includes(riderFilters.search));
+
+            const matchesStatus = riderFilters.status === 'all' || (rider.status || '').toLowerCase() === riderFilters.status;
+
+            let matchesWorkload = true;
+            if (riderFilters.maxWorkload !== 'all') {
+                const threshold = Number(riderFilters.maxWorkload);
+                matchesWorkload = rider.activeJobs <= threshold;
+            }
+
+            return matchesSearch && matchesStatus && matchesWorkload;
+        })
+        .sort((a, b) => {
+            switch (riderFilters.sort) {
+                case 'rating':
+                    return (Number(b.rating || 0) - Number(a.rating || 0)) || a.name.localeCompare(b.name);
+                case 'name':
+                    return a.name.localeCompare(b.name);
+                case 'recent':
+                    const aLast = a.lastAssignedAt ? new Date(a.lastAssignedAt).getTime() : 0;
+                    const bLast = b.lastAssignedAt ? new Date(b.lastAssignedAt).getTime() : 0;
+                    if (aLast !== bLast) {
+                        return aLast - bLast;
+                    }
+                    return (b.activeJobs - a.activeJobs);
+                case 'workload':
+                default:
+                    return (a.activeJobs - b.activeJobs)
+                        || (Number(b.rating || 0) - Number(a.rating || 0))
+                        || a.name.localeCompare(b.name);
+            }
+        });
+
+    list.innerHTML = filtered.map(rider => `
         <div class="list-group-item">
             <div class="d-flex justify-content-between align-items-start">
                 <div>
                     <h6 class="mb-1">${escapeHtml(rider.name)}</h6>
                     <p class="mb-1 small text-muted"><i class="bi bi-phone me-1"></i>${escapeHtml(rider.phone || 'N/A')}</p>
                     <p class="mb-0 small text-muted"><i class="bi bi-scooter me-1"></i>${escapeHtml(rider.vehicle_type || 'N/A')} ${escapeHtml(rider.vehicle_number || '')}</p>
+                    ${rider.lastAssignedAt ? `<p class="mb-0 small text-muted">Last assigned ${formatRelativeTimeFromNow(rider.lastAssignedAt)}</p>` : ''}
                 </div>
                 <div class="text-end">
                     <span class="badge bg-${(rider.status || '') === 'available' ? 'success' : ((rider.status || '') === 'busy' ? 'warning' : 'secondary')}">
                         ${capitalize(rider.status || 'unknown')}
                     </span>
                     <p class="mb-0 small text-muted mt-1">${Number(rider.total_deliveries || 0)} deliveries</p>
+                    <p class="mb-0 small text-muted">Active jobs: ${rider.activeJobs}</p>
+                    ${rider.idleMinutes !== null ? `<p class="mb-0 small text-muted">Idle ${formatMinutesLabel(rider.idleMinutes)}</p>` : ''}
                     <p class="mb-0 small"><i class="bi bi-star-fill text-warning"></i> ${(Number(rider.rating || 0)).toFixed(1)}</p>
                 </div>
             </div>
@@ -637,8 +1239,42 @@ function renderOrders(orders) {
         tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4"><i class="bi bi-inbox fs-1"></i><p class="mt-2 mb-0">No delivery orders</p></td></tr>';
         return;
     }
-    tbody.innerHTML = orders.map(order => `
-        <tr>
+    latestOrders = orders.map(order => ({
+        ...order,
+        order_age_minutes: order.order_age_minutes ?? (order.created_at ? ((Date.now() - new Date(order.created_at).getTime()) / 60000) : 0)
+    }));
+
+    const filtered = latestOrders.filter(order => {
+        const status = (order.delivery_status || order.status || '').toLowerCase();
+        const matchesStatus = orderFilters.status === 'all' || status === orderFilters.status;
+        const matchesUnassigned = !orderFilters.unassignedOnly || !order.rider_id;
+        const sla = order.sla || {};
+        const matchesSla = !orderFilters.slaRiskOnly || Boolean(sla.is_at_risk || sla.is_late);
+        const searchValue = `${order.order_number || ''}|${order.customer_name || ''}|${order.customer_phone || ''}|${order.delivery_zone_name || ''}|${order.delivery_zone_code || ''}`.toLowerCase();
+        const matchesSearch = orderFilters.search === '' || searchValue.includes(orderFilters.search);
+        return matchesStatus && matchesUnassigned && matchesSla && matchesSearch;
+    }).sort((a, b) => {
+        switch (orderFilters.sort) {
+            case 'age_asc':
+                return (a.order_age_minutes - b.order_age_minutes);
+            case 'amount_desc':
+                return (Number(b.total_amount || 0) - Number(a.total_amount || 0));
+            case 'amount_asc':
+                return (Number(a.total_amount || 0) - Number(b.total_amount || 0));
+            case 'age_desc':
+            default:
+                return (b.order_age_minutes - a.order_age_minutes);
+        }
+    });
+
+    tbody.innerHTML = filtered.map(order => {
+        const sla = order.sla || {};
+        const statusBadge = getStatusBadgeColor(order.delivery_status);
+        const riskBadge = sla.is_at_risk ? '<span class="badge bg-danger ms-1">SLA risk</span>' : (sla.is_late ? '<span class="badge bg-warning text-dark ms-1">Late</span>' : '');
+        const slackBadge = `<span class="badge bg-${sla.is_at_risk ? 'danger' : (sla.is_late ? 'warning' : 'secondary')}">SLA ${sla.is_at_risk ? 'risk' : (sla.is_late ? 'late' : 'ok')}</span>`;
+
+        return `
+        <tr class="${sla.is_at_risk ? 'table-danger' : (sla.is_late ? 'table-warning' : '')}">
             <td>${escapeHtml(order.order_number)}</td>
             <td>
                 ${escapeHtml(order.customer_name || 'N/A')}<br>
@@ -649,7 +1285,8 @@ function renderOrders(orders) {
             <td class="fw-bold">${formatCurrencyValue(order.total_amount, true)}</td>
             <td>${order.rider_name ? escapeHtml(order.rider_name) : '<span class="text-muted">Not assigned</span>'}</td>
             <td>
-                <span class="badge bg-${getStatusBadgeColor(order.delivery_status)}">${capitalize((order.delivery_status || 'pending').replace('-', ' '))}</span>
+                <span class="badge bg-${statusBadge}">${capitalize((order.delivery_status || 'pending').replace('-', ' '))}</span>
+                ${riskBadge}
             </td>
             <td>
                 ${order.rider_id ? 
@@ -658,7 +1295,7 @@ function renderOrders(orders) {
                 }
             </td>
         </tr>
-    `).join('');
+    `;}).join('');
 }
 
 function formatDistanceDisplay(order) {
@@ -712,10 +1349,56 @@ function capitalize(value) {
     return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+function formatMinutesLabel(minutes) {
+    if (minutes === null || typeof minutes === 'undefined' || Number.isNaN(Number(minutes))) {
+        return null;
+    }
+    const totalMinutes = Math.max(0, Math.round(Number(minutes)));
+    const hours = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
+
+    if (hours && mins) {
+        return `${hours} hr${hours > 1 ? 's' : ''} ${mins} min${mins !== 1 ? 's' : ''}`;
+    }
+    if (hours) {
+        return `${hours} hr${hours > 1 ? 's' : ''}`;
+    }
+    return `${mins} min${mins !== 1 ? 's' : ''}`;
+}
+
+function formatRelativeTimeFromNow(value) {
+    if (!value) {
+        return null;
+    }
+    const timestamp = new Date(value).getTime();
+    if (Number.isNaN(timestamp)) {
+        return null;
+    }
+    const diffMs = Date.now() - timestamp;
+    const diffMinutes = Math.round(diffMs / 60000);
+
+    if (Math.abs(diffMinutes) < 1) {
+        return 'just now';
+    }
+
+    if (Math.abs(diffMinutes) < 60) {
+        return `${Math.abs(diffMinutes)} min${Math.abs(diffMinutes) === 1 ? '' : 's'} ago`;
+    }
+
+    const diffHours = Math.round(diffMinutes / 60);
+    if (Math.abs(diffHours) < 24) {
+        return `${Math.abs(diffHours)} hr${Math.abs(diffHours) === 1 ? '' : 's'} ago`;
+    }
+
+    const diffDays = Math.round(diffHours / 24);
+    return `${Math.abs(diffDays)} day${Math.abs(diffDays) === 1 ? '' : 's'} ago`;
+}
+
 // Auto-refresh delivery status every 30 seconds without full reload
 setInterval(refreshDeliveryData, 30000);
 
 document.addEventListener('DOMContentLoaded', () => {
+    registerFilterControls();
     refreshDeliveryData();
 });
 </script>

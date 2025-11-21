@@ -1,3 +1,59 @@
+<?php
+require_once __DIR__ . '/includes/bootstrap.php';
+
+$db = Database::getInstance();
+
+function waposTableExists(Database $db, string $table): bool
+{
+    $row = $db->fetchOne(
+        'SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
+        [$table]
+    );
+
+    return !empty($row);
+}
+
+$dynamicPricingTables = [
+    'delivery_pricing_rules',
+    'delivery_distance_cache',
+    'delivery_pricing_audit',
+];
+
+$missingTables = [];
+foreach ($dynamicPricingTables as $tableName) {
+    if (!waposTableExists($db, $tableName)) {
+        $missingTables[] = $tableName;
+    }
+}
+
+$dynamicPricingInstalled = count($missingTables) === 0;
+$pricingRuleCount = 0;
+$lastAuditAt = null;
+$trackedRequests = 0;
+$trackedFallbacks = 0;
+$trackedCacheHits = 0;
+
+if ($dynamicPricingInstalled) {
+    $ruleRow = $db->fetchOne('SELECT COUNT(*) AS total FROM delivery_pricing_rules');
+    if ($ruleRow && isset($ruleRow['total'])) {
+        $pricingRuleCount = (int)$ruleRow['total'];
+    }
+
+    $auditRow = $db->fetchOne('SELECT created_at FROM delivery_pricing_audit ORDER BY created_at DESC LIMIT 1');
+    if ($auditRow && !empty($auditRow['created_at'])) {
+        $lastAuditAt = $auditRow['created_at'];
+    }
+
+    $trackedRequests = (int)($db->fetchOne('SELECT COUNT(*) AS total FROM delivery_pricing_audit')['total'] ?? 0);
+    $trackedFallbacks = (int)($db->fetchOne('SELECT COUNT(*) AS total FROM delivery_pricing_audit WHERE fallback_used = 1')['total'] ?? 0);
+    $trackedCacheHits = (int)($db->fetchOne('SELECT COUNT(*) AS total FROM delivery_pricing_audit WHERE cache_hit = 1')['total'] ?? 0);
+}
+
+$statusCopy = $dynamicPricingInstalled
+    ? 'Dynamic delivery pricing is fully installed.'
+    : 'Pending upgrade: dynamic delivery pricing tables not found.';
+
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -41,9 +97,13 @@
                         </div>
 
                         <!-- Next Step -->
+                        <?php if (!$dynamicPricingInstalled): ?>
                         <div class="alert alert-primary alert-dismissible fade show mb-4" role="alert">
                             <h5 class="alert-heading"><i class="bi bi-exclamation-triangle-fill me-2"></i>Action Required!</h5>
-                            <p class="mb-3">Run the upgrade to activate all 12 modules and 100% features:</p>
+                            <p class="mb-3">Run the upgrade to activate dynamic delivery pricing and complete the module setup.</p>
+                            <?php if (!empty($missingTables)): ?>
+                                <p class="small text-muted mb-3">Missing tables: <code><?= htmlspecialchars(implode(', ', $missingTables)) ?></code></p>
+                            <?php endif; ?>
                             <div class="d-grid">
                                 <a href="upgrade.php" class="btn btn-primary btn-giant">
                                     <i class="bi bi-rocket-takeoff me-2"></i>Run Upgrade Now
@@ -51,14 +111,33 @@
                             </div>
                             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                         </div>
+                        <?php else: ?>
+                        <div class="alert alert-success alert-dismissible fade show mb-4" role="alert">
+                            <h5 class="alert-heading"><i class="bi bi-check-circle-fill me-2"></i>Upgrade Complete</h5>
+                            <p class="mb-1">Dynamic delivery pricing tables are installed and ready.</p>
+                            <ul class="mb-3 small">
+                                <li><strong><?= number_format($pricingRuleCount) ?></strong> pricing rule<?= $pricingRuleCount === 1 ? '' : 's' ?> configured.</li>
+                                <li>Recent audit entry<?= $lastAuditAt ? ': ' . htmlspecialchars((new DateTime($lastAuditAt))->format('M d, Y g:i A')) : 's pending first usage.' ?></li>
+                            </ul>
+                            <div class="d-flex gap-2">
+                                <a href="delivery-pricing.php" class="btn btn-success">
+                                    <i class="bi bi-cash-coin me-2"></i>Manage Pricing Rules
+                                </a>
+                                <a href="upgrade.php" class="btn btn-outline-secondary">
+                                    <i class="bi bi-journal-check me-2"></i>View Upgrade Log
+                                </a>
+                            </div>
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                        <?php endif; ?>
 
                         <!-- Module Status -->
                         <div class="row g-3 mb-4">
                             <div class="col-md-6">
                                 <div class="card bg-light h-100">
                                     <div class="card-body">
-                                        <h5 class="card-title"><i class="bi bi-list-check text-success me-2"></i>12 Modules Built</h5>
-                                        <div class="feature-check">✅ User Login & Roles (6 types)</div>
+                                        <h5 class="card-title"><i class="bi bi-list-check text-success me-2"></i>15 Modules Built</h5>
+                                        <div class="feature-check">✅ User Login & Roles (14 types)</div>
                                         <div class="feature-check">✅ Product & Inventory (SKU, Suppliers, Expiry)</div>
                                         <div class="feature-check">✅ Retail Sales</div>
                                         <div class="feature-check">✅ Restaurant Orders (Modifiers, Kitchen)</div>
@@ -78,8 +157,8 @@
                                     <div class="card-body">
                                         <h5 class="card-title"><i class="bi bi-trophy text-warning me-2"></i>System Features</h5>
                                         <div class="feature-check">📄 <strong>45+</strong> Pages Built</div>
-                                        <div class="feature-check">🗄️ <strong>35+</strong> Database Tables</div>
-                                        <div class="feature-check">👥 <strong>6</strong> User Roles</div>
+                                        <div class="feature-check">🗄️ <strong>45+</strong> Database Tables</div>
+                                        <div class="feature-check">👥 <strong>14</strong> User Roles</div>
                                         <div class="feature-check">🎨 <strong>Professional</strong> UI/UX</div>
                                         <div class="feature-check">📱 <strong>Mobile</strong> Responsive</div>
                                         <div class="feature-check">🌐 <strong>Offline</strong> PWA Mode</div>
@@ -107,22 +186,47 @@
                             <div class="card-body">
                                 <h5 class="card-title"><i class="bi bi-link-45deg me-2"></i>Quick Access</h5>
                                 <div class="row g-2">
-                                    <div class="col-md-4">
+                                    <div class="col-md-3">
                                         <a href="upgrade.php" class="btn btn-primary w-100">
                                             <i class="bi bi-rocket me-1"></i> Upgrade
                                         </a>
                                     </div>
-                                    <div class="col-md-4">
+                                    <div class="col-md-3">
                                         <a href="login.php" class="btn btn-success w-100">
                                             <i class="bi bi-box-arrow-in-right me-1"></i> Login
                                         </a>
                                     </div>
-                                    <div class="col-md-4">
+                                    <div class="col-md-3">
                                         <a href="100_PERCENT_COMPLETE.md" class="btn btn-info w-100" target="_blank">
                                             <i class="bi bi-file-text me-1"></i> Docs
                                         </a>
                                     </div>
+                                    <div class="col-md-3">
+                                        <a href="delivery-pricing.php" class="btn btn-warning w-100<?= $dynamicPricingInstalled ? '' : ' disabled' ?>" <?= $dynamicPricingInstalled ? '' : 'tabindex="-1" aria-disabled="true"' ?> >
+                                            <i class="bi bi-cash-coin me-1"></i> Pricing Dashboard
+                                        </a>
+                                    </div>
                                 </div>
+                            </div>
+                        </div>
+
+                        <div class="card border-<?= $dynamicPricingInstalled ? 'success' : 'warning' ?> mb-4">
+                            <div class="card-body">
+                                <h5 class="card-title"><i class="bi bi-geo-fill me-2"></i>Dynamic Delivery Pricing Status</h5>
+                                <p class="mb-2"><?= htmlspecialchars($statusCopy) ?></p>
+                                <?php if ($dynamicPricingInstalled): ?>
+                                <ul class="small mb-0">
+                                    <li>Pricing rules available: <strong><?= number_format($pricingRuleCount) ?></strong></li>
+                                    <li>Audit logging: <?= $lastAuditAt ? 'Active (last entry ' . htmlspecialchars((new DateTime($lastAuditAt))->format('M d, Y g:i A')) . ')' : 'Awaiting first calculation' ?></li>
+                                    <li>Requests tracked: <strong><?= number_format($trackedRequests) ?></strong> (cache hits <?= number_format($trackedCacheHits) ?> / fallbacks <?= number_format($trackedFallbacks) ?>)</li>
+                                    <li>POS map picker & API integrations ready after upgrade.</li>
+                                </ul>
+                                <?php else: ?>
+                                <p class="small mb-2">Run the upgrade to install required tables and enable rule management.</p>
+                                <?php if (!empty($missingTables)): ?>
+                                <p class="small text-muted mb-0">Pending tables: <code><?= htmlspecialchars(implode(', ', $missingTables)) ?></code></p>
+                                <?php endif; ?>
+                                <?php endif; ?>
                             </div>
                         </div>
 
@@ -131,11 +235,11 @@
                             <div class="card-body">
                                 <h5 class="card-title text-warning"><i class="bi bi-info-circle-fill me-2"></i>Next Steps</h5>
                                 <ol class="mb-0">
-                                    <li><strong>Click "Run Upgrade Now"</strong> above (or go to upgrade.php)</li>
+                                    <li><strong><?= $dynamicPricingInstalled ? 'Review upgrade log in upgrade.php' : 'Click "Run Upgrade Now" above (or go to upgrade.php)' ?></strong></li>
                                     <li><strong>Wait</strong> for upgrade to complete (adds 35+ tables)</li>
                                     <li><strong>Go to Settings</strong> and change currency if needed</li>
                                     <li><strong>Login</strong> with: admin / admin123</li>
-                                    <li><strong>Explore</strong> all 12 modules!</li>
+                                    <li><strong><?= $dynamicPricingInstalled ? 'Manage dynamic delivery pricing from the dashboard' : 'Upgrade to enable dynamic delivery pricing' ?></strong></li>
                                 </ol>
                             </div>
                         </div>

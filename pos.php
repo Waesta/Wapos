@@ -8,308 +8,476 @@ $db = Database::getInstance();
 $categories = $db->fetchAll("SELECT * FROM categories WHERE is_active = 1 ORDER BY name");
 $products = $db->fetchAll("SELECT * FROM products WHERE is_active = 1 ORDER BY name");
 
+$pdo = $db->getConnection();
+$checkedInRooms = [];
+
+try {
+    $tablesStmt = $pdo->query("SHOW TABLES LIKE 'room_bookings'");
+    if ($tablesStmt && $tablesStmt->fetchColumn()) {
+        $roomsStmt = $pdo->prepare(
+            "SELECT b.id, b.booking_number, b.guest_name, b.guest_phone, r.room_number
+             FROM room_bookings b
+             JOIN rooms r ON b.room_id = r.id
+             WHERE b.status = 'checked_in'
+             ORDER BY r.room_number ASC, b.booking_number ASC"
+        );
+        $roomsStmt->execute();
+        $rows = $roomsStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($rows as $row) {
+            $guestName = trim((string)($row['guest_name'] ?? ''));
+            $roomNumber = trim((string)($row['room_number'] ?? ''));
+            $bookingNumber = trim((string)($row['booking_number'] ?? ''));
+
+            $labelParts = [];
+            if ($roomNumber !== '') {
+                $labelParts[] = 'Room ' . $roomNumber;
+            }
+            if ($guestName !== '') {
+                $labelParts[] = $guestName;
+            }
+
+            $label = implode(' · ', $labelParts);
+            if ($bookingNumber !== '') {
+                $label .= ($label !== '' ? ' ' : '') . '(' . $bookingNumber . ')';
+            }
+
+            if ($label === '') {
+                $label = 'Booking #' . (int) $row['id'];
+            }
+
+            $checkedInRooms[] = [
+                'id' => (int) $row['id'],
+                'label' => $label,
+            ];
+        }
+    }
+} catch (Throwable $e) {
+    $checkedInRooms = [];
+}
+
 $pageTitle = 'Point of Sale';
 include 'includes/header.php';
 ?>
 
 <style>
-    .pos-container {
-        height: calc(100vh - 220px);
-        overflow: hidden;
-        margin-bottom: 60px;
-    }
-    .products-section {
-        height: 100%;
-        overflow-y: auto;
-        padding: 15px;
-    }
-    .cart-section {
-        height: 100%;
-        border-left: 2px solid #dee2e6;
+    .pos-shell {
         display: flex;
         flex-direction: column;
-        padding: 10px;
-        padding-bottom: 20px;
+        gap: var(--spacing-lg);
+    }
+    .pos-layout {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-lg);
+        min-height: calc(100vh - 180px);
+    }
+    @media (min-width: 992px) {
+        .pos-layout {
+            flex-direction: row;
+            align-items: stretch;
+        }
+    }
+    .pos-column {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-lg);
+    }
+    .pos-panel {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-md);
+    }
+    .pos-panel .panel-body {
+        flex: 1;
         overflow-y: auto;
     }
-    .product-card {
+    .product-filters {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+    }
+    @media (min-width: 576px) {
+        .product-filters {
+            flex-direction: row;
+            align-items: center;
+        }
+        .product-filters > * {
+            flex: 1;
+        }
+    }
+    #productsList {
+        display: grid;
+        gap: var(--spacing-md);
+    }
+    .product-item {
         cursor: pointer;
-        transition: all 0.2s;
-        height: 140px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        background: var(--color-surface);
+        box-shadow: var(--shadow-sm);
+        padding: var(--spacing-md);
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
-    .product-card:hover {
+    .product-item:hover {
         transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
     }
-    .cart-items {
-        flex: 0 0 auto;
-        overflow-y: auto;
-        max-height: 30vh;
-        margin-bottom: 10px;
-    }
-    .cart-total {
-        border-top: 2px solid #dee2e6;
-        background: #f8f9fa;
-        padding: 8px;
-        margin-top: 10px;
-        flex-shrink: 0;
-    }
-    .payment-section {
-        margin-top: 5px;
-        margin-bottom: 5px;
-    }
-    .payment-buttons {
-        margin-top: 5px;
-        margin-bottom: 30px;
-    }
-    
-    /* Custom scrollbar styling */
-    .cart-section::-webkit-scrollbar {
-        width: 8px;
-    }
-    
-    .cart-section::-webkit-scrollbar-track {
-        background: #f1f1f1;
-        border-radius: 4px;
-    }
-    
-    .cart-section::-webkit-scrollbar-thumb {
-        background: #c1c1c1;
-        border-radius: 4px;
-    }
-    
-    .cart-section::-webkit-scrollbar-thumb:hover {
-        background: #a8a8a8;
-    }
-    
-    .cart-items::-webkit-scrollbar {
-        width: 6px;
-    }
-    
-    .cart-items::-webkit-scrollbar-track {
-        background: #f8f9fa;
-        border-radius: 3px;
-    }
-    
-    .cart-items::-webkit-scrollbar-thumb {
-        background: #dee2e6;
-        border-radius: 3px;
-    }
-    
-    .cart-items::-webkit-scrollbar-thumb:hover {
-        background: #c1c1c1;
-    }
-    
-    /* Compact form elements */
-    .form-label {
-        margin-bottom: 4px;
-        font-size: 0.9rem;
-    }
-    
-    .form-control, .form-select {
-        padding: 6px 12px;
-        font-size: 0.9rem;
-    }
-    
-    .btn-sm {
-        padding: 4px 8px;
-        font-size: 0.8rem;
-    }
-    
-    .alert {
-        padding: 8px 12px;
+    .product-meta {
+        color: var(--color-text-muted);
         font-size: 0.85rem;
     }
-    
-    /* Responsive adjustments for scrollable layout */
-    @media (max-height: 800px) {
-        .pos-container {
-            height: calc(100vh - 180px);
-            margin-bottom: 40px;
-        }
-        .cart-items {
-            max-height: 25vh;
+    .product-actions {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-xs);
+    }
+    @media (min-width: 576px) {
+        .product-actions {
+            flex-direction: row;
+            align-items: center;
+            justify-content: flex-end;
+            gap: var(--spacing-sm);
         }
     }
-    
-    @media (max-height: 700px) {
-        .pos-container {
-            height: calc(100vh - 160px);
-            margin-bottom: 40px;
-        }
-        .cart-items {
-            max-height: 20vh;
+    .cart-card {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+    }
+    .cart-items {
+        flex: 1;
+        overflow-y: auto;
+        border: 1px dashed var(--color-border);
+        border-radius: var(--radius-md);
+        padding: var(--spacing-md);
+        background: rgba(13, 110, 253, 0.03);
+    }
+    .cart-empty {
+        text-align: center;
+        color: var(--color-text-muted);
+        padding: var(--spacing-lg) 0;
+    }
+    .cart-summary {
+        margin-top: var(--spacing-md);
+        border-top: 1px solid var(--color-border);
+        padding-top: var(--spacing-md);
+    }
+    .cart-line {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        padding: var(--spacing-sm) var(--spacing-md);
+        background: var(--color-surface);
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+    }
+    @media (min-width: 576px) {
+        .cart-line {
+            flex-direction: row;
+            justify-content: space-between;
+            align-items: center;
         }
     }
-    
-    @media (max-height: 600px) {
-        .pos-container {
-            height: calc(100vh - 140px);
-            margin-bottom: 40px;
-        }
-        .cart-items {
-            max-height: 18vh;
-        }
+    .cart-line-actions .btn {
+        min-width: 36px;
+    }
+    .payment-section {
+        border-top: 1px solid var(--color-border);
+        margin-top: var(--spacing-md);
+        padding-top: var(--spacing-md);
+    }
+    .payment-buttons .btn {
+        font-weight: 600;
+    }
+    .held-order-card {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        padding: var(--spacing-md);
+        background: var(--color-surface);
+        box-shadow: var(--shadow-sm);
+    }
+    .scan-feedback {
+        position: fixed;
+        top: 1.5rem;
+        right: 1.5rem;
+        z-index: 1080;
+        display: none;
+        align-items: center;
+        gap: var(--spacing-sm);
+        padding: var(--spacing-sm) var(--spacing-md);
+        border-radius: var(--radius-md);
+        background: var(--color-surface);
+        box-shadow: var(--shadow-md);
+        border: 1px solid var(--color-border);
+        font-weight: 600;
+    }
+    .scan-feedback.show { display: inline-flex; }
+    .scan-feedback[data-state="success"] { border-color: var(--color-success); color: var(--color-success); }
+    .scan-feedback[data-state="error"] { border-color: var(--color-danger); color: var(--color-danger); }
+    .loyalty-card {
+        border: 1px dashed var(--color-border);
+        background: var(--color-surface-alt);
+        border-radius: var(--radius-md);
+        padding: var(--spacing-md);
     }
 </style>
 
-<div class="pos-container">
-    <div class="row g-0 h-100">
-        <!-- Products Section -->
-        <div class="col-md-7 products-section">
-            <!-- Search and Filter -->
-            <div class="mb-3">
-                <div class="row g-2">
-                    <div class="col-md-8">
-                        <input type="text" id="searchProduct" class="form-control" placeholder="Search products by name, SKU, or barcode...">
-                    </div>
-                    <div class="col-md-4">
-                        <select id="filterCategory" class="form-select">
-                            <option value="">All Categories</option>
-                            <?php foreach ($categories as $cat): ?>
-                                <option value="<?= $cat['id'] ?>"><?= htmlspecialchars($cat['name']) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                </div>
-            </div>
+<div class="scan-feedback" id="scanFeedback" role="status" aria-live="assertive">
+    <i class="bi bi-upc-scan"></i>
+    <span id="scanFeedbackText"></span>
+</div>
 
-            <!-- Products List -->
-            <div id="productsList" class="list-group product-list">
-                <?php foreach ($products as $product): ?>
-                <?php
-                $productPayload = json_encode([
-                    'id' => (int)$product['id'],
-                    'name' => $product['name'],
-                    'selling_price' => (float)$product['selling_price'],
-                    'stock_quantity' => (float)$product['stock_quantity'],
-                    'tax_rate' => $product['tax_rate'] !== null ? (float)$product['tax_rate'] : null,
-                ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
-                ?>
-                <div class="list-group-item product-item d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-2"
-                     data-category="<?= (int)$product['category_id'] ?>"
-                     data-name="<?= htmlspecialchars(strtolower($product['name']), ENT_QUOTES, 'UTF-8') ?>"
-                     data-sku="<?= htmlspecialchars(strtolower($product['sku'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
-                     data-barcode="<?= htmlspecialchars(strtolower($product['barcode'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
-                    <div class="product-info">
-                        <div class="d-flex align-items-center gap-2">
-                            <h6 class="mb-0"><?= htmlspecialchars($product['name']) ?></h6>
-                            <?php if ($product['stock_quantity'] <= $product['min_stock_level']): ?>
-                                <span class="badge bg-warning text-dark">Low</span>
-                            <?php endif; ?>
-                        </div>
-                        <div class="text-muted small">SKU: <?= htmlspecialchars($product['sku']) ?></div>
-                    </div>
-                    <div class="text-md-end d-flex flex-column flex-sm-row align-items-sm-center gap-2">
-                        <div class="pe-sm-2 text-muted small">
-                            <div class="fw-bold text-primary"><?= formatMoney($product['selling_price']) ?></div>
-                            <div>Stock: <?= $product['stock_quantity'] ?></div>
-                        </div>
-                        <button 
-                            type="button"
-                            class="btn btn-primary btn-sm add-to-cart-btn"
-                            data-product-id="<?= (int)$product['id'] ?>"
-                            data-product-name="<?= htmlspecialchars($product['name'], ENT_QUOTES, 'UTF-8') ?>"
-                            data-product-price="<?= (float)$product['selling_price'] ?>"
-                            data-product-stock="<?= (float)$product['stock_quantity'] ?>"
-                            data-product-tax="<?= $product['tax_rate'] !== null ? (float)$product['tax_rate'] : '' ?>"
-                            data-product-json="<?= htmlspecialchars($productPayload, ENT_QUOTES, 'UTF-8') ?>"
-                            onclick="addToCartFromElement(this)"
-                        >
-                            <i class="bi bi-cart-plus me-1"></i>Add
-                        </button>
+<div class="container-fluid py-4 pos-shell">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+        <div class="stack-sm">
+            <h1 class="mb-0"><i class="bi bi-cart4 me-2"></i>Point of Sale</h1>
+            <p class="text-muted mb-0">Search products, build a sale, and complete payments faster.</p>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <button class="btn btn-outline-secondary btn-icon" onclick="showHeldOrders()">
+                <i class="bi bi-list"></i><span>Held Orders</span>
+            </button>
+            <button class="btn btn-outline-danger btn-icon" onclick="clearCart()">
+                <i class="bi bi-trash"></i><span>Clear Cart</span>
+            </button>
+        </div>
+    </div>
+
+    <div class="pos-layout">
+        <div class="pos-column">
+            <div class="app-card pos-panel">
+                <div class="section-heading">
+                    <div>
+                        <h5 class="mb-1">Product Catalog</h5>
+                        <p class="text-muted small mb-0">Tap to add items to the cart. Filters update instantly.</p>
                     </div>
                 </div>
-                <?php endforeach; ?>
+                <div class="product-filters">
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text" id="searchProduct" class="form-control" placeholder="Search by name, SKU, or barcode">
+                    </div>
+                    <select id="filterCategory" class="form-select">
+                        <option value="">All Categories</option>
+                        <?php foreach ($categories as $cat): ?>
+                            <option value="<?= $cat['id'] ?>"><?= htmlspecialchars($cat['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="panel-body" id="productsPanel">
+                    <div id="productsList">
+                        <?php foreach ($products as $product): ?>
+                        <?php
+                        $productPayload = json_encode([
+                            'id' => (int)$product['id'],
+                            'name' => $product['name'],
+                            'selling_price' => (float)$product['selling_price'],
+                            'stock_quantity' => (float)$product['stock_quantity'],
+                            'tax_rate' => $product['tax_rate'] !== null ? (float)$product['tax_rate'] : null,
+                        ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
+                        ?>
+                        <div class="product-item"
+                             data-category="<?= (int)$product['category_id'] ?>"
+                             data-name="<?= htmlspecialchars(strtolower($product['name']), ENT_QUOTES, 'UTF-8') ?>"
+                             data-sku="<?= htmlspecialchars(strtolower($product['sku'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                             data-barcode="<?= htmlspecialchars(strtolower($product['barcode'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                            <div class="d-flex align-items-start justify-content-between gap-3">
+                                <div>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <h6 class="mb-0">
+                                            <?= htmlspecialchars($product['name']) ?>
+                                        </h6>
+                                        <?php if ($product['stock_quantity'] <= $product['min_stock_level']): ?>
+                                            <span class="badge bg-warning text-dark">Low</span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="product-meta">SKU: <?= htmlspecialchars($product['sku']) ?></div>
+                                </div>
+                                <div class="text-end">
+                                    <div class="fw-semibold text-primary small">
+                                        <?= formatMoney($product['selling_price']) ?>
+                                    </div>
+                                    <small class="text-muted">Stock: <?= $product['stock_quantity'] ?></small>
+                                </div>
+                            </div>
+                            <div class="product-actions">
+                                <button 
+                                    type="button"
+                                    class="btn btn-primary btn-sm add-to-cart-btn"
+                                    data-product-id="<?= (int)$product['id'] ?>"
+                                    data-product-name="<?= htmlspecialchars($product['name'], ENT_QUOTES, 'UTF-8') ?>"
+                                    data-product-price="<?= (float)$product['selling_price'] ?>"
+                                    data-product-stock="<?= (float)$product['stock_quantity'] ?>"
+                                    data-product-tax="<?= $product['tax_rate'] !== null ? (float)$product['tax_rate'] : '' ?>"
+                                    data-product-json="<?= htmlspecialchars($productPayload, ENT_QUOTES, 'UTF-8') ?>"
+                                    onclick="addToCartFromElement(this)"
+                                >
+                                    <i class="bi bi-cart-plus me-1"></i>Add to Cart
+                                </button>
+                            </div>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <!-- Cart Section -->
-        <div class="col-md-5 cart-section">
-            <div class="h-100 d-flex flex-column">
-                <h5 class="mb-3"><i class="bi bi-cart3 me-2"></i>Current Sale</h5>
-                
-                <!-- Customer Info -->
-                <div class="mb-3">
-                    <input type="text" id="customerName" class="form-control form-control-sm" placeholder="Customer Name (Optional)">
+        <div class="pos-column">
+            <div class="app-card cart-card">
+                <div class="d-flex align-items-start justify-content-between">
+                    <div>
+                        <h5 class="mb-1"><i class="bi bi-cart3 me-2"></i>Current Sale</h5>
+                        <p class="text-muted small mb-0">Customer summary, cart contents, and payment controls.</p>
+                    </div>
+                    <span class="app-status" data-color="info" id="cartStatus">Ready</span>
                 </div>
 
-                <!-- Cart Items -->
+                <div class="row g-2">
+                    <div class="col-lg-8">
+                        <label for="customerName" class="form-label mb-1">Customer Name</label>
+                        <input type="text" id="customerName" class="form-control form-control-sm" placeholder="Optional">
+                    </div>
+                    <div class="col-lg-4">
+                        <label class="form-label mb-1">Items in Cart</label>
+                        <div class="form-control form-control-sm bg-light" id="cartItemCount">0</div>
+                    </div>
+                </div>
+                <div class="row g-2 align-items-end">
+                    <div class="col-lg-8">
+                        <div class="loyalty-card">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <div class="d-flex align-items-center gap-2">
+                                    <i class="bi bi-stars text-warning"></i>
+                                    <span class="fw-semibold">Loyalty</span>
+                                </div>
+                                <span class="badge-soft text-muted" id="loyaltyStatus">Not linked</span>
+                            </div>
+                            <label for="loyaltyCardNumber" class="form-label small text-muted mb-1">Card / Phone</label>
+                            <div class="input-group input-group-sm">
+                                <input type="text" class="form-control" id="loyaltyCardNumber" placeholder="Scan or type number">
+                                <button class="btn btn-outline-primary" type="button" id="linkLoyaltyBtn">
+                                    <i class="bi bi-link-45deg"></i>
+                                </button>
+                            </div>
+                            <div class="mt-2 small text-muted" id="loyaltyDetails">Customer rewards will appear here.</div>
+                        </div>
+                    </div>
+                    <div class="col-lg-4">
+                        <div class="stack-sm">
+                            <label class="form-label mb-1" for="customerPhone">Phone</label>
+                            <input type="tel" id="customerPhone" class="form-control form-control-sm" placeholder="Optional">
+                        </div>
+                    </div>
+                </div>
+
                 <div class="cart-items" id="cartItems">
-                    <div class="text-center text-muted py-5">
+                    <div class="cart-empty">
                         <i class="bi bi-cart-x fs-1"></i>
-                        <p class="mt-2">Cart is empty<br><small>Click on products to add</small></p>
+                        <p class="mt-2 mb-0">Cart is empty</p>
+                        <small>Click on products to add</small>
                     </div>
                 </div>
 
-                <!-- Cart Total -->
-                <div class="cart-total">
+                <div class="cart-summary">
                     <div class="d-flex justify-content-between mb-2">
-                        <span>Subtotal:</span>
-                        <span id="subtotal">0.00</span>
+                        <span class="text-muted">Subtotal</span>
+                        <strong id="subtotal">0.00</strong>
                     </div>
                     <div class="d-flex justify-content-between mb-2">
-                        <span>Tax (<span id="taxRate">0</span>%):</span>
-                        <span id="taxAmount">0.00</span>
+                        <span class="text-muted">Tax (<span id="taxRate">0</span>%)</span>
+                        <strong id="taxAmount">0.00</strong>
                     </div>
-                    <div class="d-flex justify-content-between mb-3">
-                        <strong>Total:</strong>
-                        <strong class="text-primary fs-4" id="total">0.00</strong>
+                    <div class="d-flex justify-content-between align-items-center py-2 border-top border-bottom my-2">
+                        <span class="fw-semibold">Total Due</span>
+                        <span class="h4 mb-0 text-primary" id="total">0.00</span>
                     </div>
 
                     <div class="payment-section">
-                        <div class="mb-1">
-                            <label for="paymentMethod" class="form-label">Payment Method</label>
-                            <select id="paymentMethod" class="form-select form-select-sm" onchange="handlePaymentMethodChange()">
-                                <option value="cash">Cash</option>
-                                <option value="card">Card</option>
-                                <option value="mobile_money">Mobile Money</option>
-                                <option value="bank_transfer">Bank Transfer</option>
-                            </select>
+                        <div class="row g-3 align-items-end">
+                            <div class="col-lg-6">
+                                <label for="paymentMethod" class="form-label">Payment Method</label>
+                                <select id="paymentMethod" class="form-select form-select-sm" onchange="handlePaymentMethodChange()">
+                                    <option value="cash">Cash</option>
+                                    <option value="card">Card</option>
+                                    <option value="mobile_money">Mobile Money</option>
+                                    <option value="bank_transfer">Bank Transfer</option>
+                                    <option value="room_charge">Charge to Room</option>
+                                </select>
+                            </div>
+                            <div class="col-lg-6" id="cashPaymentWrap">
+                                <label for="amountTendered" class="form-label">Amount Tendered</label>
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text"><i class="bi bi-cash"></i></span>
+                                    <input type="number"
+                                           class="form-control"
+                                           id="amountTendered"
+                                           placeholder="0.00"
+                                           step="0.01"
+                                           min="0"
+                                           oninput="calculateChange()"
+                                           onkeypress="handleTenderedKeypress(event)">
+                                </div>
+                                <div class="mt-2" id="cashAlerts"></div>
+                                <div class="mt-3 d-flex flex-wrap gap-2" id="quickTenderButtons">
+                                    <button type="button" class="btn btn-outline-primary btn-sm quick-tender-btn" data-amount="100"><?= formatMoney(100); ?></button>
+                                    <button type="button" class="btn btn-outline-primary btn-sm quick-tender-btn" data-amount="200"><?= formatMoney(200); ?></button>
+                                    <button type="button" class="btn btn-outline-primary btn-sm quick-tender-btn" data-amount="500"><?= formatMoney(500); ?></button>
+                                    <button type="button" class="btn btn-outline-primary btn-sm quick-tender-btn" data-amount="1000"><?= formatMoney(1000); ?></button>
+                                </div>
+                                <small class="text-muted">Tip: use Alt + number keys (1-4) for quick tender amounts.</small>
+                            </div>
                         </div>
 
-                        <!-- Cash Payment Section -->
-                        <div id="cashPaymentSection" class="mb-1">
-                            <label for="amountTendered" class="form-label">Amount Tendered</label>
-                            <input type="number" class="form-control form-control-sm" id="amountTendered" 
-                                   placeholder="0.00" step="0.01" min="0" 
-                                   oninput="calculateChange()" onkeypress="handleTenderedKeypress(event)">
-                            <div id="changeDisplay" class="mt-1" style="display: none;">
-                                <div class="alert alert-success mb-0 py-1">
-                                    <div class="d-flex justify-content-between">
-                                        <strong>Change Due:</strong>
-                                        <strong id="changeAmount">0.00</strong>
+                        <div class="row g-3 mt-1" id="roomChargeSection" style="display:none;">
+                            <div class="col-12">
+                                <?php if (!empty($checkedInRooms)): ?>
+                                    <label for="roomBookingSelect" class="form-label">Select Checked-in Room</label>
+                                    <select id="roomBookingSelect" class="form-select form-select-sm">
+                                        <option value="">Select a checked-in room...</option>
+                                        <?php foreach ($checkedInRooms as $room): ?>
+                                            <option value="<?= (int) $room['id'] ?>"
+                                                    data-label="<?= htmlspecialchars($room['label'], ENT_QUOTES, 'UTF-8') ?>">
+                                                <?= htmlspecialchars($room['label']) ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <small class="text-muted">Charges will be posted to the selected room folio.</small>
+                                <?php else: ?>
+                                    <div class="alert alert-warning mb-0">
+                                        <div class="small mb-1"><i class="bi bi-exclamation-triangle me-1"></i>No checked-in rooms are available.</div>
+                                        <div class="small mb-0">Check in a guest before charging orders to a room.</div>
                                     </div>
-                                </div>
+                                <?php endif; ?>
                             </div>
-                            <div id="insufficientFunds" class="mt-1" style="display: none;">
-                                <div class="alert alert-danger mb-0 py-1">
-                                    <small>Insufficient amount tendered</small>
-                                </div>
+                            <div class="col-12">
+                                <label for="roomChargeDescription" class="form-label">Folio Note (optional)</label>
+                                <input type="text" class="form-control form-control-sm" id="roomChargeDescription" maxlength="120" placeholder="e.g. Room service dinner">
                             </div>
                         </div>
 
-
-                        <div class="payment-buttons">
+                        <div class="payment-buttons mt-3">
                             <div class="d-grid gap-2">
                                 <button class="btn btn-success btn-lg" onclick="processPayment()" id="processPaymentBtn" disabled>
                                     <i class="bi bi-credit-card me-2"></i>Process Payment
                                 </button>
                                 <div class="row g-2">
                                     <div class="col-6">
-                                        <button class="btn btn-warning w-100" onclick="holdOrder()" id="holdOrderBtn" disabled>
+                                        <button class="btn btn-outline-warning w-100" onclick="holdOrder()" id="holdOrderBtn" disabled>
                                             <i class="bi bi-pause-circle me-1"></i>Hold Order
                                         </button>
                                     </div>
                                     <div class="col-6">
-                                        <button class="btn btn-info w-100" onclick="showHeldOrders()" id="recallOrderBtn">
+                                        <button class="btn btn-outline-info w-100" onclick="showHeldOrders()" id="recallOrderBtn">
                                             <i class="bi bi-arrow-clockwise me-1"></i>Recall Order
                                         </button>
                                     </div>
                                 </div>
-                                <button class="btn btn-outline-danger" onclick="clearCart()">
-                                    <i class="bi bi-trash me-2"></i>Clear Cart
-                                </button>
                             </div>
                         </div>
                     </div>
@@ -320,55 +488,83 @@ include 'includes/header.php';
 </div>
 
 <!-- Payment Confirmation Modal -->
-<div class="modal fade" id="paymentConfirmationModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+<div class="modal fade" id="paymentConfirmationModal" tabindex="-1" aria-labelledby="paymentConfirmationLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content">
-            <div class="modal-header bg-success text-white">
-                <h5 class="modal-title">Payment Confirmation</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            <div class="modal-header border-0 pb-0">
+                <div>
+                    <h5 class="modal-title" id="paymentConfirmationLabel"><i class="bi bi-receipt me-2 text-primary"></i>Payment Confirmation</h5>
+                    <p class="text-muted small mb-0">Review the transaction details before completing the sale.</p>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <div class="row">
-                    <div class="col-md-6">
-                        <h6>Transaction Summary</h6>
-                        <table class="table table-sm">
-                            <tr><td>Subtotal:</td><td id="confirmSubtotal">0.00</td></tr>
-                            <tr><td>Tax:</td><td id="confirmTax">0.00</td></tr>
-                            <tr><td><strong>Total:</strong></td><td><strong id="confirmTotal">0.00</strong></td></tr>
-                            <tr><td>Payment Method:</td><td id="confirmPaymentMethod">Cash</td></tr>
-                            <tr id="confirmAmountPaidRow"><td>Amount Paid:</td><td id="confirmAmountPaid">0.00</td></tr>
-                            <tr id="confirmChangeRow" style="display: none;"><td><strong>Change Due:</strong></td><td><strong id="confirmChange" class="text-success">0.00</strong></td></tr>
-                        </table>
+                <div class="row g-4">
+                    <div class="col-lg-6">
+                        <div class="app-card border-0 shadow-sm h-100">
+                            <h6 class="text-muted text-uppercase small">Transaction Summary</h6>
+                            <div class="d-flex flex-column gap-2 mt-3 small">
+                                <div class="d-flex justify-content-between">
+                                    <span class="text-muted">Subtotal</span>
+                                    <span id="confirmSubtotal">0.00</span>
+                                </div>
+                                <div class="d-flex justify-content-between">
+                                    <span class="text-muted">Tax</span>
+                                    <span id="confirmTax">0.00</span>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center py-2 border-top">
+                                    <strong>Total</strong>
+                                    <strong id="confirmTotal" class="text-primary">0.00</strong>
+                                </div>
+                                <div class="d-flex justify-content-between">
+                                    <span class="text-muted">Payment Method</span>
+                                    <span id="confirmPaymentMethod">Cash</span>
+                                </div>
+                                <div class="d-flex justify-content-between d-none" id="confirmRoomChargeRow">
+                                    <span class="text-muted">Charged To</span>
+                                    <span id="confirmRoomCharge"></span>
+                                </div>
+                                <div class="d-flex justify-content-between" id="confirmAmountPaidRow">
+                                    <span class="text-muted">Amount Paid</span>
+                                    <span id="confirmAmountPaid">0.00</span>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center d-none" id="confirmChangeRow">
+                                    <strong>Change Due</strong>
+                                    <strong id="confirmChange" class="text-success">0.00</strong>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                    <div class="col-md-6">
-                        <h6>Cash Drawer Instructions</h6>
-                        <div id="cashInstructions" style="display: none;">
-                            <div class="alert alert-info">
-                                <h6><i class="bi bi-cash-stack me-2"></i>Cash Handling</h6>
-                                <ol class="mb-0">
+                    <div class="col-lg-6">
+                        <div class="d-flex flex-column gap-3">
+                            <div id="cashInstructions" class="app-card border-0 shadow-sm d-none">
+                                <h6 class="text-muted text-uppercase small">Cash Handling</h6>
+                                <ol class="mb-0 small mt-2 ps-3">
                                     <li>Collect payment from customer</li>
                                     <li>Place cash in drawer</li>
                                     <li>Count change carefully</li>
                                     <li>Give change to customer</li>
                                     <li>Provide receipt</li>
                                 </ol>
+                                <div id="changeBreakdown" class="mt-3 d-none">
+                                    <h6 class="small text-muted text-uppercase mb-2">Change Breakdown</h6>
+                                    <div id="changeDetails" class="small"></div>
+                                </div>
                             </div>
-                            <div id="changeBreakdown" style="display: none;">
-                                <h6>Change Breakdown</h6>
-                                <div id="changeDetails" class="small"></div>
+                            <div id="cardInstructions" class="app-card border-0 shadow-sm d-none">
+                                <h6 class="text-muted text-uppercase small"><i class="bi bi-credit-card me-2"></i>Card Payment</h6>
+                                <p class="small mb-0">Process the card via your terminal and confirm the transaction before completing the sale.</p>
                             </div>
-                        </div>
-                        <div id="cardInstructions" style="display: none;">
-                            <div class="alert alert-primary">
-                                <h6><i class="bi bi-credit-card me-2"></i>Card Payment</h6>
-                                <p class="mb-0">Process card payment through your terminal and confirm transaction completion.</p>
+                            <div id="roomChargeInstructions" class="app-card border-0 shadow-sm d-none">
+                                <h6 class="text-muted text-uppercase small"><i class="bi bi-door-open me-2"></i>Room Charge</h6>
+                                <p class="small mb-0">Verify guest authorization and ensure folio notes reflect the purchase accurately.</p>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-success" onclick="finalizePayment()">
                     <i class="bi bi-check-circle me-2"></i>Complete Transaction
                 </button>
@@ -378,30 +574,33 @@ include 'includes/header.php';
 </div>
 
 <!-- Hold Order Modal -->
-<div class="modal fade" id="holdOrderModal" tabindex="-1">
-    <div class="modal-dialog">
+<div class="modal fade" id="holdOrderModal" tabindex="-1" aria-labelledby="holdOrderLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
-            <div class="modal-header bg-warning text-dark">
-                <h5 class="modal-title"><i class="bi bi-pause-circle me-2"></i>Hold Order</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            <div class="modal-header border-0 pb-0">
+                <div>
+                    <h5 class="modal-title" id="holdOrderLabel"><i class="bi bi-pause-circle me-2 text-warning"></i>Hold Current Order</h5>
+                    <p class="small text-muted mb-0">Save this cart to resume later. Provide a reference to find it quickly.</p>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <div class="mb-3">
-                    <label for="holdCustomerName" class="form-label">Customer Name/Reference</label>
-                    <input type="text" class="form-control" id="holdCustomerName" placeholder="Enter customer name or reference">
-                    <small class="text-muted">This helps identify the order when recalling</small>
+                    <label for="holdCustomerName" class="form-label">Customer Name or Reference<span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="holdCustomerName" placeholder="e.g. John Doe or Table 4">
+                    <small class="text-muted">Required so the order can be recalled by staff.</small>
                 </div>
                 <div class="mb-3">
                     <label for="holdNotes" class="form-label">Notes (Optional)</label>
-                    <textarea class="form-control" id="holdNotes" rows="2" placeholder="Any special notes about this order"></textarea>
+                    <textarea class="form-control" id="holdNotes" rows="2" placeholder="Mention dietary notes, pickup time, etc."></textarea>
                 </div>
-                <div class="alert alert-info">
-                    <h6>Order Summary:</h6>
-                    <div id="holdOrderSummary"></div>
+                <div class="app-card border-info-subtle">
+                    <h6 class="text-muted text-uppercase small">Order Summary</h6>
+                    <div id="holdOrderSummary" class="small mt-2"></div>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-warning" onclick="confirmHoldOrder()">
                     <i class="bi bi-pause-circle me-2"></i>Hold Order
                 </button>
@@ -411,25 +610,28 @@ include 'includes/header.php';
 </div>
 
 <!-- Held Orders Modal -->
-<div class="modal fade" id="heldOrdersModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+<div class="modal fade" id="heldOrdersModal" tabindex="-1" aria-labelledby="heldOrdersLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content">
-            <div class="modal-header bg-info text-white">
-                <h5 class="modal-title"><i class="bi bi-list me-2"></i>Held Orders</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            <div class="modal-header border-0 pb-0">
+                <div>
+                    <h5 class="modal-title" id="heldOrdersLabel"><i class="bi bi-list-stars me-2 text-info"></i>Held Orders</h5>
+                    <p class="small text-muted mb-0">Recall, process, or clear held carts from this list.</p>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <div id="heldOrdersList">
+                <div id="heldOrdersList" class="d-flex flex-column gap-3">
                     <div class="text-center py-4">
                         <div class="spinner-border text-primary" role="status">
                             <span class="visually-hidden">Loading...</span>
                         </div>
-                        <p class="mt-2">Loading held orders...</p>
+                        <p class="mt-2 mb-0">Loading held orders...</p>
                     </div>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
     </div>
@@ -451,6 +653,53 @@ function formatCurrency(amount) {
     }).format(amount);
     
     return formatted; // Return amount only, no currency symbol
+}
+
+function formatPaymentMethodLabel(method) {
+    switch (method) {
+        case 'cash':
+            return 'Cash';
+        case 'card':
+            return 'Card';
+        case 'mobile_money':
+            return 'Mobile Money';
+        case 'bank_transfer':
+            return 'Bank Transfer';
+        case 'room_charge':
+            return 'Room Charge';
+        default:
+            return method.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
+    }
+}
+
+function refreshPaymentUIState() {
+    const paymentMethod = document.getElementById('paymentMethod').value;
+    const processBtn = document.getElementById('processPaymentBtn');
+    const holdBtn = document.getElementById('holdOrderBtn');
+    const roomSelect = document.getElementById('roomBookingSelect');
+    const cartHasItems = cart.length > 0;
+
+    if (holdBtn) {
+        holdBtn.disabled = !cartHasItems;
+    }
+
+    if (!processBtn) {
+        return;
+    }
+
+    if (paymentMethod === 'cash') {
+        calculateChange();
+        return;
+    }
+
+    if (paymentMethod === 'room_charge') {
+        const hasRooms = roomSelect && roomSelect.options.length > 1;
+        const hasSelection = roomSelect && roomSelect.value !== '';
+        processBtn.disabled = !cartHasItems || !hasRooms || !hasSelection;
+        return;
+    }
+
+    processBtn.disabled = !cartHasItems;
 }
 
 // Search products
@@ -573,62 +822,74 @@ function updateQuantity(index, change) {
 
 function updateCart() {
     const cartDiv = document.getElementById('cartItems');
-    
+    const cartCountEl = document.getElementById('cartItemCount');
+    const cartStatusEl = document.getElementById('cartStatus');
+
+    if (!cartDiv) {
+        return;
+    }
+
     if (cart.length === 0) {
         cartDiv.innerHTML = `
-            <div class="text-center text-muted py-5">
+            <div class="cart-empty">
                 <i class="bi bi-cart-x fs-1"></i>
-                <p class="mt-2">Cart is empty<br><small>Click on products to add</small></p>
+                <p class="mt-2 mb-0">Cart is empty</p>
+                <small>Click on products to add</small>
             </div>
         `;
-        document.getElementById('processPaymentBtn').disabled = true;
-        document.getElementById('holdOrderBtn').disabled = true;
+        if (cartStatusEl) {
+            cartStatusEl.textContent = 'Ready';
+            cartStatusEl.setAttribute('data-color', 'info');
+        }
     } else {
-        let html = '<div class="list-group">';
+        let html = '<div class="d-flex flex-column gap-2">';
         cart.forEach((item, index) => {
             html += `
-                <div class="list-group-item">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <h6 class="mb-0">${item.name}</h6>
-                        <button class="btn btn-sm btn-outline-danger" onclick="removeFromCart(${index})">
+                <div class="cart-line">
+                    <div class="d-flex justify-content-between align-items-start gap-2">
+                        <div>
+                            <div class="fw-semibold">${item.name}</div>
+                            <div class="text-muted small">${formatCurrency(item.price)} × ${item.quantity}</div>
+                        </div>
+                        <button class="btn btn-sm btn-outline-danger" onclick="removeFromCart(${index})" aria-label="Remove ${item.name}">
                             <i class="bi bi-x"></i>
                         </button>
                     </div>
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div class="btn-group btn-group-sm">
+                    <div class="d-flex justify-content-between align-items-center gap-3">
+                        <div class="btn-group btn-group-sm cart-line-actions" role="group" aria-label="Adjust quantity for ${item.name}">
                             <button class="btn btn-outline-secondary" onclick="updateQuantity(${index}, -1)">-</button>
                             <button class="btn btn-outline-secondary" disabled>${item.quantity}</button>
                             <button class="btn btn-outline-secondary" onclick="updateQuantity(${index}, 1)">+</button>
                         </div>
-                        <div class="text-end">
-                            <div>${formatCurrency(item.price)} × ${item.quantity}</div>
-                            <strong>${formatCurrency(item.total)}</strong>
-                        </div>
+                        <strong>${formatCurrency(item.total)}</strong>
                     </div>
                 </div>
             `;
         });
         html += '</div>';
         cartDiv.innerHTML = html;
-        // Enable payment button based on payment method
-        const paymentMethod = document.getElementById('paymentMethod').value;
-        if (paymentMethod === 'cash') {
-            calculateChange(); // This will set the correct button state
-        } else {
-            document.getElementById('processPaymentBtn').disabled = false;
+        if (cartStatusEl) {
+            cartStatusEl.textContent = 'Building Order';
+            cartStatusEl.setAttribute('data-color', 'primary');
         }
-        document.getElementById('holdOrderBtn').disabled = false;
     }
-    
-    // Calculate totals
+
+    const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+    if (cartCountEl) {
+        cartCountEl.textContent = totalItems;
+    }
+
     const subtotal = cart.reduce((sum, item) => sum + item.total, 0);
     const taxAmount = subtotal * (TAX_RATE / 100);
     const total = subtotal + taxAmount;
-    
+
     document.getElementById('subtotal').textContent = formatCurrency(subtotal);
     document.getElementById('taxRate').textContent = TAX_RATE;
     document.getElementById('taxAmount').textContent = formatCurrency(taxAmount);
     document.getElementById('total').textContent = formatCurrency(total);
+
+    refreshPaymentUIState();
+    updateHoldOrderButton();
 }
 
 function clearCart() {
@@ -641,75 +902,124 @@ function clearCart() {
 // Payment method change handler
 function handlePaymentMethodChange() {
     const paymentMethod = document.getElementById('paymentMethod').value;
-    const cashSection = document.getElementById('cashPaymentSection');
+    const cashWrap = document.getElementById('cashPaymentWrap');
+    const cashAlerts = document.getElementById('cashAlerts');
+    const roomChargeSection = document.getElementById('roomChargeSection');
     const processBtn = document.getElementById('processPaymentBtn');
-    
+
     if (paymentMethod === 'cash') {
-        cashSection.style.display = 'block';
-        processBtn.innerHTML = '<i class="bi bi-cash me-2"></i>Process Cash Payment';
-        calculateChange(); // Recalculate to update button state
+        if (cashWrap) {
+            cashWrap.style.display = '';
+        }
+        if (roomChargeSection) {
+            roomChargeSection.style.display = 'none';
+        }
+        if (processBtn) {
+            processBtn.innerHTML = '<i class="bi bi-cash me-2"></i>Process Cash Payment';
+        }
     } else {
-        cashSection.style.display = 'none';
-        processBtn.innerHTML = '<i class="bi bi-credit-card me-2"></i>Process ' + paymentMethod.replace('_', ' ').toUpperCase() + ' Payment';
-        processBtn.disabled = cart.length === 0; // Enable for non-cash payments
+        if (cashWrap) {
+            cashWrap.style.display = 'none';
+        }
+        if (cashAlerts) {
+            cashAlerts.innerHTML = '';
+            cashAlerts.style.display = 'none';
+        }
+
+        if (paymentMethod === 'room_charge') {
+            if (roomChargeSection) {
+                roomChargeSection.style.display = 'flex';
+            }
+            if (processBtn) {
+                processBtn.innerHTML = '<i class="bi bi-door-open me-2"></i>Charge to Room';
+            }
+        } else {
+            if (roomChargeSection) {
+                roomChargeSection.style.display = 'none';
+            }
+            if (processBtn) {
+                const label = formatPaymentMethodLabel(paymentMethod);
+                processBtn.innerHTML = '<i class="bi bi-credit-card me-2"></i>Process ' + label + ' Payment';
+            }
+        }
     }
+
+    refreshPaymentUIState();
 }
 
 // Calculate change and update display
 function calculateChange() {
     const paymentMethod = document.getElementById('paymentMethod').value;
-    if (paymentMethod !== 'cash') return;
-    
-    const total = cart.reduce((sum, item) => sum + item.total, 0) * (1 + TAX_RATE / 100);
-    const tendered = parseFloat(document.getElementById('amountTendered').value) || 0;
-    const change = tendered - total;
-    
-    const changeDisplay = document.getElementById('changeDisplay');
-    const insufficientFunds = document.getElementById('insufficientFunds');
+    if (paymentMethod !== 'cash') {
+        return;
+    }
+
+    const amountField = document.getElementById('amountTendered');
+    const alerts = document.getElementById('cashAlerts');
     const processBtn = document.getElementById('processPaymentBtn');
-    
+
+    if (!amountField || !alerts || !processBtn) {
+        return;
+    }
+
+    const total = cart.reduce((sum, item) => sum + item.total, 0) * (1 + TAX_RATE / 100);
+    const tendered = parseFloat(amountField.value) || 0;
+    const change = tendered - total;
+
+    alerts.innerHTML = '';
+    alerts.style.display = 'none';
+
     if (tendered === 0) {
-        // No amount entered
-        changeDisplay.style.display = 'none';
-        insufficientFunds.style.display = 'none';
         processBtn.disabled = true;
-    } else if (change >= 0) {
-        // Sufficient funds
-        changeDisplay.style.display = 'block';
-        insufficientFunds.style.display = 'none';
-        document.getElementById('changeAmount').textContent = 'KES ' + change.toFixed(2);
+        return;
+    }
+
+    if (change >= 0) {
+        const alertClass = change === 0 ? 'alert-info' : 'alert-success';
+        const title = change === 0 ? 'Exact Amount Received' : 'Change Due';
+        const value = change === 0 ? '' : `<strong>${formatCurrency(change)}</strong>`;
+
+        alerts.innerHTML = `
+            <div class="alert ${alertClass} mb-0">
+                <div class="d-flex justify-content-between align-items-center gap-3">
+                    <strong>${title}</strong>
+                    ${value}
+                </div>
+            </div>
+        `;
+        alerts.style.display = 'block';
         processBtn.disabled = false;
-        
-        // Highlight if exact change
-        if (change === 0) {
-            changeDisplay.className = 'mt-2';
-            changeDisplay.innerHTML = `
-                <div class="alert alert-info mb-0">
-                    <div class="d-flex justify-content-between">
-                        <strong>Exact Amount</strong>
-                        <strong><i class="bi bi-check-circle text-success"></i></strong>
-                    </div>
-                </div>
-            `;
-        } else {
-            changeDisplay.className = 'mt-2';
-            changeDisplay.innerHTML = `
-                <div class="alert alert-success mb-0">
-                    <div class="d-flex justify-content-between">
-                        <strong>Change Due:</strong>
-                        <strong id="changeAmount">${formatCurrency(change)}</strong>
-                    </div>
-                </div>
-            `;
-        }
     } else {
-        // Insufficient funds
-        changeDisplay.style.display = 'none';
-        insufficientFunds.style.display = 'block';
+        alerts.innerHTML = `
+            <div class="alert alert-danger mb-0">
+                <div class="d-flex justify-content-between align-items-center gap-3">
+                    <small>Insufficient amount tendered</small>
+                    <small class="fw-semibold">Needs ${formatCurrency(total)}</small>
+                </div>
+            </div>
+        `;
+        alerts.style.display = 'block';
         processBtn.disabled = true;
     }
 }
 
+function applyQuickTender(amount) {
+    const paymentMethodSelect = document.getElementById('paymentMethod');
+    if (paymentMethodSelect && paymentMethodSelect.value !== 'cash') {
+        paymentMethodSelect.value = 'cash';
+        handlePaymentMethodChange();
+    }
+
+    const tenderField = document.getElementById('amountTendered');
+    if (!tenderField) {
+        return;
+    }
+
+    tenderField.value = Number(amount).toFixed(2);
+    calculateChange();
+    tenderField.focus();
+    tenderField.select();
+}
 
 // Handle Enter key in amount tendered field
 function handleTenderedKeypress(event) {
@@ -736,6 +1046,9 @@ function processPayment() {
     
     let amountPaid = total;
     let changeAmount = 0;
+    let roomBookingId = null;
+    let roomChargeDescription = null;
+    let roomBookingLabel = null;
     
     // Handle cash payments with tendered amount
     if (paymentMethod === 'cash') {
@@ -749,21 +1062,54 @@ function processPayment() {
         
         amountPaid = tendered;
         changeAmount = tendered - total;
+    } else if (paymentMethod === 'room_charge') {
+        const roomSelect = document.getElementById('roomBookingSelect');
+        if (!roomSelect || roomSelect.options.length <= 1) {
+            alert('There are no checked-in rooms available to charge.');
+            return;
+        }
+
+        const selectedRoom = roomSelect.value;
+        if (!selectedRoom) {
+            alert('Please select a checked-in room to charge this order to.');
+            return;
+        }
+
+        roomBookingId = parseInt(selectedRoom, 10);
+        if (!Number.isFinite(roomBookingId) || roomBookingId <= 0) {
+            alert('Invalid room selection.');
+            return;
+        }
+
+        const selectedOption = roomSelect.options[roomSelect.selectedIndex];
+        roomBookingLabel = selectedOption ? (selectedOption.dataset.label || selectedOption.textContent.trim()) : 'Selected room';
+        const descriptionField = document.getElementById('roomChargeDescription');
+        roomChargeDescription = descriptionField ? descriptionField.value.trim() : '';
+
+        amountPaid = 0;
+        changeAmount = 0;
     }
     
     // Show payment confirmation modal
-    showPaymentConfirmation(subtotal, taxAmount, total, paymentMethod, amountPaid, changeAmount);
+    const extras = {};
+    if (paymentMethod === 'room_charge') {
+        extras.roomBookingId = roomBookingId;
+        extras.roomChargeDescription = roomChargeDescription;
+        extras.roomBookingLabel = roomBookingLabel;
+    }
+
+    showPaymentConfirmation(subtotal, taxAmount, total, paymentMethod, amountPaid, changeAmount, extras);
 }
 
 // Show payment confirmation modal
-function showPaymentConfirmation(subtotal, taxAmount, total, paymentMethod, amountPaid, changeAmount) {
+function showPaymentConfirmation(subtotal, taxAmount, total, paymentMethod, amountPaid, changeAmount, extras = {}) {
     // Update modal content
     document.getElementById('confirmSubtotal').textContent = formatCurrency(subtotal);
     document.getElementById('confirmTax').textContent = formatCurrency(taxAmount);
     document.getElementById('confirmTotal').textContent = formatCurrency(total);
-    document.getElementById('confirmPaymentMethod').textContent = paymentMethod.replace('_', ' ').toUpperCase();
+    document.getElementById('confirmPaymentMethod').textContent = formatPaymentMethodLabel(paymentMethod);
     document.getElementById('confirmAmountPaid').textContent = formatCurrency(amountPaid);
-    
+
     // Handle change display
     const changeRow = document.getElementById('confirmChangeRow');
     if (changeAmount > 0) {
@@ -776,25 +1122,70 @@ function showPaymentConfirmation(subtotal, taxAmount, total, paymentMethod, amou
         }
     } else {
         changeRow.style.display = 'none';
+        hideChangeBreakdown();
     }
-    
+
     // Show appropriate instructions
     const cashInstructions = document.getElementById('cashInstructions');
     const cardInstructions = document.getElementById('cardInstructions');
-    
-    if (paymentMethod === 'cash') {
-        cashInstructions.style.display = 'block';
-        cardInstructions.style.display = 'none';
-    } else {
-        cashInstructions.style.display = 'none';
-        cardInstructions.style.display = 'block';
-    }
-    
-    // Store payment data for finalization
-    window.pendingPayment = {
-        subtotal, taxAmount, total, paymentMethod, amountPaid, changeAmount
+    const roomChargeInstructions = document.getElementById('roomChargeInstructions');
+    const roomChargeRow = document.getElementById('confirmRoomChargeRow');
+    const amountPaidRow = document.getElementById('confirmAmountPaidRow');
+
+    const showElement = el => {
+        if (!el) return;
+        el.classList.remove('d-none');
+        el.style.display = '';
     };
-    
+    const hideElement = el => {
+        if (!el) return;
+        el.classList.add('d-none');
+        el.style.display = 'none';
+    };
+
+    if (paymentMethod === 'cash') {
+        showElement(cashInstructions);
+        hideElement(cardInstructions);
+        hideElement(roomChargeInstructions);
+        roomChargeRow.classList.add('d-none');
+        roomChargeRow.style.display = 'none';
+        amountPaidRow.classList.remove('d-none');
+        amountPaidRow.style.display = '';
+        showChangeBreakdown(changeAmount);
+    } else if (paymentMethod === 'room_charge') {
+        hideElement(cashInstructions);
+        hideElement(cardInstructions);
+        showElement(roomChargeInstructions);
+        if (extras.roomBookingLabel) {
+            document.getElementById('confirmRoomCharge').textContent = extras.roomBookingLabel;
+            roomChargeRow.classList.remove('d-none');
+            roomChargeRow.style.display = '';
+        } else {
+            roomChargeRow.classList.add('d-none');
+            roomChargeRow.style.display = 'none';
+        }
+        amountPaidRow.classList.add('d-none');
+        amountPaidRow.style.display = 'none';
+    } else {
+        hideElement(cashInstructions);
+        showElement(cardInstructions);
+        hideElement(roomChargeInstructions);
+        roomChargeRow.classList.add('d-none');
+        roomChargeRow.style.display = 'none';
+        amountPaidRow.classList.remove('d-none');
+        amountPaidRow.style.display = '';
+    }
+
+    window.pendingPayment = {
+        subtotal,
+        taxAmount,
+        total,
+        paymentMethod,
+        amountPaid,
+        changeAmount,
+        ...extras
+    };
+
     // Show modal
     new bootstrap.Modal(document.getElementById('paymentConfirmationModal')).show();
 }
@@ -816,6 +1207,17 @@ function showChangeBreakdown(changeAmount) {
     if (breakdown.length > 0) {
         document.getElementById('changeBreakdown').style.display = 'block';
         document.getElementById('changeDetails').innerHTML = breakdown.join('<br>');
+    }
+}
+
+function hideChangeBreakdown() {
+    const breakdown = document.getElementById('changeBreakdown');
+    if (breakdown) {
+        breakdown.style.display = 'none';
+        const details = document.getElementById('changeDetails');
+        if (details) {
+            details.innerHTML = '';
+        }
     }
 }
 
@@ -852,6 +1254,13 @@ async function finalizePayment() {
             grand: payment.total
         }
     };
+
+    if (payment.paymentMethod === 'room_charge') {
+        saleData.room_booking_id = payment.roomBookingId;
+        if (payment.roomChargeDescription) {
+            saleData.room_charge_description = payment.roomChargeDescription;
+        }
+    }
     
     // Disable button to prevent double-clicking
     const finalizeBtn = document.querySelector('#paymentConfirmationModal .btn-success');
@@ -963,6 +1372,22 @@ document.addEventListener('DOMContentLoaded', function() {
 
     handlePaymentMethodChange(); // Set initial payment method state
     updateHoldOrderButton(); // Initialize hold order button state
+    const roomSelect = document.getElementById('roomBookingSelect');
+    if (roomSelect) {
+        roomSelect.addEventListener('change', refreshPaymentUIState);
+    }
+
+    document.querySelectorAll('.quick-tender-btn').forEach(button => {
+        button.addEventListener('click', () => {
+            const amount = parseFloat(button.dataset.amount);
+            if (!Number.isFinite(amount)) {
+                return;
+            }
+            applyQuickTender(amount);
+        });
+    });
+
+    refreshPaymentUIState();
 });
 
 // Hold Order Functions
@@ -973,20 +1398,35 @@ function holdOrder() {
     }
     
     // Populate hold order summary
-    const summary = cart.map(item => 
-        `${item.name} x${item.quantity} = ${formatCurrency(item.total)}`
-    ).join('<br>');
-    
     const subtotal = cart.reduce((sum, item) => sum + item.total, 0);
     const tax = subtotal * (TAX_RATE / 100);
     const total = subtotal + tax;
-    
+
+    const itemsHtml = cart.map(item => `
+        <li class="d-flex justify-content-between align-items-center gap-2">
+            <span>${item.name} × ${item.quantity}</span>
+            <span class="fw-semibold">${formatCurrency(item.total)}</span>
+        </li>
+    `).join('');
+
     document.getElementById('holdOrderSummary').innerHTML = `
-        ${summary}<br>
-        <hr>
-        <strong>Subtotal: ${formatCurrency(subtotal)}</strong><br>
-        <strong>Tax: ${formatCurrency(tax)}</strong><br>
-        <strong>Total: ${formatCurrency(total)}</strong>
+        <ul class="list-unstyled d-flex flex-column gap-2 mb-3">
+            ${itemsHtml}
+        </ul>
+        <div class="d-flex flex-column gap-1">
+            <div class="d-flex justify-content-between text-muted">
+                <span>Subtotal</span>
+                <span>${formatCurrency(subtotal)}</span>
+            </div>
+            <div class="d-flex justify-content-between text-muted">
+                <span>Tax</span>
+                <span>${formatCurrency(tax)}</span>
+            </div>
+            <div class="d-flex justify-content-between align-items-center fw-semibold border-top pt-2">
+                <span>Total</span>
+                <span class="text-primary">${formatCurrency(total)}</span>
+            </div>
+        </div>
     `;
     
     // Clear previous values
@@ -1052,9 +1492,10 @@ function loadHeldOrders() {
     
     if (heldOrders.length === 0) {
         container.innerHTML = `
-            <div class="text-center py-4">
+            <div class="app-card held-order-card text-center">
                 <i class="bi bi-inbox fs-1 text-muted"></i>
-                <p class="text-muted mt-2">No held orders</p>
+                <p class="text-muted mt-2 mb-1">No held orders</p>
+                <small class="text-muted">Hold an order from the cart to see it listed here.</small>
             </div>
         `;
         return;
@@ -1064,35 +1505,36 @@ function loadHeldOrders() {
     heldOrders.forEach((order, index) => {
         const timeAgo = getTimeAgo(new Date(order.timestamp));
         html += `
-            <div class="card mb-3">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-start mb-2">
-                        <div>
-                            <h6 class="mb-1">${order.customerName}</h6>
-                            <small class="text-muted">${timeAgo}</small>
-                        </div>
-                        <div class="text-end">
-                            <strong>${formatCurrency(order.total)}</strong>
-                            <br>
-                            <small class="text-muted">${order.items.length} items</small>
-                        </div>
+            <div class="held-order-card">
+                <div class="d-flex justify-content-between align-items-start gap-3 mb-2">
+                    <div>
+                        <h6 class="mb-1">${order.customerName}</h6>
+                        <small class="text-muted">Held ${timeAgo}</small>
                     </div>
-                    
-                    ${order.notes ? `<div class="mb-2"><small class="text-info"><i class="bi bi-sticky"></i> ${order.notes}</small></div>` : ''}
-                    
-                    <div class="mb-2">
-                        <small class="text-muted">Items:</small><br>
-                        <small>${order.items.map(item => `${item.name} x${item.quantity}`).join(', ')}</small>
+                    <div class="text-end">
+                        <div class="fw-semibold text-primary">${formatCurrency(order.total)}</div>
+                        <small class="text-muted">${order.items.length} item${order.items.length !== 1 ? 's' : ''}</small>
                     </div>
-                    
-                    <div class="d-flex gap-2">
-                        <button class="btn btn-success btn-sm" onclick="recallOrder(${index})">
-                            <i class="bi bi-arrow-clockwise me-1"></i>Recall
-                        </button>
-                        <button class="btn btn-outline-danger btn-sm" onclick="deleteHeldOrder(${index})">
-                            <i class="bi bi-trash me-1"></i>Delete
-                        </button>
-                    </div>
+                </div>
+                ${order.notes ? `<div class="small text-info mb-2"><i class="bi bi-sticky"></i> ${order.notes}</div>` : ''}
+                <div class="border rounded-3 px-3 py-2 bg-light">
+                    <small class="text-muted text-uppercase">Items</small>
+                    <ul class="list-unstyled small mb-0 mt-2 d-flex flex-column gap-1">
+                        ${order.items.map(item => `
+                            <li class="d-flex justify-content-between">
+                                <span>${item.name}</span>
+                                <span>× ${item.quantity}</span>
+                            </li>
+                        `).join('')}
+                    </ul>
+                </div>
+                <div class="d-flex gap-2 mt-3">
+                    <button class="btn btn-success btn-sm" onclick="recallOrder(${index})">
+                        <i class="bi bi-arrow-clockwise me-1"></i>Recall
+                    </button>
+                    <button class="btn btn-outline-danger btn-sm" onclick="deleteHeldOrder(${index})">
+                        <i class="bi bi-trash me-1"></i>Delete
+                    </button>
                 </div>
             </div>
         `;
@@ -1171,6 +1613,27 @@ document.addEventListener('keypress', function(e) {
     if (e.target.tagName !== 'INPUT') {
         document.getElementById('searchProduct').focus();
     }
+});
+
+// Quick tender keyboard shortcuts (Alt + 1..4)
+document.addEventListener('keydown', function(event) {
+    if (!event.altKey) {
+        return;
+    }
+
+    const mapping = {
+        '1': 100,
+        '2': 200,
+        '3': 500,
+        '4': 1000
+    };
+
+    if (!Object.prototype.hasOwnProperty.call(mapping, event.key)) {
+        return;
+    }
+
+    event.preventDefault();
+    applyQuickTender(mapping[event.key]);
 });
 </script>
 

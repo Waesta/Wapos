@@ -82,6 +82,7 @@ $users = $db->fetchAll("
 $locations = $db->fetchAll("SELECT id, name FROM locations WHERE is_active = 1 ORDER BY name");
 
 $pageTitle = 'User Management';
+$csrfToken = generateCSRFToken();
 include 'includes/header.php';
 ?>
 
@@ -99,12 +100,125 @@ include 'includes/header.php';
     </button>
 </div>
 
-<div class="card border-0 shadow-sm">
-    <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-hover">
-                <thead class="table-light">
-                    <tr>
+<?php
+$roleLabels = [
+    'admin' => 'Administrator',
+    'manager' => 'General Manager',
+    'accountant' => 'Accountant',
+    'cashier' => 'Cashier',
+    'waiter' => 'Waitstaff',
+    'inventory_manager' => 'Inventory Manager',
+    'frontdesk' => 'Front Desk',
+    'housekeeping_manager' => 'Housekeeping Manager',
+    'housekeeping_staff' => 'Housekeeping Staff',
+    'maintenance_manager' => 'Maintenance Manager',
+    'maintenance_staff' => 'Maintenance Staff',
+    'technician' => 'Technician',
+    'engineer' => 'Engineer',
+    'rider' => 'Delivery Rider',
+    'developer' => 'Developer'
+];
+
+$roleBadges = [
+    'admin' => 'danger',
+    'manager' => 'primary',
+    'accountant' => 'info',
+    'cashier' => 'success',
+    'waiter' => 'success',
+    'inventory_manager' => 'warning',
+    'frontdesk' => 'secondary',
+    'housekeeping_manager' => 'primary',
+    'housekeeping_staff' => 'secondary',
+    'maintenance_manager' => 'primary',
+    'maintenance_staff' => 'secondary',
+    'technician' => 'info',
+    'engineer' => 'dark',
+    'rider' => 'warning',
+    'developer' => 'dark'
+];
+
+$activeCount = array_reduce($users, fn($carry, $user) => $carry + ($user['is_active'] ? 1 : 0), 0);
+$inactiveCount = count($users) - $activeCount;
+?>
+
+<div class="stack-lg">
+    <div class="row g-3">
+        <div class="col-md-3">
+            <div class="app-card" data-elevation="md">
+                <p class="text-muted small mb-1">Total Users</p>
+                <h4 class="fw-bold mb-0"><?= number_format(count($users)) ?></h4>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="app-card" data-elevation="md">
+                <p class="text-muted small mb-1">Active Users</p>
+                <h4 class="fw-bold text-success mb-0"><?= number_format($activeCount) ?></h4>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="app-card" data-elevation="md">
+                <p class="text-muted small mb-1">Inactive Users</p>
+                <h4 class="fw-bold text-muted mb-0"><?= number_format($inactiveCount) ?></h4>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="app-card" data-elevation="md">
+                <p class="text-muted small mb-1">Distinct Roles</p>
+                <h4 class="fw-bold mb-0"><?= number_format(count(array_unique(array_column($users, 'role')))) ?></h4>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body">
+            <form class="row g-3 align-items-end" id="userFilters">
+                <div class="col-md-4">
+                    <label class="form-label" for="filterSearch">Search</label>
+                    <input type="search" class="form-control" id="filterSearch" placeholder="Search by username, name, email">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="filterRole">Role</label>
+                    <select class="form-select" id="filterRole">
+                        <option value="">All roles</option>
+                        <?php foreach ($roleLabels as $value => $label): ?>
+                            <option value="<?= htmlspecialchars($value) ?>"><?= htmlspecialchars($label) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="filterStatus">Status</label>
+                    <select class="form-select" id="filterStatus">
+                        <option value="">All statuses</option>
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                    </select>
+                </div>
+                <div class="col-md-2 d-flex gap-2">
+                    <button type="button" class="btn btn-outline-secondary w-100" id="filterResetBtn">
+                        <i class="bi bi-eraser me-1"></i>Reset
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                <div class="text-muted small" id="userResultCount"><?= number_format(count($users)) ?> user(s)</div>
+                <div class="btn-group btn-group-sm" role="group">
+                    <button type="button" class="btn btn-outline-secondary" onclick="window.print()">
+                        <i class="bi bi-printer me-1"></i>Print
+                    </button>
+                    <a href="export-users.php" class="btn btn-outline-primary">
+                        <i class="bi bi-download me-1"></i>Export CSV
+                    </a>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover" id="usersTable">
+                    <thead class="table-light">
+                        <tr>
                         <th>Username</th>
                         <th>Full Name</th>
                         <th>Email</th>
@@ -117,13 +231,20 @@ include 'includes/header.php';
                 </thead>
                 <tbody>
                     <?php foreach ($users as $user): ?>
-                    <tr>
+                    <?php
+                        $role = $user['role'] ?? 'unknown';
+                        $badge = $roleBadges[$role] ?? 'secondary';
+                        $label = $roleLabels[$role] ?? ucfirst($role);
+                        $searchIndex = strtolower(trim(($user['username'] ?? '') . ' ' . ($user['full_name'] ?? '') . ' ' . ($user['email'] ?? '') . ' ' . ($label ?? '')));
+                        $statusSlug = $user['is_active'] ? 'active' : 'inactive';
+                    ?>
+                    <tr data-role="<?= htmlspecialchars($role) ?>" data-status="<?= $statusSlug ?>" data-search="<?= htmlspecialchars($searchIndex) ?>">
                         <td><strong><?= htmlspecialchars($user['username']) ?></strong></td>
                         <td><?= htmlspecialchars($user['full_name']) ?></td>
                         <td><?= htmlspecialchars($user['email']) ?></td>
                         <td>
-                            <span class="badge bg-<?= $user['role'] === 'admin' ? 'danger' : ($user['role'] === 'manager' ? 'primary' : 'secondary') ?>">
-                                <?= ucfirst($user['role']) ?>
+                            <span class="badge bg-<?= $badge ?>">
+                                <?= htmlspecialchars($label) ?>
                             </span>
                         </td>
                         <td><?= htmlspecialchars($user['location_name'] ?? 'All Locations') ?></td>
@@ -169,7 +290,7 @@ include 'includes/header.php';
                 <div class="modal-body">
                     <input type="hidden" name="action" id="formAction" value="add">
                     <input type="hidden" name="id" id="userId">
-                    <input type="hidden" name="csrf_token" value="<?= generateCSRFToken(); ?>">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken); ?>">
                     
                     <div class="mb-3">
                         <label class="form-label">Username *</label>
@@ -200,13 +321,9 @@ include 'includes/header.php';
                     <div class="mb-3">
                         <label class="form-label">Role *</label>
                         <select class="form-select" name="role" id="role" required>
-                            <option value="cashier">Cashier</option>
-                            <option value="waiter">Waiter</option>
-                            <option value="accountant">Accountant</option>
-                            <option value="inventory_manager">Inventory Manager</option>
-                            <option value="manager">Manager</option>
-                            <option value="admin">Admin</option>
-                            <option value="rider">Rider</option>
+                            <?php foreach ($roleLabels as $value => $label): ?>
+                                <option value="<?= htmlspecialchars($value) ?>"><?= htmlspecialchars($label) ?></option>
+                            <?php endforeach; ?>
                         </select>
                     </div>                    
                     <div class="mb-3">
@@ -234,7 +351,7 @@ include 'includes/header.php';
 </div>
 
 <script>
-const CSRF_TOKEN = '<?= generateCSRFToken(); ?>';
+const CSRF_TOKEN = '<?= htmlspecialchars($csrfToken); ?>';
 function resetForm() {
     document.getElementById('userForm').reset();
     document.getElementById('formAction').value = 'add';
@@ -274,6 +391,57 @@ function deleteUser(id, username) {
         form.submit();
     }
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+    const searchInput = document.getElementById('filterSearch');
+    const roleSelect = document.getElementById('filterRole');
+    const statusSelect = document.getElementById('filterStatus');
+    const resetBtn = document.getElementById('filterResetBtn');
+    const tableBody = document.querySelector('#usersTable tbody');
+    const rows = Array.from(tableBody.querySelectorAll('tr'));
+    const resultCount = document.getElementById('userResultCount');
+
+    function applyFilters() {
+        const searchTerm = searchInput.value.trim().toLowerCase();
+        const selectedRole = roleSelect.value;
+        const selectedStatus = statusSelect.value;
+
+        let visibleCount = 0;
+
+        rows.forEach(row => {
+            const matchesRole = !selectedRole || row.dataset.role === selectedRole;
+            const matchesStatus = !selectedStatus || row.dataset.status === selectedStatus;
+            const searchable = row.dataset.search || '';
+            const matchesSearch = !searchTerm || searchable.includes(searchTerm);
+
+            const isVisible = matchesRole && matchesStatus && matchesSearch;
+            row.style.display = isVisible ? '' : 'none';
+            if (isVisible) {
+                visibleCount += 1;
+            }
+        });
+
+        if (resultCount) {
+            resultCount.textContent = `${visibleCount.toLocaleString()} user(s)`;
+        }
+    }
+
+    [searchInput, roleSelect, statusSelect].forEach(control => {
+        if (control) {
+            control.addEventListener('input', applyFilters);
+            control.addEventListener('change', applyFilters);
+        }
+    });
+
+    if (resetBtn) {
+        resetBtn.addEventListener('click', () => {
+            searchInput.value = '';
+            roleSelect.value = '';
+            statusSelect.value = '';
+            applyFilters();
+        });
+    }
+});
 </script>
 
 <?php include 'includes/footer.php'; ?>

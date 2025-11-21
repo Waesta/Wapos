@@ -7,17 +7,51 @@ use PDOException;
 
 /**
  * Sales Service
- * Business logic for sales transactions with idempotency support
+ * Business logic for sales transactions with idempotency support.
  */
 class SalesService
 {
     private PDO $db;
     private AccountingService $accountingService;
+    private bool $roomChargePaymentEnsured = false;
+    private ?RoomBookingService $roomBookingService = null;
 
     public function __construct(PDO $db, AccountingService $accountingService)
     {
         $this->db = $db;
         $this->accountingService = $accountingService;
+    }
+
+    private function ensureRoomChargePaymentMethod(): void
+    {
+        if ($this->roomChargePaymentEnsured) {
+            return;
+        }
+
+        try {
+            $stmt = $this->db->query("SHOW COLUMNS FROM sales LIKE 'payment_method'");
+            $column = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
+
+            if ($column && isset($column['Type']) && strpos($column['Type'], 'room_charge') === false) {
+                $this->db->exec("ALTER TABLE sales MODIFY payment_method ENUM('cash','card','mobile_money','bank_transfer','room_charge') DEFAULT 'cash'");
+            }
+        } catch (PDOException $e) {
+            // Ignore errors; insertion will fail later if schema truly incompatible
+        }
+
+        try {
+            $stmt = $this->db->query("SHOW COLUMNS FROM sales LIKE 'room_booking_id'");
+            $column = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
+
+            if (!$column) {
+                $this->db->exec("ALTER TABLE sales ADD COLUMN room_booking_id INT NULL AFTER payment_method");
+                $this->db->exec("ALTER TABLE sales ADD INDEX idx_sales_room_booking (room_booking_id)");
+            }
+        } catch (PDOException $e) {
+            // Ignore errors; insertion will fail later if schema truly incompatible
+        }
+
+        $this->roomChargePaymentEnsured = true;
     }
 
     /**
@@ -26,6 +60,8 @@ class SalesService
      */
     public function createSale(array $data): array
     {
+        $this->ensureRoomChargePaymentMethod();
+
         $externalId = $data['external_id'] ?? null;
         
         // Check if sale already exists by external_id (idempotent)
@@ -43,8 +79,12 @@ class SalesService
             }
         }
 
+        $manageTransaction = !$this->db->inTransaction();
+
         try {
-            $this->db->beginTransaction();
+            if ($manageTransaction) {
+                $this->db->beginTransaction();
+            }
 
             // Generate sale number
             $saleNumber = $this->generateSaleNumber();
@@ -59,19 +99,54 @@ class SalesService
             $discountAmount = $data['totals']['discount'] ?? 0;
             $grandTotal = $data['totals']['grand'] ?? $subtotal + $taxAmount - $discountAmount;
 
+            $paymentMethod = $data['payment_method'] ?? 'cash';
+            $roomBookingId = isset($data['room_booking_id']) ? (int)$data['room_booking_id'] : null;
+            if ($roomBookingId !== null && $roomBookingId <= 0) {
+                $roomBookingId = null;
+            }
+
+            if ($paymentMethod === 'room_charge') {
+                if (!$roomBookingId) {
+                    throw new PDOException('Room booking is required when charging to room.');
+                }
+
+                $booking = $this->getRoomBookingService()->getRoomBooking($roomBookingId);
+                if (!$booking || !in_array($booking['status'], ['checked_in'], true)) {
+                    throw new PDOException('Room booking must be checked in before posting room charges.');
+                }
+
+                $amountPaid = isset($data['amount_paid']) ? (float)$data['amount_paid'] : 0.0;
+                $changeAmount = 0.0;
+            } else {
+                if ($roomBookingId) {
+                    throw new PDOException('Room booking can only be provided for room charge payments.');
+                }
+
+                $amountPaid = isset($data['amount_paid']) ? (float)$data['amount_paid'] : $grandTotal;
+                $changeAmount = isset($data['change_amount']) ? (float)$data['change_amount'] : max(0, $amountPaid - $grandTotal);
+                $roomBookingId = null;
+            }
+
+            if ($amountPaid < 0) {
+                throw new PDOException('Amount paid cannot be negative.');
+            }
+
             // Insert sale
             $sql = "INSERT INTO sales 
                     (external_id, sale_number, user_id, location_id, device_id, 
                      customer_name, customer_phone, subtotal, tax_amount, 
                      discount_amount, total_amount, amount_paid, change_amount, 
-                     payment_method, notes, created_at) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                     payment_method, room_booking_id, notes, created_at) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
             $stmt = $this->db->prepare($sql);
+
+            $userId = $data['user_id'] ?? $_SESSION['user_id'] ?? 1;
+
             $stmt->execute([
                 $externalId,
                 $saleNumber,
-                $data['user_id'] ?? $_SESSION['user_id'] ?? 1,
+                $userId,
                 $data['location_id'] ?? 1,
                 $data['device_id'] ?? null,
                 $data['customer_name'] ?? null,
@@ -80,9 +155,10 @@ class SalesService
                 $taxAmount,
                 $discountAmount,
                 $grandTotal,
-                $data['amount_paid'] ?? $grandTotal,
-                $data['change_amount'] ?? 0,
-                $data['payment_method'] ?? 'cash',
+                $amountPaid,
+                $changeAmount,
+                $paymentMethod,
+                $roomBookingId,
                 $data['notes'] ?? null,
                 $data['created_at'] ?? date('Y-m-d H:i:s')
             ]);
@@ -103,12 +179,31 @@ class SalesService
                 'tax' => $taxAmount,
                 'discount' => $discountAmount,
                 'total' => $grandTotal,
-                'payment_method' => $data['payment_method'] ?? 'cash',
-                'amount_paid' => $data['amount_paid'] ?? $grandTotal,
-                'change_amount' => $data['change_amount'] ?? 0,
+                'payment_method' => $paymentMethod,
+                'amount_paid' => $amountPaid,
+                'change_amount' => $changeAmount,
             ]);
 
-            $this->db->commit();
+            if ($paymentMethod === 'room_charge' && $roomBookingId) {
+                $description = trim((string)($data['room_charge_description'] ?? ''));
+                if ($description === '') {
+                    $description = 'Room service order ' . $saleNumber;
+                }
+
+                $this->getRoomBookingService()->addFolioEntry($roomBookingId, [
+                    'item_type' => 'service',
+                    'description' => $description,
+                    'amount' => $grandTotal,
+                    'quantity' => 1,
+                    'date_charged' => date('Y-m-d'),
+                    'reference_id' => $saleId,
+                    'reference_source' => 'sales',
+                ], $userId ? (int)$userId : null);
+            }
+
+            if ($manageTransaction) {
+                $this->db->commit();
+            }
 
             return [
                 'success' => true,
@@ -120,8 +215,10 @@ class SalesService
             ];
 
         } catch (PDOException $e) {
-            $this->db->rollBack();
-            
+            if ($manageTransaction && $this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+
             // Check if it's a duplicate key error
             if ($e->getCode() == 23000) {
                 // Try to find by external_id again
@@ -142,6 +239,15 @@ class SalesService
 
             throw $e;
         }
+    }
+
+    private function getRoomBookingService(): RoomBookingService
+    {
+        if ($this->roomBookingService === null) {
+            $this->roomBookingService = new RoomBookingService($this->db);
+        }
+
+        return $this->roomBookingService;
     }
 
     /**

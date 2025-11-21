@@ -3,6 +3,42 @@ require_once 'includes/bootstrap.php';
 $auth->requireLogin();
 
 $db = Database::getInstance();
+$currencySymbol = getCurrencySymbol();
+
+$deliverySettingKeys = [
+    'delivery_max_active_jobs',
+    'delivery_sla_pending_limit',
+    'delivery_sla_assigned_limit',
+    'delivery_sla_delivery_limit',
+    'delivery_sla_slack_minutes',
+];
+$placeholders = implode(',', array_fill(0, count($deliverySettingKeys), '?'));
+$deliverySettingsRows = $db->fetchAll(
+    "SELECT setting_key, setting_value FROM settings WHERE setting_key IN ($placeholders)",
+    $deliverySettingKeys
+);
+$deliverySettings = [];
+foreach ($deliverySettingsRows as $row) {
+    $deliverySettings[$row['setting_key']] = $row['setting_value'];
+}
+
+$deliveryConfig = [
+    'max_active_jobs' => max(1, (int)($deliverySettings['delivery_max_active_jobs'] ?? 3)),
+    'sla' => [
+        'pending' => max(1, (int)($deliverySettings['delivery_sla_pending_limit'] ?? 15)),
+        'assigned' => max(1, (int)($deliverySettings['delivery_sla_assigned_limit'] ?? 10)),
+        'delivery' => max(1, (int)($deliverySettings['delivery_sla_delivery_limit'] ?? 45)),
+        'slack' => max(0, (int)($deliverySettings['delivery_sla_slack_minutes'] ?? 5)),
+    ],
+];
+
+$slaTargetsText = sprintf(
+    'SLA Targets · Pending %d min · Assigned %d min · Delivery %d min (+%d min slack)',
+    $deliveryConfig['sla']['pending'],
+    $deliveryConfig['sla']['assigned'],
+    $deliveryConfig['sla']['delivery'],
+    $deliveryConfig['sla']['slack']
+);
 
 // Get delivery statistics
 $stats = [
@@ -59,6 +95,51 @@ include 'includes/header.php';
         </div>
     </div>
 
+    <!-- Dynamic Pricing Metrics -->
+    <div class="row g-3 mb-2" id="pricingMetricsRow" style="display:none;">
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body text-center">
+                    <i class="bi bi-cash-coin text-success fs-1 mb-2"></i>
+                    <h3 class="text-success" id="pricingTrackedOrders">0</h3>
+                    <p class="text-muted mb-0">Tracked Deliveries</p>
+                    <small class="text-muted" id="pricingTotalRequests">&nbsp;</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body text-center">
+                    <i class="bi bi-graph-up text-info fs-1 mb-2"></i>
+                    <h3 class="text-info" id="pricingAvgFee">0.00</h3>
+                    <p class="text-muted mb-0">Average Fee</p>
+                    <small class="text-muted" id="pricingAvgDistance">&nbsp;</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body text-center">
+                    <i class="bi bi-lightning-charge text-primary fs-1 mb-2"></i>
+                    <h3 class="text-primary" id="pricingCacheRate">0%</h3>
+                    <p class="text-muted mb-0">Cache Hit Rate</p>
+                    <small class="text-muted" id="pricingCacheHits">&nbsp;</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body text-center">
+                    <i class="bi bi-exclamation-triangle text-warning fs-1 mb-2"></i>
+                    <h3 class="text-warning" id="pricingFallbackRate">0%</h3>
+                    <p class="text-muted mb-0">Fallback Usage</p>
+                    <small class="text-muted" id="pricingFallbackCalls">&nbsp;</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="mb-4 text-muted small" id="pricingLastUpdatedText" style="display:none;"></div>
+
     <!-- Statistics Cards -->
     <div class="row g-3 mb-4">
         <div class="col-md-3">
@@ -99,6 +180,38 @@ include 'includes/header.php';
         </div>
     </div>
 
+    <!-- Operational Thresholds -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <h6 class="text-muted text-uppercase small mb-3">Operational Thresholds</h6>
+                    <p class="mb-2" id="slaTargetsLabel"><?= htmlspecialchars($slaTargetsText) ?></p>
+                    <div class="d-flex flex-wrap gap-2 small">
+                        <span class="badge bg-primary-subtle text-primary" id="maxActiveJobsBadge">Max active: <?= $deliveryConfig['max_active_jobs'] ?></span>
+                        <span class="badge bg-secondary-subtle text-secondary" id="slaSlackBadge">Slack: <?= $deliveryConfig['sla']['slack'] ?> min</span>
+                        <span class="badge bg-info-subtle text-info" id="slaPendingBadge">Pending: <?= $deliveryConfig['sla']['pending'] ?> min</span>
+                        <span class="badge bg-warning-subtle text-warning" id="slaAssignedBadge">Assigned: <?= $deliveryConfig['sla']['assigned'] ?> min</span>
+                        <span class="badge bg-success-subtle text-success" id="slaDeliveryBadge">Delivery: <?= $deliveryConfig['sla']['delivery'] ?> min</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <h6 class="text-muted text-uppercase small mb-3">Rider Workload Snapshot</h6>
+                    <div class="d-flex flex-wrap gap-2 small align-items-center">
+                        <span class="badge bg-success-subtle text-success" id="ridersAvailableBadge">Available: --</span>
+                        <span class="badge bg-warning-subtle text-warning" id="ridersBusyBadge">Busy: --</span>
+                        <span class="badge bg-secondary-subtle text-secondary" id="ridersOfflineBadge">Offline: --</span>
+                        <span class="badge bg-info-subtle text-info" id="avgIdleBadge">Avg idle: --</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="row">
         <!-- Live Delivery Map -->
         <div class="col-md-8">
@@ -118,56 +231,11 @@ include 'includes/header.php';
                 <div class="card-header">
                     <h6><i class="bi bi-list-check"></i> Active Deliveries</h6>
                 </div>
-                <div class="card-body" style="max-height: 400px; overflow-y: auto;">
-                    <?php if (empty($activeDeliveries)): ?>
+                <div class="card-body" id="activeDeliveriesContainer" style="max-height: 400px; overflow-y: auto;">
                     <div class="text-center text-muted py-4">
-                        <i class="bi bi-truck fs-1 mb-3"></i>
-                        <p>No active deliveries</p>
+                        <div class="spinner-border text-primary mb-3" role="status"></div>
+                        <p class="mb-0">Loading active deliveries…</p>
                     </div>
-                    <?php else: ?>
-                    <?php foreach ($activeDeliveries as $delivery): ?>
-                    <div class="delivery-item mb-3 p-3 border rounded" data-delivery-id="<?= $delivery['id'] ?>">
-                        <div class="d-flex justify-content-between align-items-start mb-2">
-                            <div>
-                                <strong>#<?= htmlspecialchars($delivery['order_number']) ?></strong>
-                                <br>
-                                <small class="text-muted"><?= htmlspecialchars($delivery['customer_name']) ?></small>
-                            </div>
-                            <span class="badge bg-<?= getStatusColor($delivery['status']) ?>"><?= ucfirst($delivery['status']) ?></span>
-                        </div>
-                        
-                        <div class="mb-2">
-                            <small class="text-muted">
-                                <i class="bi bi-person me-1"></i><?= htmlspecialchars($delivery['rider_name'] ?? 'Not assigned') ?>
-                            </small>
-                            <?php if ($delivery['rider_phone']): ?>
-                            <br>
-                            <small class="text-muted">
-                                <i class="bi bi-telephone me-1"></i><?= htmlspecialchars($delivery['rider_phone']) ?>
-                            </small>
-                            <?php endif; ?>
-                        </div>
-                        
-                        <div class="mb-2">
-                            <small class="text-muted"><?= htmlspecialchars($delivery['status_description']) ?></small>
-                        </div>
-                        
-                        <div class="d-flex justify-content-between align-items-center">
-                            <small class="text-muted">
-                                <i class="bi bi-clock me-1"></i><?= $delivery['elapsed_minutes'] ?> min ago
-                            </small>
-                            <div class="btn-group btn-group-sm">
-                                <button class="btn btn-outline-primary" onclick="trackDelivery(<?= $delivery['id'] ?>)">
-                                    <i class="bi bi-geo-alt"></i>
-                                </button>
-                                <button class="btn btn-outline-info" onclick="contactCustomer('<?= $delivery['customer_phone'] ?>')">
-                                    <i class="bi bi-telephone"></i>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                    <?php endforeach; ?>
-                    <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -223,6 +291,15 @@ include 'includes/header.php';
 let deliveryChart;
 let deliveryMap;
 let riderLayerGroup;
+const currencySymbol = <?= json_encode($currencySymbol) ?>;
+let deliveryConfig = <?= json_encode($deliveryConfig) ?>;
+let MAX_ACTIVE_JOBS = deliveryConfig.max_active_jobs ?? 3;
+let latestDeliverySnapshot = {
+    deliveries: <?= json_encode($activeDeliveries) ?>,
+    supportsPricingAudit: false,
+    pricingMetrics: null
+};
+const initialStats = <?= json_encode($stats) ?>;
 
 // Auto-refresh every 30 seconds
 setInterval(refreshDeliveryData, 30000);
@@ -234,25 +311,116 @@ async function refreshDeliveryData() {
         if (!data.success) {
             throw new Error(data.message || 'Failed to load delivery data');
         }
-        updateDeliveryStats(data.stats);
-        updateActiveDeliveries(data.deliveries);
+        if (data.config) {
+            if (typeof data.config.max_active_jobs !== 'undefined') {
+                const parsedMax = Number(data.config.max_active_jobs);
+                MAX_ACTIVE_JOBS = Number.isFinite(parsedMax) && parsedMax > 0 ? parsedMax : MAX_ACTIVE_JOBS;
+                deliveryConfig.max_active_jobs = MAX_ACTIVE_JOBS;
+            }
+            if (data.config.sla) {
+                deliveryConfig.sla = {
+                    pending: Number(data.config.sla.pending_minutes_limit) || deliveryConfig.sla.pending,
+                    assigned: Number(data.config.sla.assigned_minutes_limit) || deliveryConfig.sla.assigned,
+                    delivery: Number(data.config.sla.delivery_minutes_limit) || deliveryConfig.sla.delivery,
+                    slack: Number(data.config.sla.slack_minutes) >= 0 ? Number(data.config.sla.slack_minutes) : deliveryConfig.sla.slack,
+                };
+            }
+            updateThresholdUi();
+        }
+
+        latestDeliverySnapshot = {
+            deliveries: data.deliveries || [],
+            supportsPricingAudit: Boolean(data.supportsPricingAudit),
+            pricingMetrics: data.pricingMetrics || null
+        };
+
+        updateDeliveryStats(data.stats || {}, latestDeliverySnapshot.pricingMetrics, latestDeliverySnapshot.supportsPricingAudit);
+        updateActiveDeliveries(latestDeliverySnapshot.deliveries, latestDeliverySnapshot.supportsPricingAudit);
         updateDeliveryChart(data.chartData);
         updateRiderPerformance(data.riderPerformance);
-        updateMapMarkers(data.deliveries);
+        updateMapMarkers(latestDeliverySnapshot.deliveries, latestDeliverySnapshot.supportsPricingAudit);
     } catch (error) {
         console.error('Error refreshing delivery data:', error);
     }
 }
 
-function updateDeliveryStats(stats) {
-    document.getElementById('activeDeliveriesCount').textContent = stats.active_deliveries;
-    document.getElementById('pendingDeliveriesCount').textContent = stats.pending_deliveries;
-    document.getElementById('completedTodayCount').textContent = stats.completed_today;
-    document.getElementById('avgDeliveryTime').textContent = `${stats.average_delivery_time} min`;
+function updateDeliveryStats(stats, pricingMetrics, supportsPricingAudit) {
+    if (!stats) {
+        return;
+    }
+
+    document.getElementById('activeDeliveriesCount').textContent = Number(stats.active_deliveries || 0);
+    document.getElementById('pendingDeliveriesCount').textContent = Number(stats.pending_deliveries || 0);
+    document.getElementById('completedTodayCount').textContent = Number(stats.completed_today || 0);
+    document.getElementById('avgDeliveryTime').textContent = formatMinutesLabel(stats.average_delivery_time);
+
+    const ridersAvailable = document.getElementById('ridersAvailableBadge');
+    const ridersBusy = document.getElementById('ridersBusyBadge');
+    const ridersOffline = document.getElementById('ridersOfflineBadge');
+    const avgIdleBadge = document.getElementById('avgIdleBadge');
+
+    if (ridersAvailable) {
+        ridersAvailable.textContent = `Available: ${Number(stats.riders_available ?? stats.active_riders ?? 0)}`;
+    }
+    if (ridersBusy) {
+        ridersBusy.textContent = `Busy: ${Number(stats.riders_busy ?? 0)}`;
+    }
+    if (ridersOffline) {
+        ridersOffline.textContent = `Offline: ${Number(stats.riders_offline ?? 0)}`;
+    }
+    if (avgIdleBadge) {
+        if (typeof stats.avg_idle_minutes !== 'undefined' && stats.avg_idle_minutes !== null) {
+            avgIdleBadge.textContent = `Avg idle: ${formatMinutesLabel(stats.avg_idle_minutes)}`;
+        } else {
+            avgIdleBadge.textContent = 'Avg idle: --';
+        }
+    }
+
+    const pricingRow = document.getElementById('pricingMetricsRow');
+    const pricingLastUpdated = document.getElementById('pricingLastUpdatedText');
+
+    if (supportsPricingAudit && pricingMetrics) {
+        pricingRow.style.display = '';
+        const summary = pricingMetrics.summary || {};
+        const trackedOrders = summary.tracked_orders || 0;
+        document.getElementById('pricingTrackedOrders').textContent = trackedOrders.toLocaleString();
+        document.getElementById('pricingTotalRequests').textContent = `Total requests: ${(pricingMetrics.total_requests || 0).toLocaleString()}`;
+
+        const avgFee = summary.avg_fee !== null && summary.avg_fee !== undefined ? formatCurrency(summary.avg_fee) : '—';
+        document.getElementById('pricingAvgFee').textContent = avgFee;
+
+        const avgDistance = summary.avg_distance_km !== null && summary.avg_distance_km !== undefined
+            ? `${Number(summary.avg_distance_km).toFixed(2)} km`
+            : 'Distance N/A';
+        document.getElementById('pricingAvgDistance').textContent = avgDistance;
+
+        const totalRequests = pricingMetrics.total_requests || 0;
+        const cacheHits = pricingMetrics.cache_hits || 0;
+        const fallbackCalls = pricingMetrics.fallback_calls || 0;
+
+        const cacheRate = totalRequests ? Math.round((cacheHits / totalRequests) * 100) : 0;
+        const fallbackRate = totalRequests ? Math.round((fallbackCalls / totalRequests) * 100) : 0;
+
+        document.getElementById('pricingCacheRate').textContent = `${cacheRate}%`;
+        document.getElementById('pricingCacheHits').textContent = `${cacheHits.toLocaleString()} cache hits`;
+
+        document.getElementById('pricingFallbackRate').textContent = `${fallbackRate}%`;
+        document.getElementById('pricingFallbackCalls').textContent = `${fallbackCalls.toLocaleString()} fallback calls`;
+
+        if (pricingMetrics.last_request_at) {
+            pricingLastUpdated.textContent = `Last pricing request: ${formatDateTime(pricingMetrics.last_request_at)}`;
+        } else {
+            pricingLastUpdated.textContent = 'No pricing requests captured yet.';
+        }
+        pricingLastUpdated.style.display = '';
+    } else {
+        pricingRow.style.display = 'none';
+        pricingLastUpdated.style.display = 'none';
+    }
 }
 
-function updateActiveDeliveries(deliveries) {
-    const container = document.querySelector('.col-md-4 .card-body');
+function updateActiveDeliveries(deliveries, supportsPricingAudit) {
+    const container = document.getElementById('activeDeliveriesContainer');
     if (!deliveries.length) {
         container.innerHTML = `
             <div class="text-center text-muted py-4">
@@ -264,31 +432,41 @@ function updateActiveDeliveries(deliveries) {
     }
 
     container.innerHTML = deliveries.map(delivery => {
+        const sla = delivery.sla || {};
+        const slaBadge = renderSlaBadge(sla);
+        const slaMeta = renderSlaMeta(sla);
+        const statusHint = delivery.status_description ? `<small class="text-muted">${escapeHtml(delivery.status_description)}</small>` : '';
         return `
-            <div class="delivery-item mb-3 p-3 border rounded" data-delivery-id="${delivery.id}">
+            <div class="delivery-item mb-3 p-3 border rounded ${sla.is_at_risk ? 'border-danger' : ''}" data-delivery-id="${delivery.id}" data-order-id="${delivery.order_id}">
                 <div class="d-flex justify-content-between align-items-start mb-2">
                     <div>
-                        <strong>#${delivery.order_number}</strong><br>
-                        <small class="text-muted">${delivery.customer_name}</small>
+                        <strong>#${escapeHtml(delivery.order_number)}</strong><br>
+                        <small class="text-muted">${escapeHtml(delivery.customer_name || 'N/A')}</small>
                     </div>
-                    <span class="badge bg-${getStatusColor(delivery.status)}">${capitalize(delivery.status)}</span>
+                    <div class="text-end">
+                        <span class="badge bg-${getStatusColor(delivery.status)}">${capitalize(delivery.status)}</span>
+                        ${slaBadge}
+                    </div>
                 </div>
                 <div class="mb-2">
                     <small class="text-muted">
-                        <i class="bi bi-person me-1"></i>${delivery.rider_name || 'Not assigned'}
+                        <i class="bi bi-person me-1"></i>${escapeHtml(delivery.rider_name || 'Not assigned')}
                     </small>
-                    ${delivery.rider_phone ? `<br><small class="text-muted"><i class="bi bi-telephone me-1"></i>${delivery.rider_phone}</small>` : ''}
+                    ${delivery.rider_phone ? `<br><small class="text-muted"><i class="bi bi-telephone me-1"></i>${escapeHtml(delivery.rider_phone)}</small>` : ''}
                 </div>
                 <div class="mb-2">
-                    <small class="text-muted">Started ${delivery.elapsed_minutes} min ago</small>
+                    ${statusHint}
+                    <small class="text-muted d-block">Started ${Number(delivery.elapsed_minutes || 0)} min ago</small>
+                    ${slaMeta}
                 </div>
+                ${supportsPricingAudit ? renderPricingMeta(delivery) : ''}
                 <div class="d-flex justify-content-between align-items-center">
-                    <small class="text-muted">KES ${Number(delivery.total_amount).toFixed(2)}</small>
+                    <small class="text-muted">${formatCurrency(delivery.total_amount)}</small>
                     <div class="btn-group btn-group-sm">
                         <button class="btn btn-outline-primary" onclick="trackDelivery(${delivery.order_id})">
                             <i class="bi bi-geo-alt"></i>
                         </button>
-                        <button class="btn btn-outline-info" onclick="contactCustomer('${delivery.customer_phone || ''}')">
+                        <button class="btn btn-outline-info" onclick="contactCustomer('${delivery.customer_phone ? escapeHtml(delivery.customer_phone) : ''}')">
                             <i class="bi bi-telephone"></i>
                         </button>
                     </div>
@@ -363,7 +541,7 @@ function updateRiderPerformance(riders) {
     `).join('');
 }
 
-function updateMapMarkers(deliveries) {
+function updateMapMarkers(deliveries, supportsPricingAudit) {
     if (!deliveryMap) {
         deliveryMap = L.map('deliveryMap').setView([ -1.2921, 36.8219 ], 12);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -375,12 +553,24 @@ function updateMapMarkers(deliveries) {
 
     riderLayerGroup.clearLayers();
     deliveries.filter(delivery => delivery.current_latitude && delivery.current_longitude).forEach(delivery => {
-        const marker = L.marker([delivery.current_latitude, delivery.current_longitude]);
+        const sla = delivery.sla || {};
+        const color = sla.is_at_risk ? '#dc3545' : (sla.is_late ? '#fd7e14' : '#0d6efd');
+        const marker = L.circleMarker([delivery.current_latitude, delivery.current_longitude], {
+            radius: 8,
+            color,
+            fillColor: color,
+            fillOpacity: 0.8,
+            weight: 2
+        });
+        const pricingDetails = supportsPricingAudit ? buildPricingPopup(delivery) : '';
+        const slaBadge = renderSlaBadge(sla) || '';
         marker.bindPopup(`
             <strong>${delivery.rider_name || 'Unassigned'}</strong><br>
             Order: #${delivery.order_number}<br>
             Status: ${capitalize(delivery.status)}<br>
+            ${slaBadge ? `<div class="mt-1">${slaBadge}</div>` : ''}
             Started: ${delivery.elapsed_minutes} min ago
+            ${pricingDetails ? `<div class="mt-2 text-muted small">${pricingDetails}</div>` : ''}
         `);
         riderLayerGroup.addLayer(marker);
     });
@@ -393,15 +583,29 @@ async function trackDelivery(orderId) {
         if (!data.success) {
             throw new Error(data.message || 'Unable to fetch delivery tracking');
         }
-        showTrackingModal(data.data);
+        const currentDelivery = latestDeliverySnapshot.deliveries.find(item => Number(item.order_id) === Number(orderId));
+        showTrackingModal(data.data, currentDelivery, latestDeliverySnapshot.supportsPricingAudit);
     } catch (error) {
         console.error('Error tracking delivery:', error);
         alert('Unable to load delivery tracking details.');
     }
 }
 
-function showTrackingModal(trackingData) {
+function showTrackingModal(trackingData, deliverySnapshot, supportsPricingAudit) {
     const timelineHtml = buildTimeline(trackingData.timeline || []);
+    const pricingHtml = supportsPricingAudit ? buildPricingModalSection(deliverySnapshot) : '';
+    const sla = (deliverySnapshot && deliverySnapshot.sla) || null;
+    const slaHtml = sla ? `
+        <div class="mt-2">
+            <span class="badge ${sla.is_at_risk ? 'bg-danger' : (sla.is_late ? 'bg-warning text-dark' : 'bg-success-subtle text-success')}">
+                ${sla.is_at_risk ? 'SLA risk' : (sla.is_late ? 'SLA late' : 'SLA on track')}
+            </span>
+            <small class="text-muted d-block mt-1">
+                Phase: ${capitalize(sla.phase || trackingData.status || 'pending')} · Wait ${formatMinutesLabel(sla.wait_minutes)} · Delay ${formatMinutesLabel(sla.delay_minutes)}
+            </small>
+            ${sla.promised_time ? `<small class="text-muted">Promised by ${formatDateTime(sla.promised_time)}</small>` : ''}
+        </div>
+    ` : '';
     const content = `
         <div class="row">
             <div class="col-md-6">
@@ -417,8 +621,10 @@ function showTrackingModal(trackingData) {
                 <p class="mb-1"><strong>Rider:</strong> ${trackingData.rider_name || 'Not assigned'}</p>
                 <p class="mb-1"><strong>Vehicle:</strong> ${trackingData.vehicle_type || 'N/A'} ${trackingData.vehicle_number ? '(' + trackingData.vehicle_number + ')' : ''}</p>
                 <p class="mb-0"><strong>Estimated Time:</strong> ${formatDateTime(trackingData.estimated_time) || 'N/A'}</p>
+                ${slaHtml}
             </div>
         </div>
+        ${pricingHtml}
         <div class="row mt-3">
             <div class="col-12">
                 <h6>Delivery Timeline</h6>
@@ -456,9 +662,175 @@ function contactCustomer(phone) {
     }
 }
 
+function renderSlaBadge(sla) {
+    if (!sla || (!sla.is_at_risk && !sla.is_late && !sla.phase)) {
+        return '';
+    }
+    if (sla.is_at_risk) {
+        return '<span class="badge bg-danger">SLA risk</span>';
+    }
+    if (sla.is_late) {
+        return '<span class="badge bg-warning text-dark">SLA late</span>';
+    }
+    return '<span class="badge bg-success-subtle text-success">SLA on track</span>';
+}
+
+function renderSlaMeta(sla) {
+    if (!sla) {
+        return '';
+    }
+    const fragments = [];
+    if (sla.phase) {
+        fragments.push(`Phase: ${capitalize(sla.phase)}`);
+    }
+    if (sla.delay_minutes !== null && sla.delay_minutes !== undefined) {
+        fragments.push(`Delay ${formatMinutesLabel(sla.delay_minutes)}`);
+    }
+    if (sla.promised_time) {
+        fragments.push(`Due ${formatDateTime(sla.promised_time)}`);
+    }
+    if (!fragments.length) {
+        return '';
+    }
+    return `<small class="text-muted d-block">${fragments.join(' · ')}</small>`;
+}
+
+function renderPricingMeta(delivery) {
+    if (!hasPricingData(delivery)) {
+        return '';
+    }
+
+    const provider = formatProvider(delivery.pricing_provider);
+    const fee = formatCurrency(delivery.pricing_fee_applied);
+    const distance = delivery.pricing_distance_m ? `${(Number(delivery.pricing_distance_m) / 1000).toFixed(2)} km` : 'Distance N/A';
+    const rule = delivery.pricing_rule_name || 'Unnamed rule';
+    const cacheBadge = delivery.pricing_cache_hit ? '<span class="badge bg-success me-1">Cache</span>' : '';
+    const fallbackBadge = delivery.pricing_fallback_used ? '<span class="badge bg-warning text-dark me-1">Fallback</span>' : '';
+    const providerBadge = provider ? `<span class="badge bg-secondary me-1">${provider}</span>` : '';
+    const calculated = delivery.pricing_calculated_at ? `<small class="text-muted d-block">Calculated ${formatRelativeTime(delivery.pricing_calculated_at)}</small>` : '';
+
+    return `
+        <div class="mb-2">
+            <div class="mb-1">
+                ${providerBadge}${cacheBadge}${fallbackBadge}
+            </div>
+            <small class="text-muted d-block">Fee: <strong>${fee}</strong></small>
+            <small class="text-muted d-block">Distance: ${distance}</small>
+            <small class="text-muted d-block">Rule: ${rule}</small>
+            ${calculated}
+        </div>
+    `;
+}
+
+function buildPricingPopup(delivery) {
+    if (!hasPricingData(delivery)) {
+        return '';
+    }
+
+    const provider = formatProvider(delivery.pricing_provider);
+    const fee = formatCurrency(delivery.pricing_fee_applied);
+    const distance = delivery.pricing_distance_m ? `${(Number(delivery.pricing_distance_m) / 1000).toFixed(2)} km` : 'N/A';
+    const details = [`Fee ${fee}`, `Distance ${distance}`];
+    if (provider) {
+        details.unshift(provider);
+    }
+    if (delivery.pricing_cache_hit) {
+        details.push('Cache hit');
+    }
+    if (delivery.pricing_fallback_used) {
+        details.push('Fallback');
+    }
+    return details.join(' • ');
+}
+
+function buildPricingModalSection(delivery) {
+    if (!hasPricingData(delivery)) {
+        return '';
+    }
+
+    const provider = formatProvider(delivery.pricing_provider) || 'Unknown';
+    const fee = formatCurrency(delivery.pricing_fee_applied);
+    const distance = delivery.pricing_distance_m ? `${(Number(delivery.pricing_distance_m) / 1000).toFixed(2)} km` : 'N/A';
+    const rule = delivery.pricing_rule_name || 'Unnamed rule';
+    const cache = delivery.pricing_cache_hit ? 'Yes' : 'No';
+    const fallback = delivery.pricing_fallback_used ? 'Yes' : 'No';
+    const calculatedAt = delivery.pricing_calculated_at ? formatDateTime(delivery.pricing_calculated_at) : 'N/A';
+    const requestId = delivery.pricing_request_id || 'N/A';
+
+    return `
+        <div class="row mt-3">
+            <div class="col-12">
+                <h6>Pricing Details</h6>
+                <div class="row small text-muted">
+                    <div class="col-md-6">
+                        <p class="mb-1"><strong>Fee:</strong> ${fee}</p>
+                        <p class="mb-1"><strong>Distance:</strong> ${distance}</p>
+                        <p class="mb-1"><strong>Rule:</strong> ${rule}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p class="mb-1"><strong>Provider:</strong> ${provider}</p>
+                        <p class="mb-1"><strong>Cache Hit:</strong> ${cache}</p>
+                        <p class="mb-1"><strong>Fallback:</strong> ${fallback}</p>
+                        <p class="mb-1"><strong>Calculated:</strong> ${calculatedAt}</p>
+                        <p class="mb-0"><strong>Request ID:</strong> <span class="text-break">${requestId}</span></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function hasPricingData(delivery) {
+    return Boolean(delivery && delivery.pricing_fee_applied !== null && delivery.pricing_fee_applied !== undefined);
+}
+
+function formatCurrency(value) {
+    if (value === null || value === undefined || value === '') {
+        return `${currencySymbol} 0.00`;
+    }
+    const number = Number(value) || 0;
+    return `${currencySymbol} ${number.toFixed(2)}`;
+}
+
+function formatProvider(provider) {
+    if (!provider) {
+        return '';
+    }
+    return provider.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
+}
+
+function formatRelativeTime(value) {
+    if (!value) {
+        return '';
+    }
+    const date = new Date(value);
+    const diff = Date.now() - date.getTime();
+    const minutes = Math.round(diff / 60000);
+    if (minutes < 1) {
+        return 'just now';
+    }
+    if (minutes < 60) {
+        return `${minutes} min ago`;
+    }
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) {
+        return `${hours} hr ago`;
+    }
+    const days = Math.round(hours / 24);
+    return `${days} day${days !== 1 ? 's' : ''} ago`;
+}
+
 function formatMinutes(value) {
     const minutes = parseFloat(value || 0);
     return minutes ? `${minutes.toFixed(1)} min` : 'N/A';
+}
+
+function formatMinutesLabel(value) {
+    const minutes = Number(value);
+    if (!Number.isFinite(minutes)) {
+        return '--';
+    }
+    return `${Math.round(minutes)} min`;
 }
 
 function formatRating(value) {
@@ -484,24 +856,73 @@ function capitalize(value) {
     return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+function getStatusColor(status) {
+    switch ((status || '').toLowerCase()) {
+        case 'pending':
+            return 'warning';
+        case 'assigned':
+        case 'picked-up':
+        case 'in-transit':
+            return 'primary';
+        case 'delivered':
+            return 'success';
+        case 'failed':
+            return 'danger';
+        default:
+            return 'secondary';
+    }
+}
+
+function escapeHtml(value) {
+    if (value === null || value === undefined) {
+        return '';
+    }
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function updateThresholdUi() {
+    const slaText = `SLA Targets · Pending ${deliveryConfig.sla.pending} min · Assigned ${deliveryConfig.sla.assigned} min · Delivery ${deliveryConfig.sla.delivery} min (+${deliveryConfig.sla.slack} min slack)`;
+    const slaTargetsLabel = document.getElementById('slaTargetsLabel');
+    if (slaTargetsLabel) {
+        slaTargetsLabel.textContent = slaText;
+    }
+    const maxActiveBadge = document.getElementById('maxActiveJobsBadge');
+    if (maxActiveBadge) {
+        maxActiveBadge.textContent = `Max active: ${MAX_ACTIVE_JOBS}`;
+    }
+    const slackBadge = document.getElementById('slaSlackBadge');
+    if (slackBadge) {
+        slackBadge.textContent = `Slack: ${deliveryConfig.sla.slack} min`;
+    }
+    const pendingBadge = document.getElementById('slaPendingBadge');
+    if (pendingBadge) {
+        pendingBadge.textContent = `Pending: ${deliveryConfig.sla.pending} min`;
+    }
+    const assignedBadge = document.getElementById('slaAssignedBadge');
+    if (assignedBadge) {
+        assignedBadge.textContent = `Assigned: ${deliveryConfig.sla.assigned} min`;
+    }
+    const deliveryBadge = document.getElementById('slaDeliveryBadge');
+    if (deliveryBadge) {
+        deliveryBadge.textContent = `Delivery: ${deliveryConfig.sla.delivery} min`;
+    }
+}
+
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', async function() {
+    updateThresholdUi();
+    updateDeliveryStats(initialStats, null, false);
+    updateActiveDeliveries(latestDeliverySnapshot.deliveries, latestDeliverySnapshot.supportsPricingAudit);
+    updateMapMarkers(latestDeliverySnapshot.deliveries, latestDeliverySnapshot.supportsPricingAudit);
     refreshDeliveryData();
 });
 </script>
 
 <?php 
-function getStatusColor($status) {
-    switch ($status) {
-        case 'pending': return 'warning';
-        case 'assigned': return 'info';
-        case 'picked-up': return 'primary';
-        case 'in-transit': return 'primary';
-        case 'delivered': return 'success';
-        case 'failed': return 'danger';
-        default: return 'secondary';
-    }
-}
-
 include 'includes/footer.php'; 
 ?>

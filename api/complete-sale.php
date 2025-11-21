@@ -68,6 +68,13 @@ if (empty($items)) {
 }
 
 $totals = $data['totals'] ?? [];
+$paymentMethod = $data['payment_method'] ?? 'cash';
+$roomBookingId = isset($data['room_booking_id']) ? (int)$data['room_booking_id'] : null;
+
+if ($paymentMethod === 'room_charge' && (!$roomBookingId || $roomBookingId <= 0)) {
+    respondJson(422, ['success' => false, 'message' => 'room_booking_id is required when payment method is room_charge'], ob_get_clean());
+}
+
 $subtotal = isset($data['subtotal']) ? (float) $data['subtotal'] : ($totals['subtotal'] ?? 0.0);
 if ($subtotal <= 0) {
     $subtotal = 0.0;
@@ -82,6 +89,10 @@ $grandTotal = isset($data['total_amount']) ? (float) $data['total_amount'] : ($t
 
 $amountPaid = isset($data['amount_paid']) ? (float) $data['amount_paid'] : $grandTotal;
 $changeAmount = isset($data['change_amount']) ? (float) $data['change_amount'] : max(0, $amountPaid - $grandTotal);
+if ($paymentMethod === 'room_charge') {
+    $amountPaid = 0.0;
+    $changeAmount = 0.0;
+}
 
 $database = Database::getInstance();
 $pdo = $database->getConnection();
@@ -103,7 +114,9 @@ try {
         ],
         'amount_paid' => $amountPaid,
         'change_amount' => $changeAmount,
-        'payment_method' => $data['payment_method'] ?? 'cash',
+        'payment_method' => $paymentMethod,
+        'room_booking_id' => $roomBookingId,
+        'room_charge_description' => $data['room_charge_description'] ?? null,
         'notes' => $data['notes'] ?? null,
     ]);
 
