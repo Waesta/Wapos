@@ -114,6 +114,10 @@ $roomsStmt = $pdo->query("
 ");
 $rooms = $roomsStmt ? $roomsStmt->fetchAll(PDO::FETCH_ASSOC) : [];
 
+$gatewayProvider = strtolower((string)(settings('payments_gateway_provider') ?? ''));
+$isGatewayEnabled = in_array($gatewayProvider, ['relworx', 'pesapal'], true);
+$currencyCode = settings('currency_code') ?? 'KES';
+
 // Active bookings using available structure
 if ($schemaReady) {
     $activeStmt = $pdo->prepare("
@@ -146,6 +150,14 @@ if ($schemaReady) {
 $pageTitle = 'Room Booking';
 include 'includes/header.php';
 ?>
+
+<script>
+    window.ROOMS_GATEWAY_CONFIG = {
+        enabled: <?= $isGatewayEnabled ? 'true' : 'false' ?>,
+        provider: '<?= addslashes($gatewayProvider) ?>',
+        currency: '<?= addslashes($currencyCode) ?>'
+    };
+</script>
 
 <style>
     .rooms-shell {
@@ -613,11 +625,45 @@ include 'includes/header.php';
                                 </div>
                             </div>
                         </div>
+
+                        <div class="col-12">
+                            <div class="card border">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-center mb-3">
+                                        <div>
+                                            <h6 class="mb-1">Deposit / Prepayment</h6>
+                                            <small class="text-muted">Record an upfront payment to secure the booking.</small>
+                                        </div>
+                                        <?php if ($isGatewayEnabled): ?>
+                                            <span class="badge bg-info text-dark">Gateway Enabled</span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="row g-3">
+                                        <div class="col-md-6">
+                                            <label class="form-label">Deposit Amount</label>
+                                            <div class="input-group">
+                                                <span class="input-group-text"><?= htmlspecialchars($currencyCode) ?></span>
+                                                <input type="number" class="form-control" name="deposit_amount" id="deposit_amount" min="0" step="0.01" value="0">
+                                            </div>
+                                        </div>
+                                        <?php if ($isGatewayEnabled): ?>
+                                        <div class="col-md-6" id="depositPhoneWrap">
+                                            <label class="form-label">Mobile Money Phone</label>
+                                            <input type="tel" class="form-control" name="deposit_mobile_phone" id="deposit_mobile_phone" placeholder="e.g. +2567...">
+                                            <div class="form-text">A payment prompt will be sent to this number when you submit.</div>
+                                        </div>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="alert alert-info d-none mt-3" id="bookingDepositStatus"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <input type="hidden" name="payment_gateway_reference" id="payment_gateway_reference">
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Create Booking</button>
+                    <button type="submit" class="btn btn-primary" id="bookingSubmitBtn">Create Booking</button>
                 </div>
             </form>
         </div>
@@ -651,9 +697,48 @@ include 'includes/header.php';
 <script>
 // Get currency from PHP
 const currencySymbol = '<?= $db->fetchOne("SELECT setting_value FROM settings WHERE setting_key = 'currency'")["setting_value"] ?? '$' ?>';
+const ROOMS_GATEWAY = window.ROOMS_GATEWAY_CONFIG || { enabled: false, provider: null, currency: 'KES' };
+let bookingGatewayReference = null;
+let bookingGatewayPollTimeout = null;
+let bookingGatewayPollAttempts = 0;
+const BOOKING_GATEWAY_POLL_INTERVAL = 4000;
+const BOOKING_GATEWAY_MAX_ATTEMPTS = 30;
 
 let folioModal;
 let folioModalElement;
+
+function setBookingStatus(message, type = 'info') {
+    const statusEl = document.getElementById('bookingDepositStatus');
+    if (!statusEl) return;
+    statusEl.className = `alert alert-${type}`;
+    statusEl.textContent = message;
+    statusEl.classList.remove('d-none');
+}
+
+function clearBookingStatus() {
+    const statusEl = document.getElementById('bookingDepositStatus');
+    if (statusEl) {
+        statusEl.classList.add('d-none');
+        statusEl.textContent = '';
+    }
+    if (bookingGatewayPollTimeout) {
+        clearTimeout(bookingGatewayPollTimeout);
+        bookingGatewayPollTimeout = null;
+    }
+    bookingGatewayReference = null;
+    bookingGatewayPollAttempts = 0;
+}
+
+function setBookingSubmitState(label, disabled) {
+    const btn = document.getElementById('bookingSubmitBtn');
+    if (!btn) return;
+    if (label) {
+        btn.innerHTML = label;
+    }
+    if (typeof disabled === 'boolean') {
+        btn.disabled = disabled;
+    }
+}
 
 function selectRoom(room) {
     if (room.status === 'available') {
@@ -856,27 +941,160 @@ function formatDate(dateString) {
 // Form submission
 document.getElementById('bookingForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    
-    const formData = new FormData(e.target);
-    
+    const form = e.target;
+    const depositAmount = parseFloat(document.getElementById('deposit_amount').value) || 0;
+    const depositPhoneInput = document.getElementById('deposit_mobile_phone');
+    const depositPhone = depositPhoneInput ? depositPhoneInput.value.trim() : '';
+
+    clearBookingStatus();
+
+    if (ROOMS_GATEWAY.enabled && depositAmount > 0) {
+        if (depositPhone.length < 7) {
+            alert('Enter the customer phone number to send the mobile money prompt.');
+            depositPhoneInput?.focus();
+            return;
+        }
+        await initiateBookingDeposit(form, depositAmount, depositPhone);
+        return;
+    }
+
+    await submitBooking(form);
+});
+
+async function initiateBookingDeposit(form, amount, phone) {
     try {
+        setBookingStatus('Sending mobile money prompt to customer...', 'info');
+        setBookingSubmitState('<i class="bi bi-phone me-2"></i>Waiting for approval', true);
+
+        const payload = {
+            amount,
+            currency: ROOMS_GATEWAY.currency,
+            customer_phone: phone,
+            customer_name: form.guest_name.value || null,
+            customer_email: form.guest_email.value || null,
+            metadata: {
+                source: 'room_booking_deposit',
+                room_id: form.select_room_id.value,
+                check_in: form.check_in_date.value,
+                check_out: form.check_out_date.value,
+                guest_phone: form.guest_phone.value,
+                deposit_form: true
+            },
+            context_type: 'room_booking',
+            context_id: Date.now()
+        };
+
+        const response = await fetch('api/payments/initiate.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        if (!result.success) {
+            throw new Error(result.message || 'Unable to initiate payment');
+        }
+
+        const data = result.data || {};
+        bookingGatewayReference = data.reference;
+        bookingGatewayPollAttempts = 0;
+        document.getElementById('payment_gateway_reference').value = data.reference;
+
+        if (data.instructions) {
+            setBookingStatus(data.instructions, 'info');
+        } else {
+            setBookingStatus('Prompt sent. Waiting for customer confirmation...', 'info');
+        }
+
+        if (['success', 'completed', 'paid', 'approved'].includes((data.status || '').toLowerCase())) {
+            await submitBooking(form);
+            return;
+        }
+
+        pollBookingGatewayStatus(form);
+    } catch (error) {
+        console.error('Booking deposit initiation error:', error);
+        setBookingStatus(`Failed to initiate payment: ${error.message}`, 'danger');
+        setBookingSubmitState('Create Booking', false);
+    }
+}
+
+async function pollBookingGatewayStatus(form) {
+    if (!bookingGatewayReference) {
+        setBookingSubmitState('Create Booking', false);
+        return;
+    }
+
+    bookingGatewayPollAttempts += 1;
+    if (bookingGatewayPollAttempts > BOOKING_GATEWAY_MAX_ATTEMPTS) {
+        setBookingStatus('Payment is still pending. Please confirm with the customer or try again.', 'warning');
+        setBookingSubmitState('Create Booking', false);
+        return;
+    }
+
+    try {
+        const response = await fetch(`api/payments/status.php?reference=${encodeURIComponent(bookingGatewayReference)}`);
+        const result = await response.json();
+        if (!result.success || !result.data) {
+            throw new Error(result.message || 'Unable to fetch payment status');
+        }
+
+        const record = result.data;
+        const status = (record.status || '').toLowerCase();
+
+        if (['success', 'completed', 'paid', 'approved'].includes(status)) {
+            setBookingStatus('Deposit confirmed! Completing booking...', 'success');
+            document.getElementById('payment_gateway_reference').value = record.reference;
+            await submitBooking(form);
+            return;
+        }
+
+        if (['failed', 'declined', 'cancelled', 'expired', 'error'].includes(status)) {
+            setBookingStatus(`Payment failed: ${record.status}`, 'danger');
+            setBookingSubmitState('Create Booking', false);
+            return;
+        }
+
+        if (record.instructions) {
+            setBookingStatus(record.instructions, 'info');
+        } else {
+            setBookingStatus('Awaiting customer confirmation...', 'info');
+        }
+
+        bookingGatewayPollTimeout = setTimeout(() => {
+            pollBookingGatewayStatus(form);
+        }, BOOKING_GATEWAY_POLL_INTERVAL);
+    } catch (error) {
+        console.error('Booking deposit status error:', error);
+        setBookingStatus(`Error checking payment status: ${error.message}`, 'danger');
+        setBookingSubmitState('Create Booking', false);
+    }
+}
+
+async function submitBooking(form) {
+    setBookingSubmitState('<i class="bi bi-hourglass-split me-2"></i>Submitting...', true);
+    try {
+        const formData = new FormData(form);
+        if (bookingGatewayReference && !formData.get('deposit_amount')) {
+            formData.set('deposit_amount', document.getElementById('deposit_amount').value || '0');
+        }
         const response = await fetch('api/create-booking.php', {
             method: 'POST',
             body: formData
         });
-        
         const result = await response.json();
-        
         if (result.success) {
+            clearBookingStatus();
             alert('Booking created successfully!');
             window.location.reload();
         } else {
-            alert('Error: ' + (result.message || 'Failed to create booking'));
+            setBookingStatus(result.message || 'Failed to create booking', 'danger');
+            setBookingSubmitState('Create Booking', false);
         }
     } catch (error) {
-        alert('Error: ' + error.message);
+        setBookingStatus(error.message, 'danger');
+        setBookingSubmitState('Create Booking', false);
     }
-});
+}
 </script>
 
 <?php include 'includes/footer.php'; ?>

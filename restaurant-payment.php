@@ -109,9 +109,30 @@ try {
     $checkedInRooms = [];
 }
 
+$gatewayProvider = strtolower((string)($settings['payments_gateway_provider'] ?? ''));
+$isGatewayEnabled = in_array($gatewayProvider, ['relworx', 'pesapal'], true);
+$currencyCode = $settings['currency_code'] ?? 'KES';
+
 $pageTitle = 'Process Payment - Order ' . $order['order_number'];
 include 'includes/header.php';
 ?>
+
+<script>
+    window.RESTAURANT_GATEWAY_CONFIG = {
+        enabled: <?= $isGatewayEnabled ? 'true' : 'false' ?>,
+        provider: '<?= addslashes($gatewayProvider) ?>',
+        currency: '<?= addslashes($currencyCode) ?>'
+    };
+</script>
+<script>
+    window.RESTAURANT_ORDER_INFO = <?= json_encode([
+        'id' => (int)$order['id'],
+        'order_number' => (string)$order['order_number'],
+        'customer_name' => $order['customer_name'] ?? null,
+        'customer_phone' => $order['customer_phone'] ?? null,
+        'waiter_name' => $order['waiter_name'] ?? null,
+    ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
+</script>
 
 <div class="container-fluid">
     <div class="row">
@@ -221,6 +242,7 @@ include 'includes/header.php';
                                 <div class="alert alert-secondary small" id="paymentsHelp">
                                     <strong>Instructions:</strong> Add one or more payments to cover the order total. Use the tip column to record gratuity for the primary payment. Room charge must be a single payment covering the entire bill.
                                 </div>
+                                <div class="alert alert-info d-none" id="restaurantMobileMoneyStatus" role="alert"></div>
                             </div>
                             
                             <div class="col-md-6">
@@ -251,7 +273,7 @@ include 'includes/header.php';
                             <a href="restaurant-order.php?id=<?= $order['id'] ?>" class="btn btn-outline-secondary">
                                 <i class="bi bi-arrow-left me-2"></i>Back to Order
                             </a>
-                            <button type="button" class="btn btn-success btn-lg" onclick="processPayment()">
+                            <button type="button" class="btn btn-success btn-lg" id="restaurantProcessPaymentBtn" onclick="processPayment()">
                                 <i class="bi bi-check-circle me-2"></i>Complete Payment
                             </button>
                         </div>
@@ -326,9 +348,62 @@ include 'includes/header.php';
 </div>
 
 <script>
+const RESTAURANT_GATEWAY = window.RESTAURANT_GATEWAY_CONFIG || { enabled: false, provider: null, currency: 'KES' };
+const RESTAURANT_ORDER = window.RESTAURANT_ORDER_INFO || {};
+let restaurantGatewayReference = null;
+let restaurantGatewayPollTimeout = null;
+let restaurantGatewayPollAttempts = 0;
+const RESTAURANT_GATEWAY_POLL_INTERVAL = 4000;
+const RESTAURANT_GATEWAY_MAX_ATTEMPTS = 30;
+const RESTAURANT_PAYMENT_BTN_DEFAULT = '<i class="bi bi-check-circle me-2"></i>Complete Payment';
+
+function isRestaurantGatewayEnabled() {
+    return Boolean(RESTAURANT_GATEWAY.enabled);
+}
+
+function getRestaurantPaymentButton() {
+    return document.getElementById('restaurantProcessPaymentBtn');
+}
+
+function setRestaurantPaymentButton(label, disabled) {
+    const btn = getRestaurantPaymentButton();
+    if (!btn) return;
+    if (label) {
+        btn.innerHTML = label;
+    }
+    if (typeof disabled === 'boolean') {
+        btn.disabled = disabled;
+    }
+}
+
+function resetRestaurantPaymentButton() {
+    setRestaurantPaymentButton(RESTAURANT_PAYMENT_BTN_DEFAULT, false);
+}
+
+function setRestaurantMobileMoneyStatus(message, type = 'info') {
+    const el = document.getElementById('restaurantMobileMoneyStatus');
+    if (!el) return;
+    el.className = `alert alert-${type}`;
+    el.textContent = message;
+    el.classList.remove('d-none');
+}
+
+function clearRestaurantMobileMoneyStatus() {
+    const el = document.getElementById('restaurantMobileMoneyStatus');
+    if (el) {
+        el.classList.add('d-none');
+        el.textContent = '';
+    }
+    if (restaurantGatewayPollTimeout) {
+        clearTimeout(restaurantGatewayPollTimeout);
+        restaurantGatewayPollTimeout = null;
+    }
+    restaurantGatewayReference = null;
+    restaurantGatewayPollAttempts = 0;
+}
+
 async function processPayment() {
     const orderId = document.getElementById('orderId').value;
-    const totalAmount = parseFloat(document.getElementById('totalAmount').value);
     const payments = collectPayments();
 
     if (!payments || !payments.length) {
@@ -342,6 +417,22 @@ async function processPayment() {
         notes: document.getElementById('paymentNotes').value
     };
 
+    const gatewayPayments = payments.filter(p => p.payment_method === 'mobile_money');
+    if (isRestaurantGatewayEnabled() && gatewayPayments.length > 1) {
+        alert('Only one mobile money payment can be used when the gateway is enabled.');
+        return;
+    }
+
+    if (isRestaurantGatewayEnabled() && gatewayPayments.length === 1) {
+        await handleRestaurantGatewayPayment(gatewayPayments[0], payload);
+        return;
+    }
+
+    await submitRestaurantPayments(payload);
+}
+
+async function submitRestaurantPayments(payload) {
+    setRestaurantPaymentButton('<i class="bi bi-hourglass-split me-2"></i>Processing...', true);
     try {
         const response = await fetch('api/restaurant-order-workflow.php', {
             method: 'POST',
@@ -351,16 +442,148 @@ async function processPayment() {
                 ...payload
             })
         });
-        
         const result = await response.json();
-        
         if (result.success) {
+            clearRestaurantMobileMoneyStatus();
             showPaymentSuccess(result);
         } else {
             alert('Error processing payment: ' + result.message);
+            resetRestaurantPaymentButton();
         }
     } catch (error) {
         alert('Error: ' + error.message);
+        resetRestaurantPaymentButton();
+    }
+}
+
+function ensurePaymentMetadata(payment) {
+    if (!payment.metadata || typeof payment.metadata !== 'object') {
+        payment.metadata = {};
+    }
+    return payment.metadata;
+}
+
+async function handleRestaurantGatewayPayment(paymentEntry, payload) {
+    const metadata = ensurePaymentMetadata(paymentEntry);
+    const customerPhone = (metadata.mobile_number || RESTAURANT_ORDER.customer_phone || '').trim();
+    if (!customerPhone) {
+        alert('Customer phone number is required for mobile money payments.');
+        return;
+    }
+
+    clearRestaurantMobileMoneyStatus();
+    setRestaurantMobileMoneyStatus('Sending mobile money prompt to customer...', 'info');
+    setRestaurantPaymentButton('<i class="bi bi-phone me-2"></i>Waiting for approval', true);
+
+    try {
+        const contextId = RESTAURANT_ORDER.id;
+        const payloadBody = {
+            amount: paymentEntry.amount,
+            currency: RESTAURANT_GATEWAY.currency,
+            customer_phone: customerPhone,
+            customer_name: RESTAURANT_ORDER.customer_name || null,
+            customer_email: null,
+            metadata: {
+                source: 'restaurant_order',
+                order_id: RESTAURANT_ORDER.id,
+                order_number: RESTAURANT_ORDER.order_number,
+                waiter_name: RESTAURANT_ORDER.waiter_name,
+                payment_split: payload.payments.length,
+                original_metadata: metadata
+            },
+            context_type: 'restaurant_order',
+            context_id: contextId
+        };
+
+        const response = await fetch('api/payments/initiate.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payloadBody)
+        });
+        const result = await response.json();
+        if (!result.success) {
+            throw new Error(result.message || 'Unable to initiate payment');
+        }
+
+        const data = result.data || {};
+        restaurantGatewayReference = data.reference;
+        restaurantGatewayPollAttempts = 0;
+        metadata.gateway_reference = data.reference;
+        metadata.gateway_provider = RESTAURANT_GATEWAY.provider;
+        metadata.gateway_status = data.status || 'pending';
+
+        if (data.instructions) {
+            setRestaurantMobileMoneyStatus(data.instructions, 'info');
+        } else {
+            setRestaurantMobileMoneyStatus('Prompt sent. Waiting for customer confirmation...', 'info');
+        }
+
+        const status = (data.status || '').toLowerCase();
+        if (['success', 'completed', 'paid', 'approved'].includes(status)) {
+            await submitRestaurantPayments(payload);
+            return;
+        }
+
+        pollRestaurantGatewayStatus(payload, paymentEntry);
+    } catch (error) {
+        console.error('Restaurant mobile money initiation error:', error);
+        setRestaurantMobileMoneyStatus(`Failed to initiate payment: ${error.message}`, 'danger');
+        resetRestaurantPaymentButton();
+    }
+}
+
+async function pollRestaurantGatewayStatus(payload, paymentEntry) {
+    if (!restaurantGatewayReference) {
+        resetRestaurantPaymentButton();
+        return;
+    }
+
+    restaurantGatewayPollAttempts += 1;
+    if (restaurantGatewayPollAttempts > RESTAURANT_GATEWAY_MAX_ATTEMPTS) {
+        setRestaurantMobileMoneyStatus('Payment is still pending. Please confirm with the customer or try again.', 'warning');
+        resetRestaurantPaymentButton();
+        return;
+    }
+
+    try {
+        const response = await fetch(`api/payments/status.php?reference=${encodeURIComponent(restaurantGatewayReference)}`);
+        const result = await response.json();
+        if (!result.success || !result.data) {
+            throw new Error(result.message || 'Unable to fetch payment status');
+        }
+
+        const record = result.data;
+        const status = (record.status || '').toLowerCase();
+
+        if (['success', 'completed', 'paid', 'approved'].includes(status)) {
+            setRestaurantMobileMoneyStatus('Payment confirmed! Completing order...', 'success');
+            const metadata = ensurePaymentMetadata(paymentEntry);
+            metadata.gateway_status = status;
+            metadata.gateway_reference = record.reference;
+            metadata.provider_reference = record.provider_reference || null;
+            await submitRestaurantPayments(payload);
+            return;
+        }
+
+        if (['failed', 'declined', 'cancelled', 'expired', 'error'].includes(status)) {
+            setRestaurantMobileMoneyStatus(`Payment failed: ${record.status}`, 'danger');
+            resetRestaurantPaymentButton();
+            return;
+        }
+
+        if (record.instructions) {
+            setRestaurantMobileMoneyStatus(record.instructions, 'info');
+        } else {
+            setRestaurantMobileMoneyStatus('Awaiting customer confirmation...', 'info');
+        }
+
+        restaurantGatewayPollTimeout = setTimeout(() => {
+            pollRestaurantGatewayStatus(payload, paymentEntry);
+        }, RESTAURANT_GATEWAY_POLL_INTERVAL);
+    } catch (error) {
+        console.error('Restaurant mobile money status error:', error);
+        setRestaurantMobileMoneyStatus(`Error checking payment status: ${error.message}`, 'danger');
+        resetRestaurantPaymentButton();
     }
 }
 
@@ -485,6 +708,11 @@ const paymentTemplates = {
     mobile_money: () => ({
         title: 'Mobile Money',
         fields: `
+            <?php if ($isGatewayEnabled): ?>
+            <div class="alert alert-info small">
+                <strong>Heads up:</strong> A payment prompt will be sent to the customer's phone when you complete payment.
+            </div>
+            <?php endif; ?>
             <div class="mb-3">
                 <label class="form-label">Provider</label>
                 <select class="form-select form-select-sm" name="mobile_provider">

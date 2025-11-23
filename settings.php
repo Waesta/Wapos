@@ -1,8 +1,21 @@
 <?php
+
+use App\Services\SystemBackupService;
+use App\Services\ScheduledTaskService;
+use App\Services\DataPortService;
+
 require_once 'includes/bootstrap.php';
 $auth->requireRole(['admin', 'developer', 'accountant', 'super_admin']);
 
 $db = Database::getInstance();
+$pdo = $db->getConnection();
+$backupService = new SystemBackupService($pdo);
+$scheduledTaskService = new ScheduledTaskService($pdo);
+$dataPortService = new DataPortService($pdo);
+$backupConfig = $backupService->getConfig();
+$backupLogs = $backupService->listBackups(25);
+$dataPortEntities = $dataPortService->getEntities();
+$defaultDataPortEntity = array_key_first($dataPortEntities) ?? '';
 $userRole = strtolower($auth->getRole() ?? '');
 $csrfToken = generateCSRFToken();
 $systemManager = SystemManager::getInstance();
@@ -232,6 +245,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
+        $backupConfigPosted = [
+            'frequency' => sanitizeInput($_POST['backup_frequency'] ?? ''),
+            'time' => sanitizeInput($_POST['backup_time_of_day'] ?? ''),
+            'weekday' => sanitizeInput($_POST['backup_weekday'] ?? ''),
+            'retention_days' => $_POST['backup_retention_days'] ?? '',
+            'storage_path' => trim((string)($_POST['backup_storage_path'] ?? '')),
+        ];
+
+        $backupFieldsPresent = array_filter($backupConfigPosted, static function ($value, $key) {
+            if ($key === 'retention_days') {
+                return $value !== '';
+            }
+            return $value !== '';
+        }, ARRAY_FILTER_USE_BOTH);
+
+        if (!empty($backupFieldsPresent)) {
+            $normalizedConfig = [
+                'frequency' => in_array($backupConfigPosted['frequency'], ['hourly', 'daily', 'weekly'], true) ? $backupConfigPosted['frequency'] : ($backupConfig['frequency'] ?? 'daily'),
+                'time' => preg_match('/^\d{2}:\d{2}$/', $backupConfigPosted['time']) ? $backupConfigPosted['time'] : ($backupConfig['time'] ?? '02:00'),
+                'weekday' => in_array(strtolower($backupConfigPosted['weekday']), ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'], true)
+                    ? strtolower($backupConfigPosted['weekday'])
+                    : ($backupConfig['weekday'] ?? 'monday'),
+                'retention_days' => max(1, (int)$backupConfigPosted['retention_days'] ?: (int)($backupConfig['retention_days'] ?? 30)),
+                'storage_path' => $backupConfigPosted['storage_path'] !== '' ? $backupConfigPosted['storage_path'] : ($backupConfig['storage_path'] ?? ROOT_PATH . '/backups'),
+            ];
+
+            $backupService->persistConfig($normalizedConfig);
+            $scheduledTaskService->upsertBackupTask($normalizedConfig);
+            $backupConfig = $normalizedConfig;
+            $backupLogs = $backupService->listBackups(25);
+        }
+
         if ($moduleStateChanged) {
             $systemManager->forceRefresh();
         }
@@ -293,6 +338,12 @@ $sections = [
         'icon' => 'bi-plug',
         'description' => 'Manage WhatsApp alerts and system-wide notification defaults.',
         'roles' => ['admin', 'developer'],
+    ],
+    'data_protection' => [
+        'title' => 'Data Protection & Backups',
+        'icon' => 'bi-shield-lock',
+        'description' => 'Automate backups, manage retention, and handle data import/export workflows.',
+        'roles' => ['super_admin', 'developer', 'admin', 'accountant'],
     ],
 ];
 
@@ -625,6 +676,191 @@ $visibleSections = array_filter($sections, function ($section) use ($userRole) {
                                 <input type="text" class="form-control" name="whatsapp_business_account_id" value="<?= htmlspecialchars($settings['whatsapp_business_account_id'] ?? '') ?>" placeholder="123456">
                             </div>
                         </div>
+                    <?php elseif ($key === 'data_protection'): ?>
+                        <div class="row g-4">
+                            <div class="col-lg-5">
+                                <div class="border rounded-3 p-3 h-100">
+                                    <h6 class="fw-semibold mb-3">Automated Backup Schedule</h6>
+                                    <div class="mb-3">
+                                        <label class="form-label">Frequency</label>
+                                        <?php $frequency = $backupConfig['frequency'] ?? 'daily'; ?>
+                                        <select class="form-select" name="backup_frequency" id="backupFrequency">
+                                            <option value="hourly" <?= $frequency === 'hourly' ? 'selected' : '' ?>>Hourly</option>
+                                            <option value="daily" <?= $frequency === 'daily' ? 'selected' : '' ?>>Daily</option>
+                                            <option value="weekly" <?= $frequency === 'weekly' ? 'selected' : '' ?>>Weekly</option>
+                                        </select>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Run Time</label>
+                                        <input type="time" class="form-control" name="backup_time_of_day" value="<?= htmlspecialchars($backupConfig['time'] ?? '02:00') ?>" required>
+                                        <div class="form-text">24-hour format, server time.</div>
+                                    </div>
+                                    <div class="mb-3" id="backupWeekdayWrapper">
+                                        <label class="form-label">Weekly Run Day</label>
+                                        <?php $weekday = $backupConfig['weekday'] ?? 'monday'; ?>
+                                        <select class="form-select" name="backup_weekday">
+                                            <?php foreach (['monday','tuesday','wednesday','thursday','friday','saturday','sunday'] as $day): ?>
+                                                <option value="<?= $day ?>" <?= $day === $weekday ? 'selected' : '' ?>><?= ucfirst($day) ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                        <div class="form-text">Used when frequency is set to weekly.</div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Retention (days)</label>
+                                        <input type="number" class="form-control" name="backup_retention_days" min="1" value="<?= (int)($backupConfig['retention_days'] ?? 30) ?>">
+                                        <div class="form-text">Older backups beyond this window will be auto-deleted.</div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Storage Path</label>
+                                        <input type="text" class="form-control" name="backup_storage_path" value="<?= htmlspecialchars($backupConfig['storage_path'] ?? ROOT_PATH . '/backups') ?>" placeholder="D:/WAPOS/backups">
+                                        <div class="form-text">Use an absolute path to an accessible drive or mounted network share.</div>
+                                    </div>
+                                    <div class="alert alert-warning mb-0 small">
+                                        <i class="bi bi-exclamation-triangle me-1"></i>Ensure the web server user has permission to write to the selected directory.
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-7">
+                                <div class="border rounded-3 p-3 h-100 d-flex flex-column">
+                                    <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+                                        <div>
+                                            <h6 class="fw-semibold mb-1">Manual Backups & History</h6>
+                                            <p class="text-muted small mb-0">Generate on-demand backups or download previous archives.</p>
+                                        </div>
+                                        <button class="btn btn-primary" type="button" id="runBackupBtn">
+                                            <span class="spinner-border spinner-border-sm me-2 d-none" role="status" aria-hidden="true"></span>
+                                            <i class="bi bi-hdd-stack me-1"></i>Run Backup Now
+                                        </button>
+                                    </div>
+                                    <div id="backupStatusAlert" class="alert d-none" role="alert"></div>
+                                    <div class="table-responsive flex-grow-1">
+                                        <table class="table table-sm align-middle mb-0">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th scope="col">Created</th>
+                                                    <th scope="col">Type</th>
+                                                    <th scope="col">Size</th>
+                                                    <th scope="col">Status</th>
+                                                    <th scope="col">Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <?php if (empty($backupLogs)): ?>
+                                                    <tr>
+                                                        <td colspan="5" class="text-center text-muted py-4">No backups have been recorded yet.</td>
+                                                    </tr>
+                                                <?php else: ?>
+                                                    <?php foreach ($backupLogs as $log): ?>
+                                                        <?php
+                                                            $badgeClass = [
+                                                                'success' => 'success',
+                                                                'failed' => 'danger',
+                                                                'running' => 'warning'
+                                                            ][$log['status']] ?? 'secondary';
+                                                            $sizeMb = $log['backup_size'] ? round($log['backup_size'] / (1024 * 1024), 2) : 0;
+                                                        ?>
+                                                        <tr>
+                                                            <td>
+                                                                <div class="fw-semibold"><?= htmlspecialchars(date('Y-m-d H:i', strtotime($log['created_at'] ?? ''))) ?></div>
+                                                                <div class="text-muted small">Retention: <?= (int)$log['retention_days'] ?> days</div>
+                                                            </td>
+                                                            <td class="text-capitalize"><?= htmlspecialchars($log['backup_type'] ?? 'manual') ?></td>
+                                                            <td><?= $sizeMb > 0 ? $sizeMb . ' MB' : '—' ?></td>
+                                                            <td>
+                                                                <span class="badge bg-<?= $badgeClass ?>"><?= ucfirst($log['status']) ?></span>
+                                                                <?php if (!empty($log['message'])): ?>
+                                                                    <div class="small text-muted"><?= htmlspecialchars($log['message']) ?></div>
+                                                                <?php endif; ?>
+                                                            </td>
+                                                            <td class="text-nowrap">
+                                                                <a class="btn btn-outline-secondary btn-sm" href="api/system-backup.php?action=download&id=<?= (int)$log['id'] ?>" title="Download">
+                                                                    <i class="bi bi-download"></i>
+                                                                </a>
+                                                                <button type="button" class="btn btn-outline-danger btn-sm ms-1 backup-delete-btn" data-backup-id="<?= (int)$log['id'] ?>" title="Delete">
+                                                                    <i class="bi bi-trash"></i>
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    <?php endforeach; ?>
+                                                <?php endif; ?>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <div class="border rounded-3 p-3">
+                                    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+                                        <div>
+                                            <h6 class="fw-semibold mb-1">Data Import & Export</h6>
+                                            <p class="text-muted small mb-0">Download templates, export live data, or import bulk updates for supported entities.</p>
+                                        </div>
+                                        <div class="text-muted small">
+                                            <i class="bi bi-shield-lock me-1"></i>Access limited to admin, accountant, developer, super admin.
+                                        </div>
+                                    </div>
+                                    <div class="row g-4 align-items-center">
+                                        <div class="col-lg-4">
+                                            <div class="bg-light border rounded-3 p-3 h-100">
+                                                <h6 class="fw-semibold mb-2">Entity Overview</h6>
+                                                <ul class="list-unstyled small mb-0">
+                                                    <?php foreach ($dataPortEntities as $entityKey => $entityMeta): ?>
+                                                        <li class="mb-1">
+                                                            <strong><?= htmlspecialchars($entityMeta['label']) ?></strong>
+                                                            <br>
+                                                            <span class="text-muted">Columns: <?= count($entityMeta['columns']) ?> &bull; Key: <?= htmlspecialchars(strtoupper(implode('/', (array)($entityMeta['match_on'] ?? [])))) ?></span>
+                                                        </li>
+                                                    <?php endforeach; ?>
+                                                </ul>
+                                            </div>
+                                        </div>
+                                        <div class="col-lg-8">
+                                            <div class="row g-3">
+                                                <div class="col-md-6">
+                                                    <label class="form-label">Data Entity</label>
+                                                    <select class="form-select" id="dataPortEntity">
+                                                        <?php foreach ($dataPortEntities as $entityKey => $entityMeta): ?>
+                                                            <option value="<?= htmlspecialchars($entityKey) ?>" <?= $entityKey === $defaultDataPortEntity ? 'selected' : '' ?>><?= htmlspecialchars($entityMeta['label']) ?></option>
+                                                        <?php endforeach; ?>
+                                                    </select>
+                                                </div>
+                                                <div class="col-md-6 d-flex justify-content-md-end align-items-end gap-2">
+                                                    <button type="button" class="btn btn-outline-secondary w-100 w-md-auto" id="downloadTemplateBtn">
+                                                        <i class="bi bi-file-earmark-spreadsheet me-1"></i>Template
+                                                    </button>
+                                                    <button type="button" class="btn btn-outline-primary w-100 w-md-auto" id="exportDataBtn">
+                                                        <i class="bi bi-download me-1"></i>Export
+                                                    </button>
+                                                </div>
+                                                <div class="col-12">
+                                                    <form id="dataImportForm" class="row g-3" enctype="multipart/form-data" novalidate>
+                                                        <div class="col-md-6">
+                                                            <label class="form-label">Upload CSV</label>
+                                                            <input type="file" class="form-control" id="dataImportFile" accept=".csv,text/csv">
+                                                            <div class="form-text">Use UTF-8 CSV with headers from the template.</div>
+                                                        </div>
+                                                        <div class="col-md-3">
+                                                            <label class="form-label">Mode</label>
+                                                            <select class="form-select" id="dataImportMode">
+                                                                <option value="validate">Validate Only</option>
+                                                                <option value="import">Validate &amp; Import</option>
+                                                            </select>
+                                                        </div>
+                                                        <div class="col-md-3 d-flex align-items-end">
+                                                            <button type="submit" class="btn btn-success w-100" id="dataImportSubmit">
+                                                                <span class="spinner-border spinner-border-sm me-2 d-none" role="status" aria-hidden="true"></span>
+                                                                <i class="bi bi-upload me-1"></i>Process File
+                                                            </button>
+                                                        </div>
+                                                    </form>
+                                                    <div id="dataImportStatus" class="alert d-none mt-3" role="alert"></div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     <?php endif; ?>
                 </div>
             </section>
@@ -641,40 +877,228 @@ $visibleSections = array_filter($sections, function ($section) use ($userRole) {
 </div>
 
 <script>
-document.querySelectorAll('.settings-nav-item').forEach((navButton) => {
-    navButton.addEventListener('click', () => {
-        const targetId = navButton.getAttribute('data-section');
-        const section = document.getElementById(targetId);
-        if (!section) {
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.settings-nav-item').forEach((navButton) => {
+        navButton.addEventListener('click', () => {
+            const targetId = navButton.getAttribute('data-section');
+            const section = document.getElementById(targetId);
+            if (!section) {
+                return;
+            }
+            section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    });
+
+    const sectionElements = Array.from(document.querySelectorAll('.settings-section'));
+    const navItems = Array.from(document.querySelectorAll('.settings-nav-item'));
+
+    function updateActiveNav() {
+        const scrollPosition = window.scrollY + 120;
+        let activeId = null;
+        sectionElements.forEach((section) => {
+            if (section.offsetTop <= scrollPosition) {
+                activeId = section.id;
+            }
+        });
+
+        navItems.forEach((item) => {
+            if (item.getAttribute('data-section') === activeId) {
+                item.classList.add('active');
+            } else {
+                item.classList.remove('active');
+            }
+        });
+    }
+
+    updateActiveNav();
+    window.addEventListener('scroll', updateActiveNav);
+
+    const backupFrequencySelect = document.getElementById('backupFrequency');
+    const backupWeekdayWrapper = document.getElementById('backupWeekdayWrapper');
+    if (backupFrequencySelect && backupWeekdayWrapper) {
+        const toggleWeekdayVisibility = () => {
+            if (backupFrequencySelect.value === 'weekly') {
+                backupWeekdayWrapper.classList.remove('d-none');
+            } else {
+                backupWeekdayWrapper.classList.add('d-none');
+            }
+        };
+        toggleWeekdayVisibility();
+        backupFrequencySelect.addEventListener('change', toggleWeekdayVisibility);
+    }
+
+    const csrfToken = '<?= htmlspecialchars($csrfToken) ?>';
+    const runBackupBtn = document.getElementById('runBackupBtn');
+    const backupStatusAlert = document.getElementById('backupStatusAlert');
+    const backupDeleteButtons = document.querySelectorAll('.backup-delete-btn');
+    const dataPortEntitySelect = document.getElementById('dataPortEntity');
+    const downloadTemplateBtn = document.getElementById('downloadTemplateBtn');
+    const exportDataBtn = document.getElementById('exportDataBtn');
+    const dataImportForm = document.getElementById('dataImportForm');
+    const dataImportFile = document.getElementById('dataImportFile');
+    const dataImportMode = document.getElementById('dataImportMode');
+    const dataImportSubmit = document.getElementById('dataImportSubmit');
+    const dataImportStatus = document.getElementById('dataImportStatus');
+
+    function setAlert(message, variant = 'success') {
+        if (!backupStatusAlert) {
             return;
         }
-        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        backupStatusAlert.className = `alert alert-${variant}`;
+        backupStatusAlert.textContent = message;
+        backupStatusAlert.classList.remove('d-none');
+    }
+
+    async function runManualBackup() {
+        if (!runBackupBtn) {
+            return;
+        }
+
+        const spinner = runBackupBtn.querySelector('.spinner-border');
+        if (spinner) {
+            spinner.classList.remove('d-none');
+        }
+        runBackupBtn.disabled = true;
+        backupStatusAlert?.classList.add('d-none');
+
+        try {
+            const response = await fetch('api/system-backup.php?action=run', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    csrf_token: csrfToken,
+                }),
+            });
+
+            const payload = await response.json();
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.message || 'Backup failed');
+            }
+
+            setAlert(payload.message || 'Backup completed successfully');
+            setTimeout(() => window.location.reload(), 1500);
+        } catch (error) {
+            setAlert(error.message || 'Unable to complete backup', 'danger');
+        } finally {
+            if (spinner) {
+                spinner.classList.add('d-none');
+            }
+            runBackupBtn.disabled = false;
+        }
+    }
+
+    async function deleteBackup(id, button) {
+        if (!id || !confirm('Delete this backup permanently?')) {
+            return;
+        }
+
+        button.disabled = true;
+        try {
+            const response = await fetch('api/system-backup.php?action=delete', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    id,
+                    csrf_token: csrfToken,
+                }),
+            });
+            const payload = await response.json();
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.message || 'Failed to delete backup');
+            }
+            setAlert(payload.message || 'Backup deleted');
+            setTimeout(() => window.location.reload(), 1000);
+        } catch (error) {
+            setAlert(error.message || 'Unable to delete backup', 'danger');
+            button.disabled = false;
+        }
+    }
+
+    runBackupBtn?.addEventListener('click', runManualBackup);
+    backupDeleteButtons.forEach((btn) => {
+        btn.addEventListener('click', () => deleteBackup(parseInt(btn.dataset.backupId || '0', 10), btn));
+    });
+
+    const getSelectedEntity = () => dataPortEntitySelect?.value || '';
+
+    downloadTemplateBtn?.addEventListener('click', () => {
+        const entity = getSelectedEntity();
+        if (!entity) {
+            alert('Select an entity first.');
+            return;
+        }
+        window.open(`api/data-port.php?action=template&entity=${encodeURIComponent(entity)}`);
+    });
+
+    exportDataBtn?.addEventListener('click', () => {
+        const entity = getSelectedEntity();
+        if (!entity) {
+            alert('Select an entity first.');
+            return;
+        }
+        window.open(`api/data-port.php?action=export&entity=${encodeURIComponent(entity)}`);
+    });
+
+    const setImportAlert = (message, variant = 'success') => {
+        if (!dataImportStatus) {
+            return;
+        }
+        dataImportStatus.className = `alert alert-${variant}`;
+        dataImportStatus.textContent = message;
+        dataImportStatus.classList.remove('d-none');
+    };
+
+    dataImportForm?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const entity = getSelectedEntity();
+        if (!entity) {
+            setImportAlert('Select an entity to process.', 'danger');
+            return;
+        }
+        if (!dataImportFile?.files?.length) {
+            setImportAlert('Choose a CSV file to upload.', 'danger');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('action', 'import');
+        formData.append('entity', entity);
+        formData.append('mode', dataImportMode?.value || 'validate');
+        formData.append('csrf_token', csrfToken);
+        formData.append('file', dataImportFile.files[0]);
+
+        const spinner = dataImportSubmit?.querySelector('.spinner-border');
+        spinner?.classList.remove('d-none');
+        if (dataImportSubmit) {
+            dataImportSubmit.disabled = true;
+        }
+        dataImportStatus?.classList.add('d-none');
+
+        try {
+            const response = await fetch('api/data-port.php', {
+                method: 'POST',
+                body: formData,
+            });
+            const payload = await response.json();
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.message || 'Import failed');
+            }
+            const summary = payload.message || `Completed. Inserted ${payload.inserted || 0}, updated ${payload.updated || 0}.`;
+            setImportAlert(summary, 'success');
+        } catch (error) {
+            setImportAlert(error.message || 'Unable to process file', 'danger');
+        } finally {
+            spinner?.classList.add('d-none');
+            if (dataImportSubmit) {
+                dataImportSubmit.disabled = false;
+            }
+        }
     });
 });
-
-const sectionElements = Array.from(document.querySelectorAll('.settings-section'));
-const navItems = Array.from(document.querySelectorAll('.settings-nav-item'));
-
-function updateActiveNav() {
-    const scrollPosition = window.scrollY + 120;
-    let activeId = null;
-    sectionElements.forEach((section) => {
-        if (section.offsetTop <= scrollPosition) {
-            activeId = section.id;
-        }
-    });
-
-    navItems.forEach((item) => {
-        if (item.getAttribute('data-section') === activeId) {
-            item.classList.add('active');
-        } else {
-            item.classList.remove('active');
-        }
-    });
-}
-
-updateActiveNav();
-window.addEventListener('scroll', updateActiveNav);
 </script>
 
 <?php include 'includes/footer.php'; ?>

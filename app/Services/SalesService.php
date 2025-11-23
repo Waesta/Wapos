@@ -4,6 +4,7 @@ namespace App\Services;
 
 use PDO;
 use PDOException;
+use Throwable;
 
 /**
  * Sales Service
@@ -173,16 +174,21 @@ class SalesService
             // Update inventory
             $this->updateInventory($data['items']);
 
-            // Post to accounting (idempotent)
-            $this->accountingService->postSale($saleId, [
-                'subtotal' => $subtotal,
-                'tax' => $taxAmount,
-                'discount' => $discountAmount,
-                'total' => $grandTotal,
-                'payment_method' => $paymentMethod,
-                'amount_paid' => $amountPaid,
-                'change_amount' => $changeAmount,
-            ]);
+            $accountingWarning = null;
+            try {
+                $this->accountingService->postSale($saleId, [
+                    'subtotal' => $subtotal,
+                    'tax' => $taxAmount,
+                    'discount' => $discountAmount,
+                    'total' => $grandTotal,
+                    'payment_method' => $paymentMethod,
+                    'amount_paid' => $amountPaid,
+                    'change_amount' => $changeAmount,
+                ]);
+            } catch (Throwable $accountingException) {
+                $accountingWarning = $accountingException->getMessage();
+                error_log(sprintf('Accounting post failed for sale %s: %s', $saleNumber, $accountingWarning));
+            }
 
             if ($paymentMethod === 'room_charge' && $roomBookingId) {
                 $description = trim((string)($data['room_charge_description'] ?? ''));
@@ -211,7 +217,8 @@ class SalesService
                 'sale_number' => $saleNumber,
                 'message' => 'Sale created successfully',
                 'status_code' => 201,
-                'is_duplicate' => false
+                'is_duplicate' => false,
+                'accounting_warning' => $accountingWarning,
             ];
 
         } catch (PDOException $e) {

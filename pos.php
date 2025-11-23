@@ -56,6 +56,10 @@ try {
     $checkedInRooms = [];
 }
 
+$gatewayProvider = strtolower((string)(settings('payments_gateway_provider') ?? ''));
+$isGatewayEnabled = in_array($gatewayProvider, ['relworx', 'pesapal'], true);
+$currencyCode = settings('currency_code') ?? 'KES';
+
 $pageTitle = 'Point of Sale';
 include 'includes/header.php';
 ?>
@@ -432,6 +436,25 @@ include 'includes/header.php';
                                 </div>
                                 <small class="text-muted">Tip: use Alt + number keys (1-4) for quick tender amounts.</small>
                             </div>
+                            <div class="col-lg-6 d-none" id="mobileMoneyInputWrap">
+                                <label for="mobileMoneyPhone" class="form-label">Customer Mobile Number</label>
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text"><i class="bi bi-phone"></i></span>
+                                    <input type="tel"
+                                           class="form-control"
+                                           id="mobileMoneyPhone"
+                                           placeholder="e.g. +2567..."
+                                           autocomplete="tel"
+                                           inputmode="tel">
+                                </div>
+                                <small class="text-muted">Use international format. The prompt will be sent to this number.</small>
+                            </div>
+                        </div>
+
+                        <div class="row g-2 mt-2 d-none" id="mobileMoneyStatusWrap">
+                            <div class="col-12">
+                                <div id="mobileMoneyStatus" class="alert alert-info small mb-0"></div>
+                            </div>
                         </div>
 
                         <div class="row g-3 mt-1" id="roomChargeSection" style="display:none;">
@@ -644,6 +667,17 @@ const TAX_RATE = 16; // Default tax rate percentage
 
 // Currency configuration from PHP
 const CURRENCY_CONFIG = <?= json_encode(CurrencyManager::getInstance()->getJavaScriptConfig()) ?>;
+const CURRENCY_CODE = '<?= addslashes($currencyCode) ?>';
+const MOBILE_MONEY_GATEWAY_ENABLED = <?= $isGatewayEnabled ? 'true' : 'false' ?>;
+const MOBILE_MONEY_GATEWAY_PROVIDER = '<?= addslashes($gatewayProvider) ?>';
+let mobileMoneyPollTimeout = null;
+let mobileMoneyCurrentReference = null;
+let mobileMoneyPollAttempts = 0;
+const MOBILE_MONEY_POLL_INTERVAL = 4000;
+const MOBILE_MONEY_POLL_MAX_ATTEMPTS = 30;
+const FINALIZE_BUTTON_DEFAULT_HTML = '<i class="bi bi-check-circle me-2"></i>Complete Transaction';
+const MOBILE_MONEY_SUCCESS_STATUSES = ['success', 'completed', 'paid', 'approved'];
+const MOBILE_MONEY_FAILURE_STATUSES = ['failed', 'declined', 'cancelled', 'expired', 'error'];
 
 // Currency formatting function
 function formatCurrency(amount) {
@@ -676,6 +710,19 @@ function refreshPaymentUIState() {
     const paymentMethod = document.getElementById('paymentMethod').value;
     const processBtn = document.getElementById('processPaymentBtn');
     const holdBtn = document.getElementById('holdOrderBtn');
+    const paymentModal = document.getElementById('paymentConfirmationModal');
+    if (paymentModal) {
+        paymentModal.addEventListener('hide.bs.modal', () => {
+            const activeElement = document.activeElement;
+            if (activeElement && paymentModal.contains(activeElement)) {
+                activeElement.blur();
+            }
+            setTimeout(() => {
+                document.getElementById('customerName')?.focus();
+            }, 0);
+        });
+    }
+
     const roomSelect = document.getElementById('roomBookingSelect');
     const cartHasItems = cart.length > 0;
 
@@ -900,12 +947,203 @@ function clearCart() {
 }
 
 // Payment method change handler
+function isGatewayMobileMoneyEnabled() {
+    return MOBILE_MONEY_GATEWAY_ENABLED === true;
+}
+
+function setMobileMoneyStatus(message, type = 'info') {
+    const wrap = document.getElementById('mobileMoneyStatusWrap');
+    const statusEl = document.getElementById('mobileMoneyStatus');
+    if (!wrap || !statusEl) {
+        return;
+    }
+    wrap.classList.remove('d-none');
+    wrap.style.display = 'block';
+    statusEl.className = `alert alert-${type} small mb-0`;
+    statusEl.textContent = message;
+}
+
+function clearMobileMoneyStatus() {
+    const wrap = document.getElementById('mobileMoneyStatusWrap');
+    const statusEl = document.getElementById('mobileMoneyStatus');
+    if (wrap) {
+        wrap.classList.add('d-none');
+        wrap.style.display = 'none';
+    }
+    if (statusEl) {
+        statusEl.textContent = '';
+    }
+    if (mobileMoneyPollTimeout) {
+        clearTimeout(mobileMoneyPollTimeout);
+        mobileMoneyPollTimeout = null;
+    }
+    mobileMoneyCurrentReference = null;
+    mobileMoneyPollAttempts = 0;
+}
+
+function getFinalizeButton() {
+    return document.querySelector('#paymentConfirmationModal .btn-success');
+}
+
+function setFinalizeButton(label, disabled = false) {
+    const btn = getFinalizeButton();
+    if (!btn) {
+        return null;
+    }
+    if (label) {
+        btn.innerHTML = label;
+    }
+    btn.disabled = disabled;
+    return btn;
+}
+
+function resetFinalizeButton() {
+    setFinalizeButton(FINALIZE_BUTTON_DEFAULT_HTML, false);
+}
+
+function normalizeGatewayStatus(status) {
+    return (status || '').toString().trim().toLowerCase();
+}
+
+function isMobileMoneySuccess(status) {
+    return MOBILE_MONEY_SUCCESS_STATUSES.includes(normalizeGatewayStatus(status));
+}
+
+function isMobileMoneyFailure(status) {
+    return MOBILE_MONEY_FAILURE_STATUSES.includes(normalizeGatewayStatus(status));
+}
+
+async function initiateMobileMoneyPayment(payment) {
+    if (!payment.mobileMoneyPhone) {
+        alert('Customer phone number is required for mobile money payments.');
+        resetFinalizeButton();
+        return;
+    }
+
+    try {
+        setMobileMoneyStatus('Sending mobile money prompt to customer...', 'info');
+        setFinalizeButton('<i class="bi bi-phone me-2"></i>Waiting for customer approval', true);
+
+        const contextId = payment.contextId || Date.now();
+        payment.contextId = contextId;
+
+        const payload = {
+            amount: payment.total,
+            currency: CURRENCY_CODE,
+            customer_phone: payment.mobileMoneyPhone,
+            customer_name: payment.customerName || null,
+            customer_email: payment.customerEmail || null,
+            metadata: {
+                source: 'pos',
+                customer_contact_phone: payment.customerContactPhone || null,
+                cart_items: cart.map(item => ({
+                    product_id: item.id,
+                    name: item.name,
+                    qty: item.quantity,
+                    price: item.price,
+                    total: item.total
+                }))
+            },
+            context_type: 'pos_sale',
+            context_id: contextId
+        };
+
+        const response = await fetch('api/payments/initiate.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+        if (!result.success) {
+            throw new Error(result.message || 'Unable to initiate payment');
+        }
+
+        const data = result.data || {};
+        payment.gatewayReference = data.reference;
+        mobileMoneyCurrentReference = data.reference;
+        mobileMoneyPollAttempts = 0;
+
+        if (data.instructions) {
+            setMobileMoneyStatus(data.instructions, 'info');
+        } else {
+            setMobileMoneyStatus('Prompt sent. Waiting for customer confirmation...', 'info');
+        }
+
+        const initialStatus = normalizeGatewayStatus(data.status);
+        if (isMobileMoneySuccess(initialStatus)) {
+            await finalizePayment(true);
+            return;
+        }
+
+        pollMobileMoneyStatus();
+    } catch (error) {
+        console.error('Mobile money initiation error:', error);
+        setMobileMoneyStatus(`Failed to initiate payment: ${error.message}`, 'danger');
+        resetFinalizeButton();
+    }
+}
+
+async function pollMobileMoneyStatus() {
+    if (!mobileMoneyCurrentReference) {
+        return;
+    }
+
+    mobileMoneyPollAttempts += 1;
+    if (mobileMoneyPollAttempts > MOBILE_MONEY_POLL_MAX_ATTEMPTS) {
+        setMobileMoneyStatus('Payment is still pending. Please confirm with the customer or try again.', 'warning');
+        resetFinalizeButton();
+        return;
+    }
+
+    try {
+        const response = await fetch(`api/payments/status.php?reference=${encodeURIComponent(mobileMoneyCurrentReference)}`);
+        const result = await response.json();
+
+        if (!result.success || !result.data) {
+            throw new Error(result.message || 'Unable to fetch payment status');
+        }
+
+        const record = result.data;
+        const status = normalizeGatewayStatus(record.status);
+
+        if (isMobileMoneySuccess(status)) {
+            setMobileMoneyStatus('Payment confirmed! Completing sale...', 'success');
+            await finalizePayment(true);
+            return;
+        }
+
+        if (isMobileMoneyFailure(status)) {
+            setMobileMoneyStatus(`Payment failed: ${record.status}`, 'danger');
+            resetFinalizeButton();
+            return;
+        }
+
+        if (record.instructions) {
+            setMobileMoneyStatus(record.instructions, 'info');
+        } else {
+            setMobileMoneyStatus('Awaiting customer confirmation...', 'info');
+        }
+
+        mobileMoneyPollTimeout = setTimeout(() => {
+            pollMobileMoneyStatus();
+        }, MOBILE_MONEY_POLL_INTERVAL);
+    } catch (error) {
+        console.error('Mobile money status error:', error);
+        setMobileMoneyStatus(`Error checking payment status: ${error.message}`, 'danger');
+        resetFinalizeButton();
+    }
+}
+
 function handlePaymentMethodChange() {
     const paymentMethod = document.getElementById('paymentMethod').value;
     const cashWrap = document.getElementById('cashPaymentWrap');
     const cashAlerts = document.getElementById('cashAlerts');
     const roomChargeSection = document.getElementById('roomChargeSection');
-    const processBtn = document.getElementById('processPaymentBtn');
+    const mobileMoneyInputWrap = document.getElementById('mobileMoneyInputWrap');
+    const mobileMoneyStatusWrap = document.getElementById('mobileMoneyStatusWrap');
 
     if (paymentMethod === 'cash') {
         if (cashWrap) {
@@ -914,6 +1152,13 @@ function handlePaymentMethodChange() {
         if (roomChargeSection) {
             roomChargeSection.style.display = 'none';
         }
+        if (mobileMoneyInputWrap) {
+            mobileMoneyInputWrap.style.display = 'none';
+        }
+        if (mobileMoneyStatusWrap) {
+            mobileMoneyStatusWrap.style.display = 'none';
+        }
+        const processBtn = document.getElementById('processPaymentBtn');
         if (processBtn) {
             processBtn.innerHTML = '<i class="bi bi-cash me-2"></i>Process Cash Payment';
         }
@@ -926,10 +1171,36 @@ function handlePaymentMethodChange() {
             cashAlerts.style.display = 'none';
         }
 
+        const mobileMoneyGatewayActive = paymentMethod === 'mobile_money' && isGatewayMobileMoneyEnabled();
+        if (paymentMethod === 'mobile_money') {
+            mobileMoneyInputWrap?.classList.remove('d-none');
+            mobileMoneyInputWrap && (mobileMoneyInputWrap.style.display = 'block');
+            if (mobileMoneyStatusWrap) {
+                mobileMoneyStatusWrap.classList.toggle('d-none', !mobileMoneyGatewayActive);
+                mobileMoneyStatusWrap.style.display = mobileMoneyGatewayActive ? 'block' : 'none';
+                const infoEl = document.getElementById('mobileMoneyStatus');
+                if (infoEl) {
+                    infoEl.textContent = mobileMoneyGatewayActive
+                        ? 'A mobile money prompt will be sent to the customer phone. Await confirmation.'
+                        : 'Record the transaction reference after the customer confirms payment.';
+                }
+            }
+            if (!mobileMoneyGatewayActive) {
+                clearMobileMoneyStatus();
+            }
+        } else {
+            mobileMoneyInputWrap?.classList.add('d-none');
+            if (mobileMoneyInputWrap) mobileMoneyInputWrap.style.display = 'none';
+            mobileMoneyStatusWrap?.classList.add('d-none');
+            if (mobileMoneyStatusWrap) mobileMoneyStatusWrap.style.display = 'none';
+            clearMobileMoneyStatus();
+        }
+
         if (paymentMethod === 'room_charge') {
             if (roomChargeSection) {
                 roomChargeSection.style.display = 'flex';
             }
+            const processBtn = document.getElementById('processPaymentBtn');
             if (processBtn) {
                 processBtn.innerHTML = '<i class="bi bi-door-open me-2"></i>Charge to Room';
             }
@@ -937,6 +1208,7 @@ function handlePaymentMethodChange() {
             if (roomChargeSection) {
                 roomChargeSection.style.display = 'none';
             }
+            const processBtn = document.getElementById('processPaymentBtn');
             if (processBtn) {
                 const label = formatPaymentMethodLabel(paymentMethod);
                 processBtn.innerHTML = '<i class="bi bi-credit-card me-2"></i>Process ' + label + ' Payment';
@@ -1040,6 +1312,10 @@ function processPayment() {
     }
     
     const paymentMethod = document.getElementById('paymentMethod').value;
+    const customerNameInput = document.getElementById('customerName');
+    const customerNameValue = customerNameInput ? customerNameInput.value.trim() : '';
+    const contactPhoneInput = document.getElementById('customerPhone');
+    const contactPhoneValue = contactPhoneInput ? contactPhoneInput.value.trim() : '';
     const subtotal = cart.reduce((sum, item) => sum + item.total, 0);
     const taxAmount = subtotal * (TAX_RATE / 100);
     const total = subtotal + taxAmount;
@@ -1091,11 +1367,28 @@ function processPayment() {
     }
     
     // Show payment confirmation modal
-    const extras = {};
+    const extras = {
+        customerName: customerNameValue || null,
+        customerContactPhone: contactPhoneValue || null,
+    };
     if (paymentMethod === 'room_charge') {
         extras.roomBookingId = roomBookingId;
         extras.roomChargeDescription = roomChargeDescription;
         extras.roomBookingLabel = roomBookingLabel;
+    }
+    if (paymentMethod === 'mobile_money') {
+        const phoneInput = document.getElementById('mobileMoneyPhone');
+        const phoneValue = phoneInput ? phoneInput.value.trim() : '';
+        if (phoneValue.length < 7) {
+            alert('Please provide the customer phone number to send the payment prompt.');
+            phoneInput?.focus();
+            return;
+        }
+        extras.mobileMoneyPhone = phoneValue;
+        if (isGatewayMobileMoneyEnabled()) {
+            amountPaid = 0;
+            changeAmount = 0;
+        }
     }
 
     showPaymentConfirmation(subtotal, taxAmount, total, paymentMethod, amountPaid, changeAmount, extras);
@@ -1261,12 +1554,14 @@ async function finalizePayment() {
             saleData.room_charge_description = payment.roomChargeDescription;
         }
     }
+    if (payment.paymentMethod === 'mobile_money' && payment.gatewayReference) {
+        saleData.gateway_reference = payment.gatewayReference;
+    }
     
     // Disable button to prevent double-clicking
-    const finalizeBtn = document.querySelector('#paymentConfirmationModal .btn-success');
-    const originalText = finalizeBtn.innerHTML;
-    finalizeBtn.disabled = true;
-    finalizeBtn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Processing...';
+    const finalizeBtn = getFinalizeButton();
+    const originalText = finalizeBtn ? finalizeBtn.innerHTML : FINALIZE_BUTTON_DEFAULT_HTML;
+    setFinalizeButton('<i class="bi bi-hourglass-split me-2"></i>Processing...', true);
     
     try {
         const response = await fetch('api/complete-sale.php', {
@@ -1296,6 +1591,7 @@ async function finalizePayment() {
             document.getElementById('customerName').value = '';
             document.getElementById('amountTendered').value = '';
             calculateChange();
+            clearMobileMoneyStatus();
             window.pendingPayment = null;
             
             // Ask if want to print receipt
@@ -1309,18 +1605,19 @@ async function finalizePayment() {
         alert('Error completing sale: ' + error.message);
     } finally {
         // Re-enable button
-        finalizeBtn.disabled = false;
-        finalizeBtn.innerHTML = originalText;
+        setFinalizeButton(originalText, false);
     }
 }
 
 // Initialize payment interface
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize totals with currency formatting
-    document.getElementById('subtotal').textContent = formatCurrency(0);
-    document.getElementById('taxAmount').textContent = formatCurrency(0);
-    document.getElementById('total').textContent = formatCurrency(0);
-    document.getElementById('changeAmount').textContent = formatCurrency(0);
+    ['subtotal', 'taxAmount', 'total', 'changeAmount'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.textContent = formatCurrency(0);
+        }
+    });
 
     const productsList = document.getElementById('productsList');
     const addButtons = document.querySelectorAll('.add-to-cart-btn');
@@ -1592,6 +1889,9 @@ function deleteHeldOrder(index) {
 
 function updateHoldOrderButton() {
     const holdBtn = document.getElementById('holdOrderBtn');
+    if (!holdBtn) {
+        return;
+    }
     holdBtn.disabled = cart.length === 0;
 }
 

@@ -13,9 +13,11 @@ require_once 'includes/bootstrap.php';
 
 // If already logged in, redirect to dashboard
 if ($auth->isLoggedIn()) {
-    $role = $auth->getUser()['role'];
-    
+    $role = strtolower($auth->getUser()['role'] ?? '');
+
     switch ($role) {
+        case 'super_admin':
+        case 'developer':
         case 'admin':
             redirect('dashboards/admin.php');
             break;

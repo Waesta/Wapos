@@ -8,7 +8,30 @@ use Throwable;
 header('Content-Type: application/json');
 ob_start();
 
+$completeSaleResponded = false;
+register_shutdown_function(function () use (&$completeSaleResponded) {
+    if ($completeSaleResponded) {
+        return;
+    }
+
+    $error = error_get_last();
+    if ($error && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR], true)) {
+        $buffer = ob_get_clean();
+        if ($buffer !== '' && stripos($buffer, '<br') !== false) {
+            error_log('complete-sale fatal buffer: ' . strip_tags($buffer));
+        }
+        http_response_code(500);
+        header('Content-Type: application/json');
+        echo json_encode([
+            'success' => false,
+            'message' => 'A fatal error occurred while completing the sale. Check server logs for details.',
+        ]);
+    }
+});
+
 function respondJson(int $status, array $payload, string $buffer = ''): void {
+    global $completeSaleResponded;
+    $completeSaleResponded = true;
     if ($buffer !== '') {
         error_log('complete-sale buffer: ' . $buffer);
     }
@@ -122,6 +145,10 @@ try {
 
     $statusCode = $result['status_code'] ?? 200;
     unset($result['status_code']);
+
+    if (!empty($result['accounting_warning'])) {
+        error_log('complete-sale accounting warning: ' . $result['accounting_warning']);
+    }
 
     $buffer = ob_get_clean();
     respondJson($statusCode, $result, $buffer);

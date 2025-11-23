@@ -226,43 +226,122 @@ Send test message:
 
 ### Automated Backups
 
-**Setup Cron Job (cPanel):**
+Daily/weekly/hourly automation is now controlled from **Settings → Data Protection & Backups**.
+
+1. Choose frequency (hourly/daily/weekly), run time, weekly day (if applicable), retention window, and storage path.
+2. Click **Save Changes** to persist settings. This automatically updates the `scheduled_tasks` table and next-run timestamp.
+3. Configure your OS scheduler to call the bundled runner:
 
 ```bash
-# Daily backup at 2 AM
-0 2 * * * cd /home/username/public_html/wapos && php deploy.php backup
+# Example cron (Linux) – runs every hour
+0 * * * * cd /path/to/wapos && /usr/bin/php scripts/run-scheduled-tasks.php >> storage/logs/scheduler.log 2>&1
 ```
 
-**Manual Backup:**
+On Windows Task Scheduler use:
+```
+Program/script: php.exe
+Arguments: c:\xampp\htdocs\wapos\scripts\run-scheduled-tasks.php
+Start in: c:\xampp\htdocs\wapos
+```
+
+Every time the runner executes, it checks `scheduled_tasks` for due jobs, performs backups via `SystemBackupService`, and auto-purges expired archives per retention policy.
+
+**Manual Backup (UI):**
+
+1. Navigate to **Settings → Data Protection & Backups**.
+2. Click **Run Backup Now**. Progress + result appear inline and the page refreshes to show the new entry.
+
+**Manual Backup (CLI fallback):**
 
 ```bash
-php deploy.php backup
+php scripts/run-scheduled-tasks.php  # Executes any due job immediately
 ```
-
-Backups stored in `/backups/` directory.
 
 ### Restore Procedure
 
-1. **Stop all operations** (maintenance mode)
-
-2. **Restore database:**
+1. **Stop all operations** (maintenance mode or take site offline).
+2. Locate the `.zip` backup from `/backups` (default) or your custom storage directory.
+3. Extract the archive to obtain the `.sql` file.
+4. Import database dump:
    ```bash
-   php deploy.php restore backups/db_2025-10-31_02-00-00.sql
+   mysql -u DB_USER -p DB_NAME < path/to/backup.sql
    ```
-
-3. **Verify data integrity:**
+5. **Verify data integrity:**
    - Check recent sales
    - Verify inventory counts
    - Test user login
+6. **Exit maintenance mode** once validation passes.
 
-4. **Exit maintenance mode**
+### Backup Retention & Verification
 
-### Backup Retention
+- Retention is enforced automatically using the configured day count. Old files and log rows are deleted after each successful run.
+- For additional resilience, mirror `/backups` onto off-site storage (S3, Google Drive, etc.).
+- Monthly test: download the latest backup, restore to a staging database, and spot-check the dashboard to ensure dumps remain valid.
 
-- Keep last 7 daily backups
-- Keep last 4 weekly backups
-- Keep last 12 monthly backups
-- Store off-site (Google Drive, Dropbox)
+### Scheduled Backup Testing Checklist
+
+1. Adjust the schedule to run within the next 5 minutes (e.g., hourly, current minute +1).
+2. Wait for the cron/Task Scheduler window or trigger `php scripts/run-scheduled-tasks.php` manually.
+3. Confirm the new row appears under **Manual Backups & History** with `Status = Success`.
+4. Download the archive via the download icon and verify it opens and contains the `.sql` dump.
+5. Confirm expired backups past retention are no longer listed.
+
+---
+
+## Data Import & Export
+
+### Supported Entities
+
+- Products (SKU, pricing, stock metadata)
+- Customers (contact & address basics)
+- Suppliers (contact, tax details)
+- Users (role assignments, status)
+
+The full column definitions and keys are shown in **Settings → Data Protection & Backups → Data Import & Export**.
+
+### Templates
+
+1. Go to the Data Import & Export card.
+2. Pick an entity from the dropdown.
+3. Click **Template** to download headers-only CSV.
+4. Populate the file using UTF-8 encoding. Required columns are marked in the UI.
+
+### Exporting Live Data
+
+1. Select the entity.
+2. Click **Export** to download the current dataset as CSV (includes headers + data).
+3. Use filters/transformations externally if needed; re-import uses the same column order.
+
+### Import Workflow
+
+1. Select entity.
+2. Choose **Validate Only** to check data without changes, or **Validate & Import** to perform inserts/updates.
+3. Upload the CSV produced from template/export.
+4. Click **Process File**.
+5. Status banner shows success counts or validation errors (including row numbers and column names).
+
+### Matching & Updates
+
+- Products: matched by SKU
+- Customers: matched by email, then phone if email blank
+- Suppliers: matched by name
+- Users: matched by username
+
+When a match is found, the row updates the existing record. Otherwise, a new record is inserted. Passwords are required only when creating new users (hashing handled server-side).
+
+### Import Safety Tips
+
+1. **Always validate first** when working with new templates or external data.
+2. Keep backups before mass changes; use **Run Backup Now** if uncertain.
+3. For large files (>5k rows), split into smaller batches to avoid PHP execution limits.
+4. Numeric columns accept plain numbers (no commas). Boolean columns accept 1/0 or Yes/No.
+
+### Troubleshooting Imports
+
+- **“Missing required columns”** → ensure headers exactly match the template (case insensitive).
+- **“Invalid value for Role”** → role must be one of the allowed options displayed on the form.
+- **“Unable to open uploaded file”** → confirm PHP upload limits (`upload_max_filesize`, `post_max_size`).
+- **Partial updates** → results panel indicates how many rows inserted/updated; rerun export to confirm.
 
 ---
 
