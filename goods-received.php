@@ -1,8 +1,12 @@
 <?php
 require_once 'includes/bootstrap.php';
+
+use App\Services\Inventory\InventoryService;
+
 $auth->requireRole(['admin', 'manager', 'inventory_manager']);
 
 $db = Database::getInstance();
+$inventoryService = new InventoryService($db->getConnection());
 
 // Ensure GRN tables exist (auto-migration for legacy installs)
 try {
@@ -139,14 +143,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($product) {
                     $oldQty = (float)$product['stock_quantity'];
                     $newQty = $oldQty + $receivedQty;
-                    
-                    // Update stock and cost price
+
+                    // Update latest cost
                     $db->update('products', [
-                        'stock_quantity' => $newQty,
                         'cost_price' => $unitCost
                     ], 'id = :id', ['id' => $item['product_id']]);
-                    
-                    // Log stock movement
+
+                    // Record inbound movement via unified inventory service
+                    $inventoryService->recordInboundMovement((int) $item['product_id'], $receivedQty, [
+                        'movement_type' => 'grn',
+                        'reference_type' => 'grn',
+                        'reference_id' => $grnId,
+                        'reference_number' => $grnNumber,
+                        'notes' => 'Invoice: ' . $invoiceNumber,
+                        'user_id' => $auth->getUserId(),
+                        'source_module' => 'inventory',
+                        'unit_cost' => $unitCost
+                    ]);
+
+                    // Legacy stock movement log for backward compatibility
                     $db->insert('stock_movements', [
                         'product_id' => $item['product_id'],
                         'movement_type' => 'in',

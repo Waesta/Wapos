@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Services\Inventory\InventoryService;
 use PDO;
 use PDOException;
 use Throwable;
@@ -14,13 +15,15 @@ class SalesService
 {
     private PDO $db;
     private AccountingService $accountingService;
+    private InventoryService $inventoryService;
     private bool $roomChargePaymentEnsured = false;
     private ?RoomBookingService $roomBookingService = null;
 
-    public function __construct(PDO $db, AccountingService $accountingService)
+    public function __construct(PDO $db, AccountingService $accountingService, ?InventoryService $inventoryService = null)
     {
         $this->db = $db;
         $this->accountingService = $accountingService;
+        $this->inventoryService = $inventoryService ?? new InventoryService($db);
     }
 
     private function ensureRoomChargePaymentMethod(): void
@@ -171,8 +174,14 @@ class SalesService
                 $this->addSaleItem($saleId, $item);
             }
 
-            // Update inventory
-            $this->updateInventory($data['items']);
+            // Update inventory via unified inventory service
+            $this->updateInventory(
+                $data['items'],
+                $saleNumber,
+                $saleId,
+                (int) $userId,
+                $data['module_scope'] ?? 'retail'
+            );
 
             $accountingWarning = null;
             try {
@@ -305,14 +314,20 @@ class SalesService
     /**
      * Update inventory after sale
      */
-    private function updateInventory(array $items): void
+    private function updateInventory(array $items, string $saleNumber, int $saleId, int $userId, string $moduleScope): void
     {
         foreach ($items as $item) {
-            $sql = "UPDATE products 
-                    SET stock_quantity = stock_quantity - ? 
-                    WHERE id = ?";
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute([$item['qty'], $item['product_id']]);
+            $this->inventoryService->recordOutboundMovement((int) $item['product_id'], (float) $item['qty'], [
+                'movement_type' => 'sale',
+                'reference_type' => 'sale',
+                'reference_id' => $saleId,
+                'reference_number' => $saleNumber,
+                'source_module' => $moduleScope,
+                'notes' => 'Sale #' . $saleNumber,
+                'user_id' => $userId,
+                'log_consumption' => in_array($moduleScope, ['restaurant', 'housekeeping', 'maintenance'], true),
+                'consumption_reason' => $moduleScope === 'restaurant' ? 'sale' : 'task',
+            ]);
         }
     }
 

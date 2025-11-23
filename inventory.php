@@ -1,8 +1,12 @@
 <?php
 require_once 'includes/bootstrap.php';
+
+use App\Services\Inventory\InventoryService;
+
 $auth->requireRole(['admin', 'manager', 'inventory_manager']);
 
 $db = Database::getInstance();
+$inventoryService = new InventoryService($db->getConnection());
 
 // Handle actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -14,54 +18,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     try {
         if ($action === 'adjust_stock') {
-            $productId = $_POST['product_id'];
-            $adjustmentType = $_POST['adjustment_type']; // 'in', 'out', 'transfer', 'damaged'
-            $quantity = (float)$_POST['quantity'];
+            $productId = (int) $_POST['product_id'];
+            $adjustmentType = $_POST['adjustment_type'];
+            $quantity = (float) $_POST['quantity'];
             $reason = sanitizeInput($_POST['reason']);
             $notes = sanitizeInput($_POST['notes'] ?? '');
-            
-            // Get current stock
+
             $product = $db->fetchOne("SELECT * FROM products WHERE id = ?", [$productId]);
             if (!$product) {
                 throw new Exception('Product not found');
             }
-            
-            $oldQuantity = $product['stock_quantity'];
-            $newQuantity = $oldQuantity;
-            
+
+            $allowNegative = in_array($adjustmentType, ['set'], true);
+            $currentStock = (float) $product['stock_quantity'];
+
             switch ($adjustmentType) {
                 case 'in':
-                    $newQuantity = $oldQuantity + $quantity;
+                    $inventoryService->recordInboundMovement($productId, $quantity, [
+                        'movement_type' => 'adjustment',
+                        'reference_type' => 'manual_adjustment',
+                        'reference_number' => $reason,
+                        'notes' => $notes,
+                        'user_id' => $auth->getUserId(),
+                        'source_module' => 'inventory'
+                    ]);
                     break;
                 case 'out':
                 case 'damaged':
-                    $newQuantity = $oldQuantity - $quantity;
+                    $inventoryService->recordOutboundMovement($productId, $quantity, [
+                        'movement_type' => $adjustmentType,
+                        'reference_type' => 'manual_adjustment',
+                        'reference_number' => $reason,
+                        'notes' => $notes,
+                        'user_id' => $auth->getUserId(),
+                        'source_module' => 'inventory',
+                        'allow_negative' => $allowNegative,
+                        'log_consumption' => $adjustmentType === 'damaged',
+                        'consumption_reason' => 'wastage'
+                    ]);
                     break;
                 case 'set':
-                    $newQuantity = $quantity;
+                    $delta = $quantity - $currentStock;
+                    if ($delta > 0) {
+                        $inventoryService->recordInboundMovement($productId, $delta, [
+                            'movement_type' => 'adjustment',
+                            'reference_type' => 'manual_adjustment',
+                            'reference_number' => 'Set stock',
+                            'notes' => $notes,
+                            'user_id' => $auth->getUserId(),
+                            'source_module' => 'inventory'
+                        ]);
+                    } elseif ($delta < 0) {
+                        $inventoryService->recordOutboundMovement($productId, abs($delta), [
+                            'movement_type' => 'adjustment',
+                            'reference_type' => 'manual_adjustment',
+                            'reference_number' => 'Set stock',
+                            'notes' => $notes,
+                            'user_id' => $auth->getUserId(),
+                            'source_module' => 'inventory',
+                            'allow_negative' => true
+                        ]);
+                    }
                     break;
+                default:
+                    throw new Exception('Unsupported adjustment type');
             }
-            
-            // Update product stock
-            $db->update('products', 
-                ['stock_quantity' => $newQuantity], 
-                'id = :id', 
-                ['id' => $productId]
-            );
-            
-            // Log stock movement
-            $db->insert('stock_movements', [
-                'product_id' => $productId,
-                'movement_type' => $adjustmentType,
-                'quantity' => $quantity,
-                'old_quantity' => $oldQuantity,
-                'new_quantity' => $newQuantity,
-                'reason' => $reason,
-                'notes' => $notes,
-                'user_id' => $auth->getUserId(),
-                'created_at' => date('Y-m-d H:i:s')
-            ]);
-            
+
             $_SESSION['success_message'] = 'Stock adjusted successfully';
             
         } elseif ($action === 'set_reorder_level') {
@@ -134,14 +156,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Get inventory data with error handling
 try {
-    $lowStockProducts = $db->fetchAll("
-        SELECT p.*, c.name as category_name 
-        FROM products p 
-        LEFT JOIN categories c ON p.category_id = c.id 
-        WHERE p.stock_quantity <= p.reorder_level 
-        ORDER BY p.stock_quantity ASC
-    ");
-    $lowStockProducts = $lowStockProducts ?: [];
+    $inventoryService->ensureSchema();
+    $lowStockProducts = $inventoryService->getLowStockItems(50);
 } catch (Exception $e) {
     $lowStockProducts = [];
 }
