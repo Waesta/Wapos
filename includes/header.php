@@ -382,6 +382,13 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'label' => 'Dashboard'
                             ],
                             [
+                                'roles' => 'all',
+                                'href' => '/wapos/feedback.php',
+                                'page' => 'feedback.php',
+                                'icon' => 'bi-chat-dots',
+                                'label' => 'Demo Feedback'
+                            ],
+                            [
                                 'roles' => ['admin','manager','super_admin','developer'],
                                 'href' => '/wapos/executive-dashboard.php',
                                 'page' => 'executive-dashboard.php',
