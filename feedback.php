@@ -6,7 +6,36 @@ $pageTitle = 'Demo Feedback';
 include 'includes/header.php';
 ?>
 
-<div class="main-content">
+<style>
+    .feedback-page .top-bar-title h5 {
+        font-weight: 600;
+    }
+    .feedback-page .app-card {
+        border-radius: 1rem;
+        box-shadow: 0 0.35rem 1.2rem rgba(12, 68, 101, 0.08);
+    }
+    .feedback-page .rating-options .btn {
+        min-width: 54px;
+        border-radius: 999px;
+        font-weight: 600;
+    }
+    .feedback-page .rating-options .btn-check:checked + span,
+    .feedback-page .rating-options .btn-check:focus + span {
+        color: #0d6efd;
+    }
+    .feedback-page .info-card .list-group-item {
+        border: none;
+        padding-left: 0;
+        padding-right: 0;
+    }
+    @media (max-width: 991.98px) {
+        .feedback-page .app-card {
+            box-shadow: none;
+        }
+    }
+</style>
+
+<div class="main-content feedback-page">
     <div class="top-bar">
         <div class="top-bar-title">
             <h5 class="mb-0">Share Your Feedback</h5>
@@ -15,8 +44,8 @@ include 'includes/header.php';
     </div>
 
     <div class="container-fluid py-4">
-        <div class="row g-4">
-            <div class="col-lg-7">
+        <div class="row g-4 align-items-stretch">
+            <div class="col-12 col-xl-7">
                 <div class="app-card" data-elevation="md">
                     <div class="app-card-header d-flex justify-content-between align-items-center mb-3">
                         <div>
@@ -27,14 +56,14 @@ include 'includes/header.php';
 
                     <div id="feedbackAlert" class="alert d-none" role="alert"></div>
 
-                    <form id="feedbackForm" class="stack-md">
+                    <form id="feedbackForm" class="stack-md gap-4">
                         <div>
                             <label class="form-label">Overall Experience</label>
-                            <div class="d-flex gap-2 flex-wrap">
+                            <div class="rating-options d-flex gap-2 flex-wrap">
                                 <?php for ($i = 1; $i <= 5; $i++): ?>
-                                    <label class="btn btn-outline-primary flex-fill">
+                                    <label class="btn btn-outline-primary d-flex align-items-center justify-content-center">
                                         <input type="radio" name="rating" value="<?= $i ?>" class="btn-check" autocomplete="off">
-                                        <span class="fw-semibold"><?= $i ?></span>
+                                        <span><?= $i ?></span>
                                     </label>
                                 <?php endfor; ?>
                             </div>
@@ -61,8 +90,8 @@ include 'includes/header.php';
                 </div>
             </div>
 
-            <div class="col-lg-5">
-                <div class="app-card">
+            <div class="col-12 col-xl-5">
+                <div class="app-card info-card h-100">
                     <h6 class="text-uppercase text-muted small mb-3">Focus Group Tips</h6>
                     <ul class="list-group list-group-flush">
                         <li class="list-group-item">
