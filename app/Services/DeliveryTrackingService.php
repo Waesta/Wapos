@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Services\Distance\GoogleDistanceMatrixClient;
 use DateTime;
 use Exception;
 use PDO;
@@ -10,6 +11,7 @@ use PDOException;
 class DeliveryTrackingService
 {
     private PDO $db;
+    private ?GoogleDistanceMatrixClient $distanceClient = null;
 
     private const STATUS_HISTORY_TABLE = 'delivery_status_history';
     private const RIDER_HISTORY_TABLE = 'rider_location_history';
@@ -118,17 +120,34 @@ class DeliveryTrackingService
      * Update rider coordinates and append entry to location history. Returns
      * the list of active deliveries that were recalculated.
      */
-    public function updateRiderLocation(int $riderId, float $latitude, float $longitude, ?float $accuracy = null): array
+    public function updateRiderLocation(
+        int $riderId,
+        float $latitude,
+        float $longitude,
+        ?float $accuracy = null,
+        ?float $speed = null,
+        ?float $heading = null
+    ): array
     {
         $this->ensureSchema();
 
         $accuracy = $accuracy !== null ? max(0.0, $accuracy) : null;
+        $speed = $speed !== null ? max(0.0, $speed) : null;
+        if ($heading !== null) {
+            // Normalize heading to 0-359
+            $heading = fmod($heading, 360.0);
+            if ($heading < 0) {
+                $heading += 360.0;
+            }
+        }
 
         $updateStmt = $this->db->prepare(
             "UPDATE riders
              SET current_latitude = :lat,
                  current_longitude = :lng,
                  location_accuracy = :accuracy,
+                 current_speed = :speed,
+                 current_heading = :heading,
                  last_location_update = NOW()
              WHERE id = :id"
         );
@@ -136,22 +155,26 @@ class DeliveryTrackingService
             ':lat' => $latitude,
             ':lng' => $longitude,
             ':accuracy' => $accuracy,
+            ':speed' => $speed,
+            ':heading' => $heading,
             ':id' => $riderId,
         ]);
 
         $historyStmt = $this->db->prepare(
-            "INSERT INTO " . self::RIDER_HISTORY_TABLE . " (rider_id, latitude, longitude, accuracy, recorded_at)
-             VALUES (:rider_id, :lat, :lng, :accuracy, NOW())"
+            "INSERT INTO " . self::RIDER_HISTORY_TABLE . " (rider_id, latitude, longitude, accuracy, speed, heading, recorded_at)
+             VALUES (:rider_id, :lat, :lng, :accuracy, :speed, :heading, NOW())"
         );
         $historyStmt->execute([
             ':rider_id' => $riderId,
             ':lat' => $latitude,
             ':lng' => $longitude,
             ':accuracy' => $accuracy,
+            ':speed' => $speed,
+            ':heading' => $heading,
         ]);
 
         $deliveries = $this->db->fetchAll(
-            "SELECT d.id, d.order_id, o.delivery_address
+            "SELECT d.id, d.order_id, o.delivery_address, d.delivery_latitude, d.delivery_longitude
              FROM deliveries d
              JOIN orders o ON d.order_id = o.id
              WHERE d.rider_id = ? AND d.status IN ('assigned','picked-up','in-transit')",
@@ -160,7 +183,13 @@ class DeliveryTrackingService
 
         $updated = [];
         foreach ($deliveries as $delivery) {
-            $eta = $this->calculateDeliveryEta($latitude, $longitude, (string)($delivery['delivery_address'] ?? ''));
+            $eta = $this->calculateDeliveryEta(
+                $latitude,
+                $longitude,
+                isset($delivery['delivery_latitude']) ? (float)$delivery['delivery_latitude'] : null,
+                isset($delivery['delivery_longitude']) ? (float)$delivery['delivery_longitude'] : null,
+                (string)($delivery['delivery_address'] ?? '')
+            );
             $this->db->update('deliveries', [
                 'estimated_delivery_time' => $eta,
                 'updated_at' => date('Y-m-d H:i:s'),
@@ -176,16 +205,59 @@ class DeliveryTrackingService
         return $updated;
     }
 
-    private function calculateDeliveryEta(float $riderLat, float $riderLng, string $deliveryAddress): string
+    private function calculateDeliveryEta(
+        float $riderLat,
+        float $riderLng,
+        ?float $destinationLat,
+        ?float $destinationLng,
+        string $deliveryAddress
+    ): string
     {
-        // Placeholder estimation logic. A production-ready implementation
-        // would integrate with a mapping / distance matrix provider.
+        $eta = new DateTime();
+
+        try {
+            $client = $this->getGoogleClient();
+            if ($client && $destinationLat !== null && $destinationLng !== null) {
+                $metrics = $client->fetchMetrics($riderLat, $riderLng, $destinationLat, $destinationLng);
+                if (!empty($metrics['duration_s'])) {
+                    $eta->modify('+' . max(60, (int)$metrics['duration_s']) . ' seconds');
+                    return $eta->format('Y-m-d H:i:s');
+                }
+            }
+        } catch (Exception $e) {
+            // Swallow and fall back to heuristic ETA below
+        }
+
         $baseMinutes = 15;
         $randomFactor = random_int(0, 30);
-        $eta = new DateTime();
         $eta->modify("+{$baseMinutes} minutes");
         $eta->modify("+{$randomFactor} minutes");
         return $eta->format('Y-m-d H:i:s');
+    }
+
+    private function getGoogleClient(): ?GoogleDistanceMatrixClient
+    {
+        if ($this->distanceClient !== null) {
+            return $this->distanceClient;
+        }
+
+        $settings = function_exists('settings') ? \settings() : [];
+        $apiKey = $settings['google_maps_api_key'] ?? null;
+
+        if (!$apiKey || str_starts_with($apiKey, 'PLACEHOLDER')) {
+            return null;
+        }
+
+        $endpoint = $settings['google_distance_matrix_endpoint'] ?? 'https://maps.googleapis.com/maps/api/distancematrix/json';
+        $timeout = (int)($settings['google_distance_matrix_timeout'] ?? 10);
+
+        try {
+            $this->distanceClient = new GoogleDistanceMatrixClient($apiKey, $endpoint, $timeout);
+        } catch (Exception $e) {
+            $this->distanceClient = null;
+        }
+
+        return $this->distanceClient;
     }
 
     private function createStatusHistoryTable(): void

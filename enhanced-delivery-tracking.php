@@ -11,6 +11,9 @@ $deliverySettingKeys = [
     'delivery_sla_assigned_limit',
     'delivery_sla_delivery_limit',
     'delivery_sla_slack_minutes',
+    'google_maps_api_key',
+    'business_latitude',
+    'business_longitude',
 ];
 $placeholders = implode(',', array_fill(0, count($deliverySettingKeys), '?'));
 $deliverySettingsRows = $db->fetchAll(
@@ -22,6 +25,14 @@ foreach ($deliverySettingsRows as $row) {
     $deliverySettings[$row['setting_key']] = $row['setting_value'];
 }
 
+$googleMapsApiKey = (string)($deliverySettings['google_maps_api_key'] ?? '');
+$businessLat = isset($deliverySettings['business_latitude']) ? (float)$deliverySettings['business_latitude'] : null;
+$businessLng = isset($deliverySettings['business_longitude']) ? (float)$deliverySettings['business_longitude'] : null;
+
+$currentUser = method_exists($auth, 'getUser') ? $auth->getUser() : null;
+$currentRole = $currentUser['role'] ?? 'staff';
+$maskRiderPhones = !in_array($currentRole, ['super_admin', 'admin', 'manager', 'developer'], true);
+
 $deliveryConfig = [
     'max_active_jobs' => max(1, (int)($deliverySettings['delivery_max_active_jobs'] ?? 3)),
     'sla' => [
@@ -30,6 +41,9 @@ $deliveryConfig = [
         'delivery' => max(1, (int)($deliverySettings['delivery_sla_delivery_limit'] ?? 45)),
         'slack' => max(0, (int)($deliverySettings['delivery_sla_slack_minutes'] ?? 5)),
     ],
+    'google_maps_api_key' => $googleMapsApiKey,
+    'business_latitude' => $businessLat,
+    'business_longitude' => $businessLng,
 ];
 
 $slaTargetsText = sprintf(
@@ -284,15 +298,31 @@ include 'includes/header.php';
     </div>
 </div>
 
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 let deliveryChart;
-let deliveryMap;
-let riderLayerGroup;
+let googleMap;
+let directionsService;
+let mapInfoWindow;
+let mapHasFitBounds = false;
+let googleMapsLoader = null;
+let googleMapsErrored = false;
+const mapMarkers = new Map();
+const routeRenderers = new Map();
+const routeRequestCache = new Map();
+const ROUTE_REFRESH_MS = 60000;
 const currencySymbol = <?= json_encode($currencySymbol) ?>;
 let deliveryConfig = <?= json_encode($deliveryConfig) ?>;
+const googleMapsConfig = {
+    apiKey: deliveryConfig.google_maps_api_key || '',
+    businessLat: deliveryConfig.business_latitude,
+    businessLng: deliveryConfig.business_longitude
+};
+const maskRiderPhones = <?= $maskRiderPhones ? 'true' : 'false' ?>;
+const defaultMapCenter = (googleMapsConfig.businessLat !== null && googleMapsConfig.businessLat !== undefined &&
+    googleMapsConfig.businessLng !== null && googleMapsConfig.businessLng !== undefined)
+    ? { lat: Number(googleMapsConfig.businessLat), lng: Number(googleMapsConfig.businessLng) }
+    : { lat: -1.2921, lng: 36.8219 };
 let MAX_ACTIVE_JOBS = deliveryConfig.max_active_jobs ?? 3;
 let latestDeliverySnapshot = {
     deliveries: <?= json_encode($activeDeliveries) ?>,
@@ -338,7 +368,7 @@ async function refreshDeliveryData() {
         updateActiveDeliveries(latestDeliverySnapshot.deliveries, latestDeliverySnapshot.supportsPricingAudit);
         updateDeliveryChart(data.chartData);
         updateRiderPerformance(data.riderPerformance);
-        updateMapMarkers(latestDeliverySnapshot.deliveries, latestDeliverySnapshot.supportsPricingAudit);
+        await updateMapMarkers(latestDeliverySnapshot.deliveries, latestDeliverySnapshot.supportsPricingAudit);
     } catch (error) {
         console.error('Error refreshing delivery data:', error);
     }
@@ -452,7 +482,7 @@ function updateActiveDeliveries(deliveries, supportsPricingAudit) {
                     <small class="text-muted">
                         <i class="bi bi-person me-1"></i>${escapeHtml(delivery.rider_name || 'Not assigned')}
                     </small>
-                    ${delivery.rider_phone ? `<br><small class="text-muted"><i class="bi bi-telephone me-1"></i>${escapeHtml(delivery.rider_phone)}</small>` : ''}
+                    ${delivery.rider_phone ? `<br><small class="text-muted"><i class="bi bi-telephone me-1"></i>${escapeHtml(formatRiderPhone(delivery.rider_phone))}</small>` : ''}
                 </div>
                 <div class="mb-2">
                     ${statusHint}
@@ -541,39 +571,75 @@ function updateRiderPerformance(riders) {
     `).join('');
 }
 
-function updateMapMarkers(deliveries, supportsPricingAudit) {
-    if (!deliveryMap) {
-        deliveryMap = L.map('deliveryMap').setView([ -1.2921, 36.8219 ], 12);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19,
-            attribution: '&copy; OpenStreetMap contributors'
-        }).addTo(deliveryMap);
-        riderLayerGroup = L.layerGroup().addTo(deliveryMap);
+async function updateMapMarkers(deliveries, supportsPricingAudit) {
+    const googleLib = await ensureGoogleMapsLoaded();
+    if (!googleLib) {
+        return;
     }
 
-    riderLayerGroup.clearLayers();
-    deliveries.filter(delivery => delivery.current_latitude && delivery.current_longitude).forEach(delivery => {
-        const sla = delivery.sla || {};
-        const color = sla.is_at_risk ? '#dc3545' : (sla.is_late ? '#fd7e14' : '#0d6efd');
-        const marker = L.circleMarker([delivery.current_latitude, delivery.current_longitude], {
-            radius: 8,
-            color,
-            fillColor: color,
-            fillOpacity: 0.8,
-            weight: 2
-        });
-        const pricingDetails = supportsPricingAudit ? buildPricingPopup(delivery) : '';
-        const slaBadge = renderSlaBadge(sla) || '';
-        marker.bindPopup(`
-            <strong>${delivery.rider_name || 'Unassigned'}</strong><br>
-            Order: #${delivery.order_number}<br>
-            Status: ${capitalize(delivery.status)}<br>
-            ${slaBadge ? `<div class="mt-1">${slaBadge}</div>` : ''}
-            Started: ${delivery.elapsed_minutes} min ago
-            ${pricingDetails ? `<div class="mt-2 text-muted small">${pricingDetails}</div>` : ''}
-        `);
-        riderLayerGroup.addLayer(marker);
+    if (!googleMap) {
+        initGoogleMap();
+    }
+
+    const activeIds = new Set();
+    const bounds = new google.maps.LatLngBounds();
+    let hasPoints = false;
+
+    deliveries.forEach(delivery => {
+        const lat = Number(delivery.current_latitude);
+        const lng = Number(delivery.current_longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+            return;
+        }
+
+        hasPoints = true;
+        bounds.extend({ lat, lng });
+        activeIds.add(String(delivery.id));
+
+        const markerKey = String(delivery.id);
+        const existing = mapMarkers.get(markerKey);
+        const iconConfig = markerIcon(getMarkerColor(delivery));
+
+        if (existing) {
+            existing.marker.setPosition({ lat, lng });
+            existing.marker.setIcon(iconConfig);
+            existing.delivery = delivery;
+        } else {
+            const marker = new google.maps.Marker({
+                position: { lat, lng },
+                map: googleMap,
+                icon: iconConfig,
+                title: delivery.rider_name || `Delivery #${delivery.order_number}`
+            });
+
+            marker.addListener('click', () => {
+                mapInfoWindow.setContent(buildMarkerInfo(delivery, supportsPricingAudit));
+                mapInfoWindow.open(googleMap, marker);
+            });
+
+            mapMarkers.set(markerKey, { marker, delivery });
+        }
+
+        updateRouteForDelivery(delivery);
     });
+
+    // Remove markers for deliveries no longer active
+    for (const [key, entry] of mapMarkers.entries()) {
+        if (!activeIds.has(key)) {
+            entry.marker.setMap(null);
+            mapMarkers.delete(key);
+        }
+    }
+
+    cleanupOrphanRoutes(activeIds);
+
+    if (hasPoints && !mapHasFitBounds) {
+        googleMap.fitBounds(bounds, { top: 50, bottom: 50, left: 50, right: 50 });
+        mapHasFitBounds = true;
+    } else if (!hasPoints && !mapHasFitBounds) {
+        googleMap.setCenter(defaultMapCenter);
+        googleMap.setZoom(12);
+    }
 }
 
 async function trackDelivery(orderId) {
@@ -798,6 +864,236 @@ function formatProvider(provider) {
     }
     return provider.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
 }
+
+function formatRiderPhone(phone) {
+    if (!phone) {
+        return 'N/A';
+    }
+    if (!maskRiderPhones) {
+        return phone;
+    }
+    return maskPhoneNumber(phone);
+}
+
+function maskPhoneNumber(phone) {
+    const digits = phone.replace(/[^0-9]/g, '');
+    if (digits.length <= 4) {
+        return '*'.repeat(Math.max(0, digits.length - 1)) + digits.slice(-1);
+    }
+    const lastFour = digits.slice(-4);
+    return `${'*'.repeat(Math.max(0, digits.length - 4))}${lastFour}`;
+}
+
+function markerIcon(color) {
+    if (typeof google === 'undefined') {
+        return null;
+    }
+    return {
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: 8,
+        fillColor: color,
+        fillOpacity: 0.9,
+        strokeColor: '#ffffff',
+        strokeWeight: 2
+    };
+}
+
+function getMarkerColor(delivery) {
+    const sla = delivery.sla || {};
+    if (sla.is_at_risk) {
+        return '#dc3545';
+    }
+    if (sla.is_late) {
+        return '#fd7e14';
+    }
+    switch ((delivery.status || '').toLowerCase()) {
+        case 'pending':
+            return '#6c757d';
+        case 'assigned':
+            return '#ffc107';
+        case 'picked-up':
+            return '#0dcaf0';
+        case 'in-transit':
+            return '#0d6efd';
+        case 'delivered':
+            return '#198754';
+        default:
+            return '#6c757d';
+    }
+}
+
+function buildMarkerInfo(delivery, supportsPricingAudit) {
+    const slaBadge = renderSlaBadge(delivery.sla || {}) || '';
+    const pricingDetails = supportsPricingAudit ? buildPricingPopup(delivery) : '';
+    const riderPhone = delivery.rider_phone ? formatRiderPhone(delivery.rider_phone) : 'N/A';
+    const vehicleDetails = [delivery.vehicle_make, delivery.vehicle_color, delivery.vehicle_type]
+        .filter(Boolean)
+        .join(' · ');
+    const plateLine = delivery.vehicle_number ? `Plate: ${escapeHtml(delivery.vehicle_number)}` : '';
+    const licenseLine = delivery.license_number ? `License: ${escapeHtml(delivery.license_number)}` : '';
+    const platePhotoLink = delivery.vehicle_plate_photo_url
+        ? `<br><a href="${escapeHtml(delivery.vehicle_plate_photo_url)}" target="_blank" rel="noopener">Plate photo</a>`
+        : '';
+
+    return `
+        <div class="map-info">
+            <strong>${escapeHtml(delivery.rider_name || 'Unassigned')}</strong><br>
+            <small>Phone: ${escapeHtml(riderPhone)}</small><br>
+            ${vehicleDetails ? `<small>${escapeHtml(vehicleDetails)}</small><br>` : ''}
+            ${plateLine ? `<small>${plateLine}</small><br>` : ''}
+            ${licenseLine ? `<small>${licenseLine}</small><br>` : ''}
+            ${platePhotoLink}
+            <hr class="my-2">
+            <small>Order #${escapeHtml(delivery.order_number)}</small><br>
+            <small>Status: ${escapeHtml(capitalize(delivery.status || 'pending'))}</small>
+            ${slaBadge ? `<div class="mt-1">${slaBadge}</div>` : ''}
+            <small class="d-block text-muted">Started ${Number(delivery.elapsed_minutes || 0)} min ago</small>
+            ${pricingDetails ? `<div class="mt-2 text-muted small">${pricingDetails}</div>` : ''}
+        </div>
+    `;
+}
+
+function updateRouteForDelivery(delivery) {
+    if (!googleMap || !directionsService) {
+        return;
+    }
+
+    const markerKey = String(delivery.id);
+    const originLat = Number(delivery.current_latitude);
+    const originLng = Number(delivery.current_longitude);
+    const destLat = Number(delivery.delivery_latitude);
+    const destLng = Number(delivery.delivery_longitude);
+
+    if (!Number.isFinite(originLat) || !Number.isFinite(originLng) || !Number.isFinite(destLat) || !Number.isFinite(destLng)) {
+        removeRoute(markerKey);
+        return;
+    }
+
+    const lastRequested = routeRequestCache.get(markerKey) || 0;
+    if (Date.now() - lastRequested < ROUTE_REFRESH_MS) {
+        return;
+    }
+    routeRequestCache.set(markerKey, Date.now());
+
+    const request = {
+        origin: { lat: originLat, lng: originLng },
+        destination: { lat: destLat, lng: destLng },
+        travelMode: google.maps.TravelMode.DRIVING,
+    };
+
+    directionsService.route(request, (result, status) => {
+        if (status !== google.maps.DirectionsStatus.OK || !result) {
+            return;
+        }
+
+        let rendererEntry = routeRenderers.get(markerKey);
+        if (!rendererEntry) {
+            const renderer = new google.maps.DirectionsRenderer({
+                map: googleMap,
+                suppressMarkers: true,
+                preserveViewport: true,
+                polylineOptions: {
+                    strokeColor: getMarkerColor(delivery),
+                    strokeOpacity: 0.7,
+                    strokeWeight: 4
+                }
+            });
+            rendererEntry = { renderer };
+            routeRenderers.set(markerKey, rendererEntry);
+        }
+
+        rendererEntry.renderer.setDirections(result);
+    });
+}
+
+function cleanupOrphanRoutes(activeIds) {
+    for (const [key, entry] of routeRenderers.entries()) {
+        if (!activeIds.has(key)) {
+            entry.renderer.setMap(null);
+            routeRenderers.delete(key);
+            routeRequestCache.delete(key);
+        }
+    }
+}
+
+function removeRoute(key) {
+    const entry = routeRenderers.get(key);
+    if (entry) {
+        entry.renderer.setMap(null);
+        routeRenderers.delete(key);
+    }
+    routeRequestCache.delete(key);
+}
+
+async function ensureGoogleMapsLoaded() {
+    if (typeof window === 'undefined') {
+        return null;
+    }
+    if (window.google && window.google.maps) {
+        return window.google;
+    }
+    if (!googleMapsConfig.apiKey) {
+        if (!googleMapsErrored) {
+            console.warn('Google Maps API key missing; map features disabled.');
+            googleMapsErrored = true;
+        }
+        return null;
+    }
+    if (googleMapsLoader) {
+        return googleMapsLoader;
+    }
+
+    googleMapsLoader = new Promise((resolve, reject) => {
+        const scriptId = 'google-maps-sdk';
+        if (document.getElementById(scriptId)) {
+            document.getElementById(scriptId).addEventListener('load', () => resolve(window.google));
+            document.getElementById(scriptId).addEventListener('error', () => reject(new Error('Google Maps failed to load')));
+            return;
+        }
+
+        const script = document.createElement('script');
+        script.id = scriptId;
+        script.async = true;
+        script.defer = true;
+        const encodedKey = encodeURIComponent(googleMapsConfig.apiKey);
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodedKey}&libraries=geometry`;
+        script.onload = () => resolve(window.google);
+        script.onerror = () => {
+            googleMapsErrored = true;
+            reject(new Error('Google Maps failed to load'));
+        };
+
+        document.head.appendChild(script);
+    }).catch(error => {
+        console.error(error);
+        return null;
+    });
+
+    return googleMapsLoader;
+}
+
+function initGoogleMap() {
+    if (!document.getElementById('deliveryMap')) {
+        return;
+    }
+    googleMap = new google.maps.Map(document.getElementById('deliveryMap'), {
+        center: defaultMapCenter,
+        zoom: 12,
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: false,
+    });
+    directionsService = new google.maps.DirectionsService();
+    mapInfoWindow = new google.maps.InfoWindow();
+}
+
+// Trigger initial map load eagerly so the first refresh paints faster
+ensureGoogleMapsLoaded().then(lib => {
+    if (lib && !googleMap) {
+        initGoogleMap();
+        updateMapMarkers(latestDeliverySnapshot.deliveries || [], latestDeliverySnapshot.supportsPricingAudit);
+    }
+});
 
 function formatRelativeTime(value) {
     if (!value) {

@@ -155,6 +155,42 @@ Build your mobile app with:
 - **React Native**
 - **Ionic**
 
+## 🚚 Rider Tracking API (Mobile/PWA Courier App)
+
+Use the delivery tracking endpoint to stream rider telemetry back to WAPOS so the Google Maps dashboard stays live:
+
+- **Endpoint:** `POST /wapos/api/update-rider-location.php`
+- **Auth:** same session/login cookie as the rider portal (include your `PHPSESSID`)
+- **Suggested Interval:** every 30–60 seconds while on-duty
+
+### Payload Fields
+
+| Field       | Type    | Required | Notes |
+|-------------|---------|----------|-------|
+| `rider_id`  | int     | ✅        | Internal rider record ID |
+| `latitude`  | float   | ✅        | Decimal degrees (`-90` to `90`) |
+| `longitude` | float   | ✅        | Decimal degrees (`-180` to `180`) |
+| `accuracy`  | float   | optional | In meters (from GPS) |
+| `speed`     | float   | optional | Meters/second (from GPS) |
+| `heading`   | float   | optional | Degrees, 0 = North, clockwise |
+
+```json
+{
+  "rider_id": 12,
+  "latitude": -1.292066,
+  "longitude": 36.821945,
+  "accuracy": 4.2,
+  "speed": 12.4,
+  "heading": 85.0
+}
+```
+
+**Tips:**
+
+- Normalize decimal precision to 6–7 digits to save bandwidth.
+- Only send telemetry when the rider status is `assigned`, `picked-up`, or `in-transit` to reduce noise.
+- Handle HTTP 401 by prompting the rider to re-authenticate.
+
 ---
 
 ## 🤝 Support

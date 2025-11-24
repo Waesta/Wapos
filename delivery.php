@@ -3,21 +3,67 @@ require_once 'includes/bootstrap.php';
 $auth->requireLogin();
 
 $db = Database::getInstance();
+$formErrors = [];
+$formData = [];
 
 // Handle rider actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     
     if ($action === 'add_rider') {
-        $db->insert('riders', [
-            'name' => sanitizeInput($_POST['name']),
-            'phone' => sanitizeInput($_POST['phone']),
-            'vehicle_type' => sanitizeInput($_POST['vehicle_type']),
-            'vehicle_number' => sanitizeInput($_POST['vehicle_number']),
-            'status' => 'available'
-        ]);
-        $_SESSION['success_message'] = 'Rider added successfully';
-        redirect($_SERVER['PHP_SELF']);
+        $formData = [
+            'name' => trim((string)($_POST['name'] ?? '')),
+            'phone' => trim((string)($_POST['phone'] ?? '')),
+            'vehicle_type' => trim((string)($_POST['vehicle_type'] ?? '')),
+            'vehicle_number' => strtoupper(trim((string)($_POST['vehicle_number'] ?? ''))),
+            'license_number' => strtoupper(trim((string)($_POST['license_number'] ?? ''))),
+            'vehicle_make' => trim((string)($_POST['vehicle_make'] ?? '')),
+            'vehicle_color' => trim((string)($_POST['vehicle_color'] ?? '')),
+            'emergency_contact' => trim((string)($_POST['emergency_contact'] ?? '')),
+            'vehicle_plate_photo_url' => trim((string)($_POST['vehicle_plate_photo_url'] ?? '')),
+        ];
+
+        $requiredFields = [
+            'name' => 'Rider name is required.',
+            'phone' => 'Phone number is required.',
+            'vehicle_type' => 'Vehicle type is required.',
+            'vehicle_number' => 'Vehicle number / plate is required.',
+            'license_number' => 'License number is required.',
+            'vehicle_make' => 'Vehicle make is required.',
+            'vehicle_color' => 'Vehicle color is required.',
+        ];
+
+        foreach ($requiredFields as $field => $message) {
+            if ($formData[$field] === '') {
+                $formErrors[] = $message;
+            }
+        }
+
+        $phoneDigits = preg_replace('/[^0-9+]/', '', $formData['phone'] ?? '');
+        if ($phoneDigits === '' || strlen($phoneDigits) < 7) {
+            $formErrors[] = 'Enter a valid phone number.';
+        }
+
+        if (!empty($formData['vehicle_plate_photo_url']) && !filter_var($formData['vehicle_plate_photo_url'], FILTER_VALIDATE_URL)) {
+            $formErrors[] = 'Plate photo must be a valid URL (or leave blank to add later).';
+        }
+
+        if (empty($formErrors)) {
+            $db->insert('riders', [
+                'name' => sanitizeInput($formData['name']),
+                'phone' => sanitizeInput($formData['phone']),
+                'vehicle_type' => sanitizeInput($formData['vehicle_type']),
+                'vehicle_number' => sanitizeInput($formData['vehicle_number']),
+                'license_number' => sanitizeInput($formData['license_number']),
+                'vehicle_make' => sanitizeInput($formData['vehicle_make']),
+                'vehicle_color' => sanitizeInput($formData['vehicle_color']),
+                'emergency_contact' => $formData['emergency_contact'] !== '' ? sanitizeInput($formData['emergency_contact']) : null,
+                'vehicle_plate_photo_url' => $formData['vehicle_plate_photo_url'] !== '' ? sanitizeInput($formData['vehicle_plate_photo_url']) : null,
+                'status' => 'available'
+            ]);
+            $_SESSION['success_message'] = 'Rider added successfully';
+            redirect($_SERVER['PHP_SELF']);
+        }
     }
 }
 
@@ -123,8 +169,19 @@ $pageTitle = 'Delivery Management';
 include 'includes/header.php';
 ?>
 
+<?php if (!empty($formErrors)): ?>
+    <div class="alert alert-danger">
+        <strong>Unable to save rider:</strong>
+        <ul class="mb-0">
+            <?php foreach ($formErrors as $error): ?>
+                <li><?= htmlspecialchars($error) ?></li>
+            <?php endforeach; ?>
+        </ul>
+    </div>
+<?php endif; ?>
+
 <?php if (isset($_SESSION['success_message'])): ?>
-    <div class="alert alert-success"><?= $_SESSION['success_message']; unset($_SESSION['success_message']); ?></div>
+    <div class="alert alert-success"><?php echo $_SESSION['success_message']; unset($_SESSION['success_message']); ?></div>
 <?php endif; ?>
 
 <div id="alertContainer" class="position-fixed top-0 end-0 p-3" style="z-index: 2000;"></div>
@@ -456,25 +513,47 @@ include 'includes/header.php';
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label">Rider Name *</label>
-                        <input type="text" class="form-control" name="name" required>
+                        <input type="text" class="form-control" name="name" value="<?= htmlspecialchars($formData['name'] ?? '') ?>" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Phone Number *</label>
-                        <input type="tel" class="form-control" name="phone" required>
+                        <input type="tel" class="form-control" name="phone" value="<?= htmlspecialchars($formData['phone'] ?? '') ?>" placeholder="e.g. +254700000000" required>
+                        <div class="form-text">Must include country code and at least 7 digits.</div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Vehicle Type *</label>
                         <select class="form-select" name="vehicle_type" required>
                             <option value="">Select...</option>
-                            <option value="Motorcycle">Motorcycle</option>
-                            <option value="Bicycle">Bicycle</option>
-                            <option value="Car">Car</option>
-                            <option value="Van">Van</option>
+                            <?php $types = ['Motorcycle','Bicycle','Car','Van','Truck'];
+                            foreach ($types as $type): ?>
+                                <option value="<?= $type ?>" <?= (isset($formData['vehicle_type']) && $formData['vehicle_type'] === $type) ? 'selected' : '' ?>><?= $type ?></option>
+                            <?php endforeach; ?>
                         </select>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Vehicle Number</label>
-                        <input type="text" class="form-control" name="vehicle_number">
+                        <label class="form-label">Vehicle Make *</label>
+                        <input type="text" class="form-control" name="vehicle_make" value="<?= htmlspecialchars($formData['vehicle_make'] ?? '') ?>" placeholder="e.g. Honda" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Vehicle Color *</label>
+                        <input type="text" class="form-control" name="vehicle_color" value="<?= htmlspecialchars($formData['vehicle_color'] ?? '') ?>" placeholder="e.g. Black" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Vehicle Number / Plate *</label>
+                        <input type="text" class="form-control" name="vehicle_number" value="<?= htmlspecialchars($formData['vehicle_number'] ?? '') ?>" placeholder="e.g. KDA 123A" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">License Number *</label>
+                        <input type="text" class="form-control" name="license_number" value="<?= htmlspecialchars($formData['license_number'] ?? '') ?>" placeholder="e.g. DL-12345" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Emergency Contact</label>
+                        <input type="text" class="form-control" name="emergency_contact" value="<?= htmlspecialchars($formData['emergency_contact'] ?? '') ?>" placeholder="Backup phone number">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Plate Photo URL</label>
+                        <input type="url" class="form-control" name="vehicle_plate_photo_url" value="<?= htmlspecialchars($formData['vehicle_plate_photo_url'] ?? '') ?>" placeholder="https://...">
+                        <div class="form-text">Optional; link to stored photo or upload later.</div>
                     </div>
                 </div>
                 <div class="modal-footer">
