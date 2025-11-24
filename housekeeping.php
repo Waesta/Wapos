@@ -304,6 +304,16 @@ include 'includes/header.php';
                             <label class="form-label">Notes</label>
                             <textarea class="form-control" name="notes" id="taskNotes" rows="3"></textarea>
                         </div>
+                        <div class="col-12">
+                            <label class="form-label d-flex justify-content-between align-items-center">
+                                Consumables
+                                <button type="button" class="btn btn-sm btn-outline-primary" id="addConsumableRow">
+                                    <i class="bi bi-plus"></i> Add Item
+                                </button>
+                            </label>
+                            <div id="consumablesContainer" class="d-grid gap-2"></div>
+                            <input type="hidden" name="consumables" id="taskConsumablesInput">
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -350,6 +360,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const INITIAL_TASKS = <?= json_encode($initialTasks, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
     const SUMMARY_COUNTS = <?= json_encode($summary, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+    const CONSUMABLE_PRODUCTS = <?= json_encode(array_map(function($p) {
+        return ['id' => (int)$p['id'], 'name' => $p['name']];
+    }, $db->fetchAll("SELECT id, name FROM products WHERE is_active = 1 ORDER BY name")), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
     const STATUS_LABELS = {
         pending: 'Pending',
         in_progress: 'In Progress',
@@ -370,6 +383,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const toastInstance = new bootstrap.Toast(toastElement, { delay: 3500 });
 
     const tasksTableBody = document.querySelector('#tasksTable tbody');
+    const consumablesContainer = document.getElementById('consumablesContainer');
+    const addConsumableRowBtn = document.getElementById('addConsumableRow');
     const emptyState = document.getElementById('emptyState');
     let currentTasks = Array.isArray(INITIAL_TASKS) ? INITIAL_TASKS : [];
     let editingTaskId = null;
@@ -490,6 +505,46 @@ document.addEventListener('DOMContentLoaded', () => {
             .catch(() => {});
     }
 
+    function resetConsumablesUI(items = []) {
+        consumablesContainer.innerHTML = '';
+        if (!Array.isArray(items) || items.length === 0) {
+            addConsumableRow();
+            return;
+        }
+        items.forEach(item => addConsumableRow(item));
+    }
+
+    function addConsumableRow(data = null) {
+        const row = document.createElement('div');
+        row.className = 'row g-2 consumable-row align-items-center';
+        row.innerHTML = `
+            <div class="col-md-6">
+                <select class="form-select consumable-product" required>
+                    <option value="">Select Product</option>
+                    ${CONSUMABLE_PRODUCTS.map(product => `
+                        <option value="${product.id}">${escapeHtml(product.name)}</option>
+                    `).join('')}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <input type="number" class="form-control consumable-qty" step="0.01" min="0" value="1" required>
+            </div>
+            <div class="col-md-2">
+                <input type="text" class="form-control consumable-notes" placeholder="Notes">
+            </div>
+            <div class="col-md-1 text-end">
+                <button type="button" class="btn btn-outline-danger btn-sm remove-consumable-row"><i class="bi bi-x"></i></button>
+            </div>
+        `;
+        consumablesContainer.appendChild(row);
+
+        if (data) {
+            row.querySelector('.consumable-product').value = data.product_id || '';
+            row.querySelector('.consumable-qty').value = data.quantity || 1;
+            row.querySelector('.consumable-notes').value = data.notes || '';
+        }
+    }
+
     function openTaskModal(task = null) {
         editingTaskId = task ? task.id : null;
         document.getElementById('taskForm').reset();
@@ -505,13 +560,31 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('taskDueAt').value = task && task.due_at ? task.due_at.replace(' ', 'T') : '';
         document.getElementById('taskAssignedTo').value = task && task.assigned_to ? task.assigned_to : '';
         document.getElementById('taskNotes').value = task && task.notes ? task.notes : '';
+        resetConsumablesUI(task && Array.isArray(task.consumables) ? task.consumables : []);
 
         document.getElementById('taskModalTitle').textContent = task ? 'Edit Task' : 'New Task';
         taskModal.show();
     }
 
+    function collectConsumables() {
+        const rows = consumablesContainer.querySelectorAll('.consumable-row');
+        const payload = [];
+        rows.forEach(row => {
+            const productId = parseInt(row.querySelector('.consumable-product').value, 10);
+            const qty = parseFloat(row.querySelector('.consumable-qty').value);
+            const notes = row.querySelector('.consumable-notes').value.trim();
+            if (!productId || !qty || qty <= 0) {
+                return;
+            }
+            payload.push({ product_id: productId, quantity: qty, notes });
+        });
+        document.getElementById('taskConsumablesInput').value = JSON.stringify(payload);
+        return payload;
+    }
+
     function submitTaskForm(event) {
         event.preventDefault();
+        collectConsumables();
         const formData = Object.fromEntries(new FormData(event.target).entries());
         formData.action = editingTaskId ? 'update' : 'create';
 
@@ -633,6 +706,15 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('filterAssigned').value = '';
         fetchTasks({});
     });
+    consumablesContainer.addEventListener('click', event => {
+        if (event.target.closest('.remove-consumable-row')) {
+            const row = event.target.closest('.consumable-row');
+            if (consumablesContainer.children.length > 1) {
+                row.remove();
+            }
+        }
+    });
+    addConsumableRowBtn.addEventListener('click', () => addConsumableRow());
 
     renderTasks(currentTasks);
     renderSummary(SUMMARY_COUNTS);

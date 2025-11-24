@@ -1,11 +1,56 @@
 <?php
 require_once '../includes/bootstrap.php';
+require_once '../includes/schema/orders.php';
 
 header('Content-Type: application/json');
 
 if (!$auth->isLoggedIn()) {
     echo json_encode(['success' => false, 'message' => 'Unauthorized']);
     exit;
+}
+
+function markOrderPicked($db, array $data): array
+{
+    $orderId = isset($data['order_id']) ? (int)$data['order_id'] : 0;
+    if ($orderId <= 0) {
+        throw new Exception('Order ID is required.');
+    }
+
+    $order = $db->fetchOne('SELECT id, status, order_number, order_type, table_id FROM orders WHERE id = ?', [$orderId]);
+    if (!$order) {
+        throw new Exception('Order not found.');
+    }
+
+    if (!in_array($order['status'], ['ready', 'ready_for_pickup'], true)) {
+        throw new Exception('Only ready orders can be picked/served.');
+    }
+
+    $db->beginTransaction();
+
+    try {
+        $db->update(
+            'orders',
+            [
+                'status' => 'completed',
+                'completed_at' => date('Y-m-d H:i:s'),
+            ],
+            'id = :id',
+            ['id' => $orderId]
+        );
+
+        $db->commit();
+
+        return [
+            'success' => true,
+            'order_id' => $orderId,
+            'message' => 'Order marked as picked up',
+        ];
+    } catch (Exception $e) {
+        if ($db->inTransaction()) {
+            $db->rollback();
+        }
+        throw $e;
+    }
 }
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -21,6 +66,7 @@ if (!$data) {
 }
 
 $db = Database::getInstance();
+ensureOrdersCompletedAtColumn($db);
 $action = $data['action'] ?? '';
 
 try {
@@ -36,6 +82,12 @@ try {
             break;
         case 'reprint_receipt':
             $result = reprintReceipt($db, $data, $auth);
+            break;
+        case 'update_item_status':
+            $result = updateKitchenItemStatus($db, $data);
+            break;
+        case 'mark_order_picked':
+            $result = markOrderPicked($db, $data);
             break;
         default:
             throw new Exception('Invalid action');
@@ -166,7 +218,69 @@ function placeOrder($db, $data, $auth) {
         ];
         
     } catch (Exception $e) {
-        $db->rollback();
+        if ($db->inTransaction()) {
+            $db->rollback();
+        }
+        throw $e;
+    }
+}
+
+function updateKitchenItemStatus($db, array $data): array
+{
+    $itemId = isset($data['item_id']) ? (int)$data['item_id'] : 0;
+    $status = isset($data['status']) ? strtolower((string)$data['status']) : '';
+    $validStatuses = ['pending', 'preparing', 'ready'];
+
+    if ($itemId <= 0 || !in_array($status, $validStatuses, true)) {
+        throw new Exception('Invalid kitchen item payload.');
+    }
+
+    $db->beginTransaction();
+
+    try {
+        $updated = $db->update(
+            'order_items',
+            ['status' => $status],
+            'id = :id',
+            ['id' => $itemId]
+        );
+
+        if (!$updated) {
+            throw new Exception('Failed to update item status');
+        }
+
+        $orderItem = $db->fetchOne('SELECT order_id FROM order_items WHERE id = ?', [$itemId]);
+        if ($orderItem) {
+            $orderStats = $db->fetchOne(
+                'SELECT COUNT(*) AS total_items, SUM(CASE WHEN status = "ready" THEN 1 ELSE 0 END) AS ready_items FROM order_items WHERE order_id = ?',
+                [$orderItem['order_id']]
+            );
+
+            $newOrderStatus = 'pending';
+            if ($orderStats['ready_items'] > 0 && $orderStats['ready_items'] < $orderStats['total_items']) {
+                $newOrderStatus = 'preparing';
+            } elseif ((int)$orderStats['ready_items'] === (int)$orderStats['total_items']) {
+                $newOrderStatus = 'ready';
+            }
+
+            $db->update(
+                'orders',
+                ['status' => $newOrderStatus],
+                'id = :id',
+                ['id' => $orderItem['order_id']]
+            );
+        }
+
+        $db->commit();
+
+        return [
+            'success' => true,
+            'message' => 'Item status updated successfully'
+        ];
+    } catch (Exception $e) {
+        if ($db->inTransaction()) {
+            $db->rollback();
+        }
         throw $e;
     }
 }

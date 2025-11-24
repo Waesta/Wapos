@@ -35,9 +35,21 @@ if (!empty($orders)) {
     }
 }
 
+$initialReadyOrderIds = array_map(
+    'intval',
+    array_column(
+        array_filter($orders, fn($order) => ($order['status'] ?? '') === 'ready'),
+        'id'
+    )
+);
+
 $pageTitle = 'Kitchen Display System';
 include 'includes/header.php';
 ?>
+
+<script>
+    window.INITIAL_READY_ORDERS = <?= json_encode($initialReadyOrderIds, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+</script>
 
 <style>
     .kitchen-shell {
@@ -182,12 +194,41 @@ include 'includes/header.php';
         flex-direction: column;
         gap: var(--spacing-xs);
     }
+    .kitchen-item-actions .btn {
+        min-width: 130px;
+    }
     .kitchen-progress {
         border-top: 1px solid var(--color-border-subtle);
         padding-top: var(--spacing-sm);
         display: flex;
         flex-direction: column;
         gap: var(--spacing-sm);
+    }
+    .kitchen-card-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
+        margin-top: var(--spacing-sm);
+    }
+    .status-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        font-size: var(--text-xs);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding: 0.2rem 0.6rem;
+        border-radius: var(--radius-pill);
+        background: rgba(255,255,255,0.15);
+    }
+    .status-chip[data-status="pending"] {
+        background: rgba(243, 156, 18, 0.2);
+    }
+    .status-chip[data-status="preparing"] {
+        background: rgba(52, 152, 219, 0.2);
+    }
+    .status-chip[data-status="ready"] {
+        background: rgba(46, 204, 113, 0.25);
     }
     .kitchen-progress small {
         color: var(--color-text-muted);
@@ -252,7 +293,17 @@ include 'includes/header.php';
                 </div>
             <?php else: ?>
                 <?php foreach ($orders as $order): ?>
-                    <article class="kitchen-order-card" data-order-id="<?= $order['id'] ?>" data-status="<?= htmlspecialchars($order['status']) ?>">
+                    <?php
+                        $orderStatus = strtolower((string)($order['status'] ?? 'pending'));
+                        $statusLabel = ucwords(str_replace('_', ' ', $orderStatus));
+                        $statusIcon = match ($orderStatus) {
+                            'pending' => 'clock-history',
+                            'preparing' => 'fire',
+                            'ready' => 'check-circle',
+                            default => 'info-circle'
+                        };
+                    ?>
+                    <article class="kitchen-order-card" data-order-id="<?= $order['id'] ?>" data-status="<?= htmlspecialchars($orderStatus) ?>">
                         <div class="kitchen-order-header">
                             <div class="stack-xs">
                                 <h2><?= htmlspecialchars($order['order_number']) ?></h2>
@@ -269,8 +320,8 @@ include 'includes/header.php';
                                     <i class="bi bi-stopwatch"></i> 00:00
                                 </span>
                                 <div class="mt-2">
-                                    <span class="app-status" data-color="<?= $order['status'] === 'pending' ? 'warning' : ($order['status'] === 'preparing' ? 'info' : 'success') ?>">
-                                        <?= ucfirst($order['status']) ?>
+                                    <span class="status-chip" data-status="<?= htmlspecialchars($orderStatus) ?>">
+                                        <i class="bi bi-<?= $statusIcon ?>"></i> <?= $statusLabel ?>
                                     </span>
                                 </div>
                             </div>
@@ -303,11 +354,11 @@ include 'includes/header.php';
                                         </div>
                                         <div class="kitchen-item-actions">
                                             <?php if ($item['status'] === 'pending'): ?>
-                                                <button class="btn btn-info btn-sm" onclick="updateItemStatus(<?= $item['id'] ?>, 'preparing')">
+                                                <button class="btn btn-info btn-sm" onclick="updateItemStatus(<?= $item['id'] ?>, 'preparing', this)">
                                                     <i class="bi bi-play-fill"></i> Start
                                                 </button>
                                             <?php elseif ($item['status'] === 'preparing'): ?>
-                                                <button class="btn btn-success btn-sm" onclick="updateItemStatus(<?= $item['id'] ?>, 'ready')">
+                                                <button class="btn btn-success btn-sm" onclick="updateItemStatus(<?= $item['id'] ?>, 'ready', this)">
                                                     <i class="bi bi-check"></i> Ready
                                                 </button>
                                             <?php else: ?>
@@ -323,12 +374,18 @@ include 'includes/header.php';
                                 <div class="progress">
                                     <div class="progress-bar bg-success" role="progressbar" style="width: <?= $order['total_items'] > 0 ? ($order['ready_items'] / $order['total_items']) * 100 : 0 ?>%"></div>
                                 </div>
-                                <?php if ($order['ready_items'] == $order['total_items'] && $order['status'] !== 'ready'): ?>
-                                    <button class="btn btn-success btn-sm align-self-end" onclick="completeOrder(<?= $order['id'] ?>)">
-                                        <i class="bi bi-check-circle"></i> Complete Order
-                                    </button>
-                                <?php endif; ?>
                             </div>
+
+                            <?php if ($orderStatus === 'ready'): ?>
+                                <div class="alert alert-success py-2 px-3 mb-0">
+                                    <small><i class="bi bi-bell-fill"></i> Ready for pickup. Notify service staff.</small>
+                                </div>
+                                <div class="kitchen-card-actions">
+                                    <button class="btn btn-outline-success btn-sm" onclick="markOrderPicked(<?= $order['id'] ?>, this)">
+                                        <i class="bi bi-bag-check"></i> Picked / Served
+                                    </button>
+                                </div>
+                            <?php endif; ?>
                         </div>
                     </article>
                 <?php endforeach; ?>
@@ -346,6 +403,7 @@ include 'includes/header.php';
 <script>
 let soundEnabled = true;
 let lastOrderCount = <?= count($orders) ?>;
+const readyOrdersSet = new Set(Array.isArray(window.INITIAL_READY_ORDERS) ? window.INITIAL_READY_ORDERS : []);
 
 // Auto-refresh every 30 seconds
 setInterval(refreshOrders, 30000);
@@ -375,26 +433,36 @@ function updateTimers() {
     });
 }
 
-async function updateItemStatus(itemId, status) {
+async function updateItemStatus(itemId, status, buttonEl) {
+    let originalLabel = null;
+    if (buttonEl) {
+        originalLabel = buttonEl.innerHTML;
+        buttonEl.disabled = true;
+        buttonEl.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Updating';
+    }
+
     try {
-        const response = await fetch('api/update-order-item-status.php', {
+        const response = await fetch('api/restaurant-order-workflow.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ item_id: itemId, status: status })
+            body: JSON.stringify({ action: 'update_item_status', item_id: itemId, status: status })
         });
         
         const result = await response.json();
         
         if (result.success) {
-            refreshOrders();
-            if (soundEnabled) {
-                playNotificationSound();
-            }
+            handleReadyNotification(result);
+            setTimeout(() => window.location.reload(), 300);
         } else {
             alert('Error: ' + result.message);
         }
     } catch (error) {
         alert('Error: ' + error.message);
+    } finally {
+        if (buttonEl) {
+            buttonEl.disabled = false;
+            buttonEl.innerHTML = originalLabel ?? 'Update';
+        }
     }
 }
 
@@ -427,13 +495,25 @@ async function refreshOrders() {
         const result = await response.json();
         
         if (result.success) {
-            // Check for new orders
-            if (result.data.orders.length > lastOrderCount) {
-                if (soundEnabled) {
-                    playNotificationSound();
+            const remoteOrders = Array.isArray(result.data.orders) ? result.data.orders : [];
+            const readyIds = remoteOrders
+                .filter(order => (order.status || '').toLowerCase() === 'ready')
+                .map(order => Number(order.id));
+
+            readyIds.forEach((orderId) => {
+                if (!readyOrdersSet.has(orderId)) {
+                    readyOrdersSet.add(orderId);
+                    if (soundEnabled) {
+                        playNotificationSound();
+                    }
                 }
+            });
+
+            // Check for new orders
+            if (remoteOrders.length > lastOrderCount && soundEnabled) {
+                playNotificationSound();
             }
-            lastOrderCount = result.data.orders.length;
+            lastOrderCount = remoteOrders.length;
             
             // Update stats
             document.getElementById('pendingCount').textContent = result.data.stats.pending;
@@ -441,13 +521,56 @@ async function refreshOrders() {
             document.getElementById('readyCount').textContent = result.data.stats.ready;
             document.getElementById('avgTime').textContent = result.data.stats.avg_time;
             
-            // Update orders grid (simplified - in production, you'd update the DOM more efficiently)
-            if (result.data.orders.length !== document.querySelectorAll('[data-order-id]').length) {
-                location.reload(); // Simple refresh for now
+            const localCards = document.querySelectorAll('[data-order-id]');
+            const statusesChanged = remoteOrders.some((order) => {
+                const id = Number(order.id);
+                const normalized = (order.status || '').toLowerCase();
+                const card = document.querySelector(`[data-order-id="${id}"]`);
+                return !card || (card.dataset.status || '') !== normalized;
+            });
+
+            if (remoteOrders.length !== localCards.length || statusesChanged) {
+                location.reload();
             }
         }
     } catch (error) {
         console.error('Error refreshing orders:', error);
+    }
+}
+
+async function markOrderPicked(orderId, buttonEl) {
+    if (!confirm('Confirm the order has been collected?')) {
+        return;
+    }
+
+    let originalLabel = null;
+    if (buttonEl) {
+        originalLabel = buttonEl.innerHTML;
+        buttonEl.disabled = true;
+        buttonEl.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Closing';
+    }
+
+    try {
+        const response = await fetch('api/restaurant-order-workflow.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'mark_order_picked', order_id: orderId })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            setTimeout(() => window.location.reload(), 200);
+        } else {
+            alert('Error: ' + result.message);
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    } finally {
+        if (buttonEl) {
+            buttonEl.disabled = false;
+            buttonEl.innerHTML = originalLabel ?? 'Picked';
+        }
     }
 }
 
@@ -460,6 +583,22 @@ function toggleSound() {
 function playNotificationSound() {
     const audio = document.getElementById('notificationSound');
     audio.play().catch(e => console.log('Could not play sound:', e));
+}
+
+function handleReadyNotification(result) {
+    if (!result || !result.order_id) {
+        return;
+    }
+    const normalizedStatus = typeof result.order_status === 'string'
+        ? result.order_status.toLowerCase()
+        : '';
+
+    if (normalizedStatus === 'ready' && !readyOrdersSet.has(result.order_id)) {
+        readyOrdersSet.add(result.order_id);
+        if (soundEnabled) {
+            playNotificationSound();
+        }
+    }
 }
 
 // Initialize timers

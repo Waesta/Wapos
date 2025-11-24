@@ -11,8 +11,17 @@ class MaintenanceService
 {
     private PDO $db;
 
-    private const STATUSES = ['open', 'in_progress', 'resolved', 'closed'];
+    private const STATUSES = ['open', 'assigned', 'in_progress', 'on_hold', 'resolved', 'closed'];
     private const PRIORITIES = ['low', 'normal', 'high'];
+
+    private const VALID_TRANSITIONS = [
+        'open' => ['assigned', 'in_progress', 'on_hold', 'resolved', 'closed'],
+        'assigned' => ['in_progress', 'on_hold', 'resolved', 'closed'],
+        'in_progress' => ['on_hold', 'resolved', 'closed'],
+        'on_hold' => ['in_progress', 'resolved', 'closed'],
+        'resolved' => ['closed', 'in_progress'],
+        'closed' => [],
+    ];
 
     public function __construct(PDO $db)
     {
@@ -176,7 +185,7 @@ class MaintenanceService
         }
     }
 
-    public function updateRequest(int $requestId, array $payload): array
+    public function updateRequest(int $requestId, array $payload, ?int $userId = null): array
     {
         $this->ensureSchema();
 
@@ -187,6 +196,21 @@ class MaintenanceService
 
         $fields = [];
         $params = [':id' => $requestId];
+        $statusChange = null;
+        $statusNote = $payload['status_note'] ?? null;
+
+        if (array_key_exists('status', $payload)) {
+            $requestedStatus = strtolower((string)$payload['status']);
+            if (!in_array($requestedStatus, self::STATUSES, true)) {
+                throw new Exception('Unsupported status value.');
+            }
+            if ($requestedStatus !== $existing['status']) {
+                if (!$this->canTransition($existing['status'], $requestedStatus)) {
+                    throw new Exception('Cannot move request from ' . $existing['status'] . ' to ' . $requestedStatus . '.');
+                }
+                $statusChange = $requestedStatus;
+            }
+        }
 
         if (array_key_exists('title', $payload)) {
             $title = trim((string)$payload['title']);
@@ -268,17 +292,30 @@ class MaintenanceService
             $params[':completed_at'] = $payload['completed_at'] !== '' ? $this->normalizeDateTime($payload['completed_at']) : null;
         }
 
-        if (empty($fields)) {
-            return $existing;
+        $didUpdate = false;
+        if (!empty($fields)) {
+            $fields[] = 'updated_at = NOW()';
+            $sql = 'UPDATE maintenance_requests SET ' . implode(', ', $fields) . ' WHERE id = :id';
+
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute($params);
+            $didUpdate = true;
         }
 
-        $fields[] = 'updated_at = NOW()';
-        $sql = 'UPDATE maintenance_requests SET ' . implode(', ', $fields) . ' WHERE id = :id';
+        if ($statusChange !== null) {
+            return $this->updateStatus(
+                $requestId,
+                $statusChange,
+                $statusNote,
+                $userId ?? ($existing['created_by'] ?? null) ?? 0
+            );
+        }
 
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute($params);
+        if ($didUpdate) {
+            return $this->getRequestById($requestId);
+        }
 
-        return $this->getRequestById($requestId);
+        return $existing;
     }
 
     public function updateStatus(int $requestId, string $status, ?string $notes, int $userId): array
@@ -391,6 +428,43 @@ class MaintenanceService
         return $row ?: null;
     }
 
+    public function getRequestByTrackingCode(string $trackingCode, ?string $contact = null): ?array
+    {
+        $this->ensureSchema();
+
+        $trackingCode = strtoupper(trim($trackingCode));
+        if ($trackingCode === '') {
+            return null;
+        }
+
+        $sql = "
+            SELECT r.id, r.title, r.description, r.priority, r.status, r.reporter_name,
+                   r.reporter_contact, r.created_at, r.updated_at, r.started_at, r.completed_at,
+                   rooms.room_number,
+                   CONCAT_WS(' ', tech.full_name, tech.username) AS assigned_name
+            FROM maintenance_requests r
+            LEFT JOIN rooms ON r.room_id = rooms.id
+            LEFT JOIN users tech ON r.assigned_to = tech.id
+            WHERE r.tracking_code = :tracking_code
+        ";
+
+        $params = [':tracking_code' => $trackingCode];
+        if ($contact !== null && trim($contact) !== '') {
+            $sql .= ' AND (r.reporter_contact IS NULL OR LOWER(r.reporter_contact) = :contact_check)';
+            $params[':contact_check'] = strtolower(trim($contact));
+        }
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            return null;
+        }
+
+        $row['timeline'] = $this->getPublicTimeline((int)$row['id']);
+        return $row;
+    }
+
     public function getRequests(array $filters = []): array
     {
         $this->ensureSchema();
@@ -421,6 +495,10 @@ class MaintenanceService
         if (!empty($filters['reporter_type'])) {
             $where[] = 'r.reporter_type = :reporter_type';
             $params[':reporter_type'] = $filters['reporter_type'];
+        }
+
+        if (!empty($filters['due_today'])) {
+            $where[] = 'r.due_date = CURDATE()';
         }
 
         $sql = "
@@ -454,6 +532,22 @@ class MaintenanceService
         $stmt->execute($params);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
         return $rows ?: [];
+    }
+
+    public function getPublicTimeline(int $requestId): array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT status, notes, created_at FROM maintenance_request_logs WHERE request_id = :id ORDER BY created_at ASC"
+        );
+        $stmt->execute([':id' => $requestId]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        return array_map(static function ($row) {
+            return [
+                'status' => $row['status'],
+                'notes' => $row['notes'],
+                'created_at' => $row['created_at'],
+            ];
+        }, $rows);
     }
 
     public function getLogs(int $requestId): array
@@ -490,6 +584,45 @@ class MaintenanceService
         $counts['overdue'] = (int)$stmt->fetchColumn();
 
         return $counts;
+    }
+
+    public function getTechnicianLoad(): array
+    {
+        $this->ensureSchema();
+
+        $sql = "
+            SELECT
+                mr.assigned_to AS technician_id,
+                CONCAT_WS(' ', tech.full_name, tech.username) AS technician_name,
+                SUM(CASE WHEN mr.status IN ('open','assigned') THEN 1 ELSE 0 END) AS pending,
+                SUM(CASE WHEN mr.status = 'in_progress' THEN 1 ELSE 0 END) AS in_progress,
+                SUM(CASE WHEN mr.status = 'on_hold' THEN 1 ELSE 0 END) AS on_hold,
+                COUNT(mr.id) AS total
+            FROM maintenance_requests mr
+            LEFT JOIN users tech ON mr.assigned_to = tech.id
+            WHERE mr.assigned_to IS NOT NULL
+              AND mr.status NOT IN ('resolved','closed')
+            GROUP BY mr.assigned_to, technician_name
+            ORDER BY total DESC, technician_name ASC
+        ";
+
+        $stmt = $this->db->query($sql);
+        $rows = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+
+        if (!$rows) {
+            return [];
+        }
+
+        return array_map(static function (array $row): array {
+            return [
+                'technician_id' => isset($row['technician_id']) ? (int)$row['technician_id'] : 0,
+                'technician_name' => trim($row['technician_name'] ?? '') ?: 'Unassigned',
+                'pending' => (int)($row['pending'] ?? 0),
+                'in_progress' => (int)($row['in_progress'] ?? 0),
+                'on_hold' => (int)($row['on_hold'] ?? 0),
+                'total' => (int)($row['total'] ?? 0),
+            ];
+        }, $rows);
     }
 
     private function addLogInternal(int $requestId, string $status, ?string $notes, ?int $userId): void
@@ -540,7 +673,7 @@ class MaintenanceService
             title VARCHAR(200) NOT NULL,
             description TEXT NULL,
             priority ENUM('low','normal','high') NOT NULL DEFAULT 'normal',
-            status ENUM('open','in_progress','resolved','closed') NOT NULL DEFAULT 'open',
+            status ENUM('open','assigned','in_progress','on_hold','resolved','closed') NOT NULL DEFAULT 'open',
             reporter_type VARCHAR(40) NOT NULL DEFAULT 'staff',
             reporter_name VARCHAR(120) NULL,
             reporter_contact VARCHAR(120) NULL,
@@ -573,6 +706,7 @@ class MaintenanceService
         } catch (PDOException $e) {
             // Ignore alteration failure (already nullable or permissions issue)
         }
+        $this->ensureRequestStatusEnum();
         $this->ensureForeignKey('maintenance_requests', 'fk_maintenance_requests_room', 'room_id', 'rooms', 'id');
         $this->ensureForeignKey('maintenance_requests', 'fk_maintenance_requests_booking', 'booking_id', 'room_bookings', 'id');
         $this->ensureForeignKey('maintenance_requests', 'fk_maintenance_requests_assigned', 'assigned_to', 'users', 'id');
@@ -600,7 +734,7 @@ class MaintenanceService
         $sql = "CREATE TABLE IF NOT EXISTS maintenance_request_logs (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
             request_id INT UNSIGNED NOT NULL,
-            status ENUM('open','in_progress','resolved','closed') NOT NULL,
+            status ENUM('open','assigned','in_progress','on_hold','resolved','closed') NOT NULL,
             notes TEXT NULL,
             created_by INT UNSIGNED NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -612,8 +746,38 @@ class MaintenanceService
     private function syncLogsTable(): void
     {
         $this->addColumnIfMissing('maintenance_request_logs', 'created_by', 'INT UNSIGNED NULL AFTER notes');
+        $this->ensureLogStatusEnum();
         $this->ensureForeignKey('maintenance_request_logs', 'fk_maintenance_logs_request', 'request_id', 'maintenance_requests', 'id');
         $this->ensureForeignKey('maintenance_request_logs', 'fk_maintenance_logs_user', 'created_by', 'users', 'id');
+    }
+
+    private function ensureRequestStatusEnum(): void
+    {
+        try {
+            $this->db->exec("ALTER TABLE maintenance_requests MODIFY status ENUM('open','assigned','in_progress','on_hold','resolved','closed') NOT NULL DEFAULT 'open'");
+        } catch (PDOException $e) {
+            // Ignore failure if permissions prevent altering enum
+        }
+    }
+
+    private function ensureLogStatusEnum(): void
+    {
+        try {
+            $this->db->exec("ALTER TABLE maintenance_request_logs MODIFY status ENUM('open','assigned','in_progress','on_hold','resolved','closed') NOT NULL");
+        } catch (PDOException $e) {
+            // Ignore alteration failure
+        }
+    }
+
+    private function canTransition(?string $from, string $to): bool
+    {
+        $from = strtolower($from ?? '');
+        $to = strtolower($to);
+        if (!isset(self::VALID_TRANSITIONS[$from])) {
+            return false;
+        }
+
+        return in_array($to, self::VALID_TRANSITIONS[$from], true);
     }
 
     private function addColumnIfMissing(string $table, string $column, string $definition): void

@@ -26,8 +26,9 @@ $publicToken = getenv('MAINTENANCE_PUBLIC_TOKEN') ?: ($_ENV['MAINTENANCE_PUBLIC_
 $isGuestCreate = $method === 'POST' && ($action === 'create') && isset($input['public_key']) && $publicToken && hash_equals($publicToken, (string)$input['public_key']);
 
 $isLoggedIn = $auth->isLoggedIn();
+$isGuestTracking = $method === 'GET' && $action === 'track' && !empty($_GET['tracking_code']);
 
-if (!$isLoggedIn && !$isGuestCreate) {
+if (!$isLoggedIn && !$isGuestCreate && !$isGuestTracking) {
     http_response_code(401);
     echo json_encode(['success' => false, 'message' => 'Unauthorized']);
     exit;
@@ -44,7 +45,7 @@ if ($isLoggedIn) {
     }
 }
 
-if (!$authorized && !$isGuestCreate && $method !== 'POST') {
+if (!$authorized && !$isGuestCreate && !$isGuestTracking && $method !== 'POST') {
     http_response_code(403);
     echo json_encode(['success' => false, 'message' => 'Forbidden']);
     exit;
@@ -94,6 +95,30 @@ if ($method === 'GET') {
             case 'summary':
                 $summary = $service->getSummary();
                 echo json_encode(['success' => true, 'summary' => $summary]);
+                return;
+
+            case 'tech_load':
+                $load = $service->getTechnicianLoad();
+                echo json_encode(['success' => true, 'load' => $load]);
+                return;
+
+            case 'track':
+                if (!$isLoggedIn && !$isGuestTracking) {
+                    throw new Exception('Unauthorized');
+                }
+                $trackingCode = $_GET['tracking_code'] ?? '';
+                if ($trackingCode === '') {
+                    throw new Exception('tracking_code is required.');
+                }
+                $contact = $_GET['contact'] ?? null;
+                $request = $service->getRequestByTrackingCode($trackingCode, $contact);
+                if (!$request) {
+                    throw new Exception('Request not found.');
+                }
+                echo json_encode([
+                    'success' => true,
+                    'request' => $request,
+                ]);
                 return;
 
             default:

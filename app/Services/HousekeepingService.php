@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Services\Inventory\InventoryService;
 use DateTime;
 use Exception;
 use PDO;
@@ -10,6 +11,7 @@ use PDOException;
 class HousekeepingService
 {
     private PDO $db;
+    private InventoryService $inventoryService;
 
     /**
      * Permitted task statuses.
@@ -24,6 +26,7 @@ class HousekeepingService
     public function __construct(PDO $db)
     {
         $this->db = $db;
+        $this->inventoryService = new InventoryService($db);
     }
 
     public function ensureSchema(): void
@@ -32,6 +35,7 @@ class HousekeepingService
         $this->syncTasksTable();
         $this->createTaskLogsTable();
         $this->syncTaskLogsTable();
+        $this->createTaskItemsTable();
     }
 
     public function createTask(array $data, int $userId): array
@@ -73,6 +77,8 @@ class HousekeepingService
         }
 
         $notes = trim((string)($data['notes'] ?? '')) ?: null;
+
+        $consumables = $this->normalizeTaskItems($data['consumables'] ?? []);
 
         $this->db->beginTransaction();
         try {
@@ -131,6 +137,10 @@ class HousekeepingService
             } elseif ($status === 'completed') {
                 $now = date('Y-m-d H:i:s');
                 $this->updateTaskTimestamps($taskId, startedAt: $now, completedAt: $now);
+            }
+
+            if (!empty($consumables)) {
+                $this->syncTaskItems($taskId, $consumables);
             }
 
             $this->db->commit();
@@ -208,6 +218,11 @@ class HousekeepingService
             $params[':assigned_to'] = $data['assigned_to'] !== '' ? (int)$data['assigned_to'] : null;
         }
 
+        $consumables = null;
+        if (array_key_exists('consumables', $data)) {
+            $consumables = $this->normalizeTaskItems($data['consumables']);
+        }
+
         if (empty($fields)) {
             return $task;
         }
@@ -217,6 +232,10 @@ class HousekeepingService
 
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
+
+        if (is_array($consumables)) {
+            $this->syncTaskItems($taskId, $consumables);
+        }
 
         return $this->getTaskById($taskId);
     }
@@ -238,6 +257,7 @@ class HousekeepingService
         $notes = trim((string)$notes) ?: null;
 
         $this->db->beginTransaction();
+        $consumeAfterCommit = $status === 'completed';
         try {
             $timestamps = [];
             if ($status === 'in_progress' && empty($task['started_at'])) {
@@ -279,6 +299,10 @@ class HousekeepingService
 
             $this->db->commit();
 
+            if ($consumeAfterCommit) {
+                $this->consumeTaskItems($taskId, $userId);
+            }
+
             return $this->getTaskById($taskId);
         } catch (Exception $e) {
             $this->db->rollBack();
@@ -305,7 +329,20 @@ class HousekeepingService
                 r.room_number,
                 rb.booking_number,
                 CONCAT_WS(' ', assigned.full_name, assigned.username) AS assigned_name,
-                CONCAT_WS(' ', creator.full_name, creator.username) AS created_by_name
+                CONCAT_WS(' ', creator.full_name, creator.username) AS created_by_name,
+                COALESCE((
+                    SELECT JSON_ARRAYAGG(JSON_OBJECT(
+                        'id', hti.id,
+                        'product_id', hti.product_id,
+                        'product_name', prod.name,
+                        'quantity', hti.quantity,
+                        'notes', hti.notes,
+                        'consumed_at', hti.consumed_at
+                    ))
+                    FROM housekeeping_task_items hti
+                    LEFT JOIN products prod ON prod.id = hti.product_id
+                    WHERE hti.task_id = t.id
+                ), JSON_ARRAY()) AS consumables
             FROM housekeeping_tasks t
             LEFT JOIN rooms r ON t.room_id = r.id
             LEFT JOIN room_bookings rb ON t.booking_id = rb.id
@@ -369,7 +406,20 @@ class HousekeepingService
                 r.room_number,
                 rb.booking_number,
                 CONCAT_WS(' ', assigned.full_name, assigned.username) AS assigned_name,
-                CONCAT_WS(' ', creator.full_name, creator.username) AS created_by_name
+                CONCAT_WS(' ', creator.full_name, creator.username) AS created_by_name,
+                COALESCE((
+                    SELECT JSON_ARRAYAGG(JSON_OBJECT(
+                        'id', hti.id,
+                        'product_id', hti.product_id,
+                        'product_name', prod.name,
+                        'quantity', hti.quantity,
+                        'notes', hti.notes,
+                        'consumed_at', hti.consumed_at
+                    ))
+                    FROM housekeeping_task_items hti
+                    LEFT JOIN products prod ON prod.id = hti.product_id
+                    WHERE hti.task_id = t.id
+                ), JSON_ARRAY()) AS consumables
             FROM housekeeping_tasks t
             LEFT JOIN rooms r ON t.room_id = r.id
             LEFT JOIN room_bookings rb ON t.booking_id = rb.id
@@ -579,6 +629,120 @@ class HousekeepingService
         $this->addColumnIfMissing('housekeeping_task_logs', 'created_by', 'INT UNSIGNED NULL AFTER notes');
         $this->ensureForeignKey('housekeeping_task_logs', 'fk_housekeeping_task_logs_task', 'task_id', 'housekeeping_tasks', 'id');
         $this->ensureForeignKey('housekeeping_task_logs', 'fk_housekeeping_task_logs_user', 'created_by', 'users', 'id');
+    }
+
+    private function createTaskItemsTable(): void
+    {
+        $sql = "CREATE TABLE IF NOT EXISTS housekeeping_task_items (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            task_id INT UNSIGNED NOT NULL,
+            product_id INT UNSIGNED NOT NULL,
+            quantity DECIMAL(18,4) NOT NULL DEFAULT 1,
+            notes VARCHAR(255) NULL,
+            consumed_at DATETIME NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_task_item_task (task_id),
+            INDEX idx_task_item_product (product_id),
+            CONSTRAINT fk_housekeeping_task_items_task FOREIGN KEY (task_id) REFERENCES housekeeping_tasks(id) ON DELETE CASCADE,
+            CONSTRAINT fk_housekeeping_task_items_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT
+        ) ENGINE=InnoDB";
+        $this->db->exec($sql);
+    }
+
+    private function syncTaskItems(int $taskId, array $items): void
+    {
+        $normalized = $this->normalizeTaskItems($items);
+
+        $delete = $this->db->prepare('DELETE FROM housekeeping_task_items WHERE task_id = :task_id');
+        $delete->execute([':task_id' => $taskId]);
+
+        if (empty($normalized)) {
+            return;
+        }
+
+        $insert = $this->db->prepare('INSERT INTO housekeeping_task_items (task_id, product_id, quantity, notes, created_at, updated_at) VALUES (:task_id, :product_id, :quantity, :notes, NOW(), NOW())');
+        foreach ($normalized as $item) {
+            $insert->execute([
+                ':task_id' => $taskId,
+                ':product_id' => $item['product_id'],
+                ':quantity' => $item['quantity'],
+                ':notes' => $item['notes'] ?? null,
+            ]);
+        }
+    }
+
+    private function getTaskItems(int $taskId): array
+    {
+        $stmt = $this->db->prepare('SELECT * FROM housekeeping_task_items WHERE task_id = :task_id');
+        $stmt->execute([':task_id' => $taskId]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    private function consumeTaskItems(int $taskId, ?int $userId): void
+    {
+        $items = $this->getTaskItems($taskId);
+        if (empty($items)) {
+            return;
+        }
+
+        $updateStmt = $this->db->prepare('UPDATE housekeeping_task_items SET consumed_at = NOW(), updated_at = NOW() WHERE id = :id');
+
+        foreach ($items as $item) {
+            if (!empty($item['consumed_at'])) {
+                continue;
+            }
+
+            try {
+                $this->inventoryService->recordConsumption((int) $item['product_id'], (float) $item['quantity'], [
+                    'reference_type' => 'housekeeping_task',
+                    'reference_id' => $taskId,
+                    'reference_number' => 'HK-' . $taskId,
+                    'source_module' => 'housekeeping',
+                    'user_id' => $userId,
+                    'notes' => $item['notes'] ?? null,
+                ]);
+                $updateStmt->execute([':id' => $item['id']]);
+            } catch (Throwable $e) {
+                error_log('Housekeeping consumable deduction failed for task ' . $taskId . ': ' . $e->getMessage());
+            }
+        }
+    }
+
+    private function normalizeTaskItems($items): array
+    {
+        if (!is_array($items)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($items as $item) {
+            if (is_string($item)) {
+                $decoded = json_decode($item, true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    $item = $decoded;
+                }
+            }
+
+            if (!is_array($item) || !isset($item['product_id'])) {
+                continue;
+            }
+
+            $productId = (int) $item['product_id'];
+            $quantity = isset($item['quantity']) ? (float) $item['quantity'] : 1;
+
+            if ($productId <= 0 || $quantity <= 0) {
+                continue;
+            }
+
+            $normalized[] = [
+                'product_id' => $productId,
+                'quantity' => $quantity,
+                'notes' => isset($item['notes']) && trim((string)$item['notes']) !== '' ? trim((string)$item['notes']) : null,
+            ];
+        }
+
+        return $normalized;
     }
 
     private function addColumnIfMissing(string $table, string $column, string $definition): void

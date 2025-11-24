@@ -6,8 +6,8 @@ $db = Database::getInstance();
 
 // Get order type and table
 $orderType = $_GET['type'] ?? 'dine-in';
-$tableId = $_GET['table_id'] ?? null;
-$orderId = $_GET['id'] ?? null;
+$tableId = isset($_GET['table_id']) ? (int)$_GET['table_id'] : null;
+$orderId = isset($_GET['id']) ? (int)$_GET['id'] : null;
 
 // Get products and modifiers
 $products = $db->fetchAll("SELECT * FROM products WHERE is_active = 1 ORDER BY name");
@@ -94,9 +94,73 @@ if ($tableId) {
 
 // Get existing order if editing
 $existingOrder = null;
+$existingItems = [];
 if ($orderId) {
-    $existingOrder = $db->fetchOne("SELECT * FROM orders WHERE id = ?", [$orderId]);
-    $existingItems = $db->fetchAll("SELECT * FROM order_items WHERE order_id = ?", [$orderId]);
+    $existingOrder = $db->fetchOne("SELECT o.*, rt.table_number, rt.table_name, u.full_name AS waiter_name
+        FROM orders o
+        LEFT JOIN restaurant_tables rt ON o.table_id = rt.id
+        LEFT JOIN users u ON o.user_id = u.id
+        WHERE o.id = ?", [$orderId]);
+
+    $existingItems = $db->fetchAll("SELECT oi.*, p.name AS catalog_name
+        FROM order_items oi
+        LEFT JOIN products p ON oi.product_id = p.id
+        WHERE oi.order_id = ?
+        ORDER BY oi.id", [$orderId]);
+}
+
+$existingOrderMeta = null;
+$existingItemsPayload = [];
+
+if ($existingOrder) {
+    $existingOrderMeta = [
+        'id' => (int)$existingOrder['id'],
+        'order_number' => (string)$existingOrder['order_number'],
+        'status' => (string)$existingOrder['status'],
+        'payment_status' => (string)$existingOrder['payment_status'],
+        'payment_method' => $existingOrder['payment_method'] ?? null,
+        'table_number' => $existingOrder['table_number'] ?? null,
+        'table_name' => $existingOrder['table_name'] ?? null,
+        'waiter_name' => $existingOrder['waiter_name'] ?? null,
+        'customer_name' => $existingOrder['customer_name'] ?? null,
+        'created_at' => $existingOrder['created_at'] ?? null,
+        'total_amount' => (float)$existingOrder['total_amount'],
+    ];
+}
+
+if (!empty($existingItems)) {
+    foreach ($existingItems as $item) {
+        $modifiers = [];
+        if (!empty($item['modifiers_data'])) {
+            $decoded = json_decode($item['modifiers_data'], true);
+            if (is_array($decoded)) {
+                foreach ($decoded as $mod) {
+                    $modifiers[] = [
+                        'name' => $mod['name'] ?? '',
+                        'price' => isset($mod['price']) ? (float)$mod['price'] : 0.0,
+                    ];
+                }
+            }
+        }
+
+        $modifierTotal = array_reduce($modifiers, fn($carry, $mod) => $carry + (float)$mod['price'], 0.0);
+        $unitPrice = (float)($item['unit_price'] ?? 0);
+        $quantity = (float)($item['quantity'] ?? 1);
+        $totalPrice = $item['total_price'] !== null ? (float)$item['total_price'] : $unitPrice * $quantity;
+        $basePrice = max(0, $unitPrice - $modifierTotal);
+        $itemName = $item['product_name'] ?? $item['catalog_name'] ?? ('Item #' . (int)$item['product_id']);
+
+        $existingItemsPayload[] = [
+            'id' => (int)$item['product_id'],
+            'name' => $itemName,
+            'quantity' => $quantity,
+            'base_price' => $basePrice,
+            'unit_price' => $unitPrice,
+            'total' => $totalPrice,
+            'modifiers' => $modifiers,
+            'instructions' => $item['special_instructions'] ?? '',
+        ];
+    }
 }
 
 $currencySetting = $db->fetchOne("SELECT setting_value FROM settings WHERE setting_key = 'currency'");
@@ -105,6 +169,11 @@ $currencySymbol = $currencySetting['setting_value'] ?? '$';
 $pageTitle = $orderType === 'dine-in' ? 'Dine-In Order' : 'Takeout Order';
 include 'includes/header.php';
 ?>
+
+<script>
+window.EXISTING_ORDER_META = <?= json_encode($existingOrderMeta, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+window.EXISTING_ORDER_ITEMS = <?= json_encode($existingItemsPayload, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+</script>
 
 <style>
     .order-shell {
@@ -241,15 +310,27 @@ include 'includes/header.php';
         box-shadow: var(--shadow-md);
     }
     .order-actions {
-        display: flex;
-        flex-direction: column;
+        display: grid;
         gap: var(--spacing-sm);
     }
-    .order-actions .btn-group {
+    .order-actions .order-action {
         width: 100%;
     }
-    .order-actions .btn-group .btn {
-        flex: 1;
+    .order-actions .order-action--full {
+        grid-column: 1 / -1;
+    }
+    .order-actions-split {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: var(--spacing-sm);
+    }
+    @media (min-width: 576px) {
+        .order-actions {
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        }
+        .order-actions .order-action--full {
+            grid-column: 1 / -1;
+        }
     }
 </style>
 
@@ -337,6 +418,36 @@ include 'includes/header.php';
                         <span class="text-muted small">Review lines, capture customer details, and take payment.</span>
                     </div>
                 </div>
+
+                <?php if ($existingOrderMeta): ?>
+                    <div class="alert alert-info d-flex flex-column gap-1">
+                        <div class="d-flex flex-wrap justify-content-between gap-2">
+                            <div>
+                                <strong>Order <?= htmlspecialchars($existingOrderMeta['order_number']) ?></strong>
+                                <div class="small text-muted">
+                                    Status: <?= ucfirst(htmlspecialchars($existingOrderMeta['status'])) ?> · Payment: <?= ucfirst(htmlspecialchars($existingOrderMeta['payment_status'])) ?>
+                                </div>
+                                <?php if (!empty($existingOrderMeta['waiter_name'])): ?>
+                                    <div class="small text-muted">Waiter: <?= htmlspecialchars($existingOrderMeta['waiter_name']) ?></div>
+                                <?php endif; ?>
+                                <?php if (!empty($existingOrderMeta['table_number'])): ?>
+                                    <div class="small text-muted">Table: <?= htmlspecialchars($existingOrderMeta['table_number']) ?></div>
+                                <?php endif; ?>
+                            </div>
+                            <div class="text-end">
+                                <div class="fw-semibold">Total <?= formatMoney($existingOrderMeta['total_amount']) ?></div>
+                                <div class="small text-muted"><?= $existingOrderMeta['created_at'] ? formatDate($existingOrderMeta['created_at'], 'd M Y H:i') : '' ?></div>
+                            </div>
+                        </div>
+                        <?php if ($existingOrderMeta['payment_status'] !== 'paid'): ?>
+                            <div>
+                                <a href="restaurant-payment.php?order_id=<?= (int)$existingOrderMeta['id'] ?>" class="btn btn-outline-primary btn-sm">
+                                    <i class="bi bi-credit-card"></i> Open Payment Screen
+                                </a>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                <?php endif; ?>
 
                 <?php if ($orderType !== 'dine-in'): ?>
                     <div class="stack-sm">
@@ -457,21 +568,21 @@ include 'includes/header.php';
                 </div>
 
                 <div class="order-actions">
-                    <button class="btn btn-info w-100" onclick="printInvoice()" id="invoiceBtn" disabled>
+                    <button class="btn btn-info order-action order-action--full" onclick="printInvoice()" id="invoiceBtn" disabled>
                         <i class="bi bi-receipt me-2"></i>Print Invoice
                     </button>
-                    <button class="btn btn-primary btn-lg w-100" onclick="processPayment()" id="paymentBtn" disabled>
+                    <button class="btn btn-primary btn-lg order-action order-action--full" onclick="processPayment()" id="paymentBtn" disabled>
                         <i class="bi bi-credit-card me-2"></i>Process Payment
                     </button>
-                    <div class="btn-group" role="group" aria-label="Print options">
-                        <button class="btn btn-outline-success btn-sm" onclick="printKitchenOrder()" id="kitchenBtn" disabled>
+                    <div class="order-actions-split order-action order-action--full" role="group" aria-label="Print options">
+                        <button class="btn btn-outline-success" onclick="printKitchenOrder()" id="kitchenBtn" disabled>
                             <i class="bi bi-printer me-1"></i>Kitchen
                         </button>
-                        <button class="btn btn-outline-info btn-sm" onclick="printCustomerReceipt()" id="receiptBtn" disabled>
+                        <button class="btn btn-outline-info" onclick="printCustomerReceipt()" id="receiptBtn" disabled>
                             <i class="bi bi-receipt-cutoff me-1"></i>Receipt
                         </button>
                     </div>
-                    <button class="btn btn-outline-danger w-100" onclick="clearCart()">
+                    <button class="btn btn-outline-danger order-action order-action--full" onclick="clearCart()">
                         <i class="bi bi-trash me-2"></i>Clear Cart
                     </button>
                 </div>
@@ -542,6 +653,8 @@ const businessCoordinates = {
     lat: <?= $businessLat !== null ? json_encode($businessLat) : 'null' ?>,
     lng: <?= $businessLng !== null ? json_encode($businessLng) : 'null' ?>
 };
+const EXISTING_ORDER_META = window.EXISTING_ORDER_META || null;
+const EXISTING_ORDER_ITEMS = Array.isArray(window.EXISTING_ORDER_ITEMS) ? window.EXISTING_ORDER_ITEMS : [];
 const modifierModalEl = document.getElementById('modifierModal');
 const hasModifierOptions = modifierModalEl && modifierModalEl.querySelectorAll('.modifier-check').length > 0;
 let modifierModalInstance = null;
@@ -1159,6 +1272,38 @@ function clearCart() {
 let currentOrderId = null;
 let orderStatus = 'draft'; // draft, placed, paid
 
+function hydrateExistingOrder() {
+    if (!EXISTING_ORDER_META || !Array.isArray(EXISTING_ORDER_ITEMS) || EXISTING_ORDER_ITEMS.length === 0) {
+        return false;
+    }
+
+    currentOrderId = EXISTING_ORDER_META.id || null;
+    orderStatus = EXISTING_ORDER_META.payment_status === 'paid' ? 'paid' : 'placed';
+
+    cart = EXISTING_ORDER_ITEMS.map((item) => {
+        const qty = Number(item.quantity) || 1;
+        const unitPrice = typeof item.unit_price === 'number' ? item.unit_price : (Number(item.total) / qty);
+        return {
+            id: item.id,
+            name: item.name,
+            base_price: item.base_price ?? unitPrice,
+            price: unitPrice,
+            quantity: qty,
+            modifiers: Array.isArray(item.modifiers) ? item.modifiers : [],
+            instructions: item.instructions || '',
+            total: item.total ?? unitPrice * qty,
+        };
+    });
+
+    const paymentMethodSelect = document.getElementById('paymentMethod');
+    if (paymentMethodSelect && EXISTING_ORDER_META.payment_method) {
+        paymentMethodSelect.value = EXISTING_ORDER_META.payment_method;
+    }
+
+    updateCart();
+    return true;
+}
+
 async function submitOrder() {
     if (cart.length === 0) return;
     
@@ -1506,6 +1651,8 @@ function getCoordinateValue(elementId) {
 document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM loaded, initializing restaurant order page...');
 
+    const hydrated = hydrateExistingOrder();
+
     const searchInput = document.getElementById('searchProduct');
     const categorySelect = document.getElementById('filterCategory');
     if (searchInput) {
@@ -1568,6 +1715,10 @@ document.addEventListener('DOMContentLoaded', () => {
         roomBookingSelect.addEventListener('change', () => {
             updateButtonStates();
         });
+    }
+
+    if (!hydrated) {
+        updateCart();
     }
 
     // Add debug logging for button clicks

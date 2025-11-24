@@ -202,7 +202,7 @@ $inactiveCount = count($users) - $activeCount;
         </div>
     </div>
 
-    <div class="card border-0 shadow-sm">
+    <div class="card border-0 shadow-sm mb-3">
         <div class="card-body">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
                 <div class="text-muted small" id="userResultCount"><?= number_format(count($users)) ?> user(s)</div>
@@ -210,11 +210,44 @@ $inactiveCount = count($users) - $activeCount;
                     <button type="button" class="btn btn-outline-secondary" onclick="window.print()">
                         <i class="bi bi-printer me-1"></i>Print
                     </button>
-                    <a href="export-users.php" class="btn btn-outline-primary">
+                    <button type="button" class="btn btn-outline-primary" id="userTemplateBtn">
+                        <i class="bi bi-file-earmark-spreadsheet me-1"></i>Template
+                    </button>
+                    <a href="api/data-port.php?action=export&amp;entity=users" target="_blank" rel="noopener" class="btn btn-outline-primary" id="userExportBtn">
                         <i class="bi bi-download me-1"></i>Export CSV
                     </a>
                 </div>
             </div>
+
+            <div class="row g-3 align-items-end">
+                <div class="col-lg-6">
+                    <label class="form-label">Import Users (CSV)</label>
+                    <form id="userImportForm" class="row g-2" enctype="multipart/form-data" novalidate>
+                        <div class="col-md-7 col-sm-12">
+                            <input type="file" class="form-control" id="userImportFile" accept=".csv,text/csv" required>
+                            <div class="form-text">Use the template headers. UTF-8 encoded.</div>
+                        </div>
+                        <div class="col-md-3 col-sm-6">
+                            <select class="form-select" id="userImportMode">
+                                <option value="validate">Validate Only</option>
+                                <option value="import">Validate &amp; Import</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2 col-sm-6 d-flex align-items-end justify-content-md-end">
+                            <button type="submit" class="btn btn-success btn-sm w-100" id="userImportSubmit">
+                                <span class="spinner-border spinner-border-sm me-2 d-none" role="status" aria-hidden="true"></span>
+                                <i class="bi bi-upload me-1"></i>Process
+                            </button>
+                        </div>
+                    </form>
+                    <div id="userImportStatus" class="alert d-none mt-2" role="alert"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body">
             <div class="table-responsive">
                 <table class="table table-hover" id="usersTable">
                     <thead class="table-light">
@@ -235,13 +268,16 @@ $inactiveCount = count($users) - $activeCount;
                         $role = $user['role'] ?? 'unknown';
                         $badge = $roleBadges[$role] ?? 'secondary';
                         $label = $roleLabels[$role] ?? ucfirst($role);
-                        $searchIndex = strtolower(trim(($user['username'] ?? '') . ' ' . ($user['full_name'] ?? '') . ' ' . ($user['email'] ?? '') . ' ' . ($label ?? '')));
+                        $username = (string) ($user['username'] ?? '');
+                        $fullName = (string) ($user['full_name'] ?? '');
+                        $email = (string) ($user['email'] ?? '');
+                        $searchIndex = strtolower(trim($username . ' ' . $fullName . ' ' . $email . ' ' . ($label ?? '')));
                         $statusSlug = $user['is_active'] ? 'active' : 'inactive';
                     ?>
                     <tr data-role="<?= htmlspecialchars($role) ?>" data-status="<?= $statusSlug ?>" data-search="<?= htmlspecialchars($searchIndex) ?>">
-                        <td><strong><?= htmlspecialchars($user['username']) ?></strong></td>
-                        <td><?= htmlspecialchars($user['full_name']) ?></td>
-                        <td><?= htmlspecialchars($user['email']) ?></td>
+                        <td><strong><?= htmlspecialchars($username) ?></strong></td>
+                        <td><?= htmlspecialchars($fullName) ?></td>
+                        <td><?= htmlspecialchars($email) ?></td>
                         <td>
                             <span class="badge bg-<?= $badge ?>">
                                 <?= htmlspecialchars($label) ?>
@@ -440,6 +476,68 @@ document.addEventListener('DOMContentLoaded', () => {
             statusSelect.value = '';
             applyFilters();
         });
+    }
+
+    const templateBtn = document.getElementById('userTemplateBtn');
+    const importForm = document.getElementById('userImportForm');
+    const importFile = document.getElementById('userImportFile');
+    const importMode = document.getElementById('userImportMode');
+    const importSubmit = document.getElementById('userImportSubmit');
+    const importStatus = document.getElementById('userImportStatus');
+
+    templateBtn?.addEventListener('click', () => {
+        window.open('api/data-port.php?action=template&entity=users', '_blank');
+    });
+
+    importForm?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!importFile?.files?.length) {
+            setImportStatus('Choose a CSV file to upload.', 'danger');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('action', 'import');
+        formData.append('entity', 'users');
+        formData.append('mode', importMode?.value || 'validate');
+        formData.append('csrf_token', CSRF_TOKEN);
+        formData.append('file', importFile.files[0]);
+
+        const spinner = importSubmit?.querySelector('.spinner-border');
+        spinner?.classList.remove('d-none');
+        if (importSubmit) {
+            importSubmit.disabled = true;
+        }
+        importStatus?.classList.add('d-none');
+
+        try {
+            const response = await fetch('api/data-port.php', {
+                method: 'POST',
+                body: formData,
+            });
+            const payload = await response.json();
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.message || 'Import failed');
+            }
+            const summary = payload.message || `Completed. Inserted ${payload.inserted || 0}, updated ${payload.updated || 0}.`;
+            setImportStatus(summary, 'success');
+        } catch (error) {
+            setImportStatus(error.message || 'Unable to process file', 'danger');
+        } finally {
+            spinner?.classList.add('d-none');
+            if (importSubmit) {
+                importSubmit.disabled = false;
+            }
+        }
+    });
+
+    function setImportStatus(message, variant = 'success') {
+        if (!importStatus) {
+            return;
+        }
+        importStatus.className = `alert alert-${variant}`;
+        importStatus.textContent = message;
+        importStatus.classList.remove('d-none');
     }
 });
 </script>

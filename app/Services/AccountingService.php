@@ -15,6 +15,7 @@ class AccountingService
     private PDO $db;
     private ?bool $expenseCategoriesHaveAccountCode = null;
     private array $journalEntriesColumnPresence = [];
+    private bool $journalEntriesSchemaEnsured = false;
 
     // Standard account codes
     private const ACCOUNT_CASH = '1000';
@@ -31,6 +32,7 @@ class AccountingService
     public function __construct(PDO $db)
     {
         $this->db = $db;
+        $this->ensureJournalEntriesSchema();
     }
 
     /**
@@ -384,6 +386,63 @@ class AccountingService
         $this->journalEntriesColumnPresence[$column] = !empty($result['column_exists']);
 
         return $this->journalEntriesColumnPresence[$column];
+    }
+
+    private function ensureJournalEntriesSchema(): void
+    {
+        if ($this->journalEntriesSchemaEnsured) {
+            return;
+        }
+
+        try {
+            $this->db->exec(
+                "CREATE TABLE IF NOT EXISTS journal_entries (
+                    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                    entry_number VARCHAR(50) NULL,
+                    source VARCHAR(50) NULL,
+                    source_id INT NULL,
+                    reference_no VARCHAR(100) NULL,
+                    entry_date DATE NOT NULL,
+                    description TEXT NULL,
+                    total_debit DECIMAL(15,2) NOT NULL DEFAULT 0,
+                    total_credit DECIMAL(15,2) NOT NULL DEFAULT 0,
+                    status ENUM('draft','posted','reversed') DEFAULT 'draft',
+                    period_id INT NULL,
+                    created_by INT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_source (source, source_id),
+                    INDEX idx_reference (reference_no)
+                ) ENGINE=InnoDB"
+            );
+        } catch (PDOException $e) {
+            error_log('Failed to ensure journal_entries base table: ' . $e->getMessage());
+        }
+
+        $columnsToEnsure = [
+            'entry_number' => "ALTER TABLE journal_entries ADD COLUMN entry_number VARCHAR(50) NULL AFTER id",
+            'source' => "ALTER TABLE journal_entries ADD COLUMN source VARCHAR(50) NULL AFTER entry_number",
+            'source_id' => "ALTER TABLE journal_entries ADD COLUMN source_id INT NULL AFTER source",
+            'reference_no' => "ALTER TABLE journal_entries ADD COLUMN reference_no VARCHAR(100) NULL AFTER source_id",
+            'total_debit' => "ALTER TABLE journal_entries ADD COLUMN total_debit DECIMAL(15,2) NOT NULL DEFAULT 0 AFTER description",
+            'total_credit' => "ALTER TABLE journal_entries ADD COLUMN total_credit DECIMAL(15,2) NOT NULL DEFAULT 0 AFTER total_debit",
+            'status' => "ALTER TABLE journal_entries ADD COLUMN status ENUM('draft','posted','reversed') DEFAULT 'draft' AFTER total_credit",
+            'period_id' => "ALTER TABLE journal_entries ADD COLUMN period_id INT NULL AFTER status",
+            'created_by' => "ALTER TABLE journal_entries ADD COLUMN created_by INT NULL AFTER period_id",
+            'created_at' => "ALTER TABLE journal_entries ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP AFTER created_by"
+        ];
+
+        foreach ($columnsToEnsure as $column => $ddl) {
+            if (!$this->hasJournalEntriesColumn($column)) {
+                try {
+                    $this->db->exec($ddl);
+                    $this->journalEntriesColumnPresence[$column] = true;
+                } catch (PDOException $e) {
+                    error_log('Failed to add journal_entries column ' . $column . ': ' . $e->getMessage());
+                }
+            }
+        }
+
+        $this->journalEntriesSchemaEnsured = true;
     }
 
     /**

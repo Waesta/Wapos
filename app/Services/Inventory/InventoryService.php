@@ -11,6 +11,7 @@ class InventoryService
 {
     private PDO $db;
     private bool $schemaEnsured = false;
+    private array $recipeCache = [];
 
     public function __construct(PDO $db)
     {
@@ -27,6 +28,7 @@ class InventoryService
         $this->createInventoryItemsTable();
         $this->createInventoryStockLedgerTable();
         $this->createInventoryConsumptionTable();
+        $this->createProductRecipesTable();
         $this->ensureProductReorderColumns();
         $this->schemaEnsured = true;
     }
@@ -240,6 +242,33 @@ class InventoryService
         $this->recordOutboundMovement($productId, $quantity, $meta);
     }
 
+    public function consumeRecipeItems(int $productId, float $multiplier, array $meta = []): void
+    {
+        $components = $this->getRecipeComponents($productId);
+        if (empty($components) || $multiplier <= 0) {
+            return;
+        }
+
+        foreach ($components as $component) {
+            $qty = (float) $component['quantity'] * $multiplier;
+            if ($qty <= 0) {
+                continue;
+            }
+
+            $this->recordOutboundMovement((int) $component['ingredient_product_id'], $qty, [
+                'movement_type' => 'recipe',
+                'reference_type' => $meta['reference_type'] ?? 'recipe_sale',
+                'reference_id' => $meta['reference_id'] ?? null,
+                'reference_number' => $meta['reference_number'] ?? null,
+                'source_module' => $meta['source_module'] ?? 'restaurant',
+                'notes' => $meta['notes'] ?? ('Recipe consumption for product #' . $productId),
+                'user_id' => $meta['user_id'] ?? null,
+                'log_consumption' => true,
+                'consumption_reason' => 'recipe',
+            ]);
+        }
+    }
+
     public function getLowStockItems(int $limit = 20): array
     {
         $this->ensureSchema();
@@ -276,12 +305,13 @@ class InventoryService
 
         $update = $this->db->prepare("UPDATE inventory_items
             SET current_stock = :current_stock,
-                last_cost = CASE WHEN :unit_cost > 0 THEN :unit_cost ELSE last_cost END,
+                last_cost = CASE WHEN :unit_cost_check > 0 THEN :unit_cost_value ELSE last_cost END,
                 updated_at = NOW()
             WHERE id = :id");
         $update->execute([
             ':current_stock' => $newStock,
-            ':unit_cost' => $unitCost,
+            ':unit_cost_check' => $unitCost,
+            ':unit_cost_value' => $unitCost,
             ':id' => $inventoryItemId,
         ]);
     }
@@ -488,6 +518,24 @@ class InventoryService
         $this->db->exec($sql);
     }
 
+    private function createProductRecipesTable(): void
+    {
+        $sql = "CREATE TABLE IF NOT EXISTS product_recipes (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            product_id INT UNSIGNED NOT NULL,
+            ingredient_product_id INT UNSIGNED NOT NULL,
+            quantity DECIMAL(18,4) NOT NULL,
+            notes VARCHAR(255) NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_recipe_product (product_id),
+            INDEX idx_recipe_ingredient (ingredient_product_id),
+            CONSTRAINT fk_recipe_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+            CONSTRAINT fk_recipe_ingredient FOREIGN KEY (ingredient_product_id) REFERENCES products(id) ON DELETE RESTRICT
+        ) ENGINE=InnoDB";
+        $this->db->exec($sql);
+    }
+
     private function createInventoryItemsTable(): void
     {
         $sql = "CREATE TABLE IF NOT EXISTS inventory_items (
@@ -591,6 +639,23 @@ class InventoryService
             $stmt = $this->db->prepare('SHOW COLUMNS FROM ' . $table);
             $stmt->execute();
             return $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+        } catch (PDOException $e) {
+            return [];
+        }
+    }
+
+    private function getRecipeComponents(int $productId): array
+    {
+        if (isset($this->recipeCache[$productId])) {
+            return $this->recipeCache[$productId];
+        }
+
+        try {
+            $stmt = $this->db->prepare("SELECT ingredient_product_id, quantity FROM product_recipes WHERE product_id = ?");
+            $stmt->execute([$productId]);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            $this->recipeCache[$productId] = $rows;
+            return $rows;
         } catch (PDOException $e) {
             return [];
         }

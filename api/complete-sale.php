@@ -1,25 +1,43 @@
 <?php
-require_once '../includes/bootstrap.php';
+declare(strict_types=1);
 
-use App\Services\AccountingService;
-use App\Services\SalesService;
-use Throwable;
+ini_set('display_errors', '0');
+ini_set('display_startup_errors', '0');
 
-header('Content-Type: application/json');
 ob_start();
 
+const COMPLETE_SALE_LOG = __DIR__ . '/../storage/logs/complete-sale.log';
+
+if (!is_dir(dirname(COMPLETE_SALE_LOG))) {
+    @mkdir(dirname(COMPLETE_SALE_LOG), 0775, true);
+}
+
+function logCompleteSaleError(string $message, array $context = []): void
+{
+    $line = '[' . date('Y-m-d H:i:s') . "] complete-sale | {$message}";
+    if (!empty($context)) {
+        $line .= ' | ' . json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+    $line .= PHP_EOL;
+    @file_put_contents(COMPLETE_SALE_LOG, $line, FILE_APPEND);
+}
+
 $completeSaleResponded = false;
-register_shutdown_function(function () use (&$completeSaleResponded) {
+
+$fatalHandler = function () use (&$completeSaleResponded) {
     if ($completeSaleResponded) {
         return;
     }
 
     $error = error_get_last();
+    $buffer = ob_get_clean();
+
+    if ($buffer !== '' && stripos($buffer, '<br') !== false) {
+        logCompleteSaleError('Buffer contained HTML output', ['buffer' => strip_tags($buffer)]);
+    }
+
     if ($error && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR], true)) {
-        $buffer = ob_get_clean();
-        if ($buffer !== '' && stripos($buffer, '<br') !== false) {
-            error_log('complete-sale fatal buffer: ' . strip_tags($buffer));
-        }
+        logCompleteSaleError('Fatal error', $error);
         http_response_code(500);
         header('Content-Type: application/json');
         echo json_encode([
@@ -27,7 +45,16 @@ register_shutdown_function(function () use (&$completeSaleResponded) {
             'message' => 'A fatal error occurred while completing the sale. Check server logs for details.',
         ]);
     }
-});
+};
+
+register_shutdown_function($fatalHandler);
+
+require_once '../includes/bootstrap.php';
+
+use App\Services\AccountingService;
+use App\Services\SalesService;
+
+header('Content-Type: application/json');
 
 function respondJson(int $status, array $payload, string $buffer = ''): void {
     global $completeSaleResponded;
@@ -152,10 +179,23 @@ try {
 
     $buffer = ob_get_clean();
     respondJson($statusCode, $result, $buffer);
-} catch (Throwable $e) {
+} catch (\Throwable $e) {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
     }
+    logCompleteSaleError('Unhandled exception during sale completion', [
+        'message' => $e->getMessage(),
+        'file' => $e->getFile(),
+        'line' => $e->getLine(),
+        'trace' => $e->getTraceAsString(),
+        'request' => [
+            'payment_method' => $paymentMethod ?? null,
+            'room_booking_id' => $roomBookingId ?? null,
+            'amount_paid' => $amountPaid ?? null,
+            'change_amount' => $changeAmount ?? null,
+            'item_count' => isset($data['items']) && is_array($data['items']) ? count($data['items']) : 0,
+        ],
+    ]);
     $buffer = ob_get_clean();
     respondJson(500, [
         'success' => false,

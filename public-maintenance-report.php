@@ -68,6 +68,31 @@ include 'includes/public-header.php';
             </div>
         </div>
     </div>
+
+    <div class="card border-0 shadow-sm mt-4">
+        <div class="card-body p-4">
+            <div class="text-center mb-4">
+                <h4 class="fw-semibold">Track an Existing Issue</h4>
+                <p class="text-muted mb-0">Enter the tracking code you received to view live progress.</p>
+            </div>
+
+            <form id="guestTrackForm" class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Tracking Code</label>
+                    <input type="text" class="form-control" name="tracking_code" placeholder="e.g. ABC123" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Contact (optional)</label>
+                    <input type="text" class="form-control" name="contact" placeholder="Same contact used when reporting">
+                </div>
+                <div class="col-12 d-grid">
+                    <button type="submit" class="btn btn-outline-primary">Check Status</button>
+                </div>
+            </form>
+
+            <div id="guestTrackResult" class="mt-4 d-none"></div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -105,6 +130,82 @@ include 'includes/public-header.php';
                 feedback.classList.remove('d-none');
             })
             .finally(() => {
+                submitButton.disabled = false;
+            });
+    });
+})();
+
+(function() {
+    const trackForm = document.getElementById('guestTrackForm');
+    const trackResult = document.getElementById('guestTrackResult');
+    if (!trackForm || !trackResult) {
+        return;
+    }
+
+    const statusBadges = {
+        open: 'bg-warning text-dark',
+        assigned: 'bg-info text-dark',
+        in_progress: 'bg-primary',
+        on_hold: 'bg-secondary',
+        resolved: 'bg-success',
+        closed: 'bg-dark'
+    };
+
+    trackForm.addEventListener('submit', function(event) {
+        event.preventDefault();
+        const submitButton = trackForm.querySelector('button[type="submit"]');
+        submitButton.disabled = true;
+        trackResult.className = 'mt-4';
+        trackResult.innerHTML = '';
+
+        const params = new URLSearchParams();
+        params.append('action', 'track');
+        params.append('tracking_code', (trackForm.tracking_code.value || '').trim());
+        if (trackForm.contact.value.trim() !== '') {
+            params.append('contact', trackForm.contact.value.trim());
+        }
+
+        fetch('api/maintenance.php?' + params.toString())
+            .then(resp => resp.json())
+            .then(data => {
+                if (!data.success) {
+                    throw new Error(data.message || 'Unable to fetch status.');
+                }
+
+                const request = data.request;
+                const badge = statusBadges[request.status] || 'bg-secondary';
+                const timeline = (request.timeline || []).map(item => `
+                    <li class="list-group-item">
+                        <div class="d-flex justify-content-between">
+                            <strong class="text-capitalize">${item.status.replace('_',' ')}</strong>
+                            <small class="text-muted">${new Date(item.created_at).toLocaleString()}</small>
+                        </div>
+                        ${item.notes ? `<p class="mb-0 small text-muted">${item.notes}</p>` : ''}
+                    </li>
+                `).join('') || '<li class="list-group-item text-muted">No timeline entries yet.</li>';
+
+                trackResult.className = 'mt-4 alert alert-light border';
+                trackResult.innerHTML = `
+                    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                        <div>
+                            <h5 class="mb-1">${request.title}</h5>
+                            <p class="text-muted mb-1">Room ${request.room_number || 'N/A'} &middot; Reported by ${request.reporter_name || 'Guest'}</p>
+                        </div>
+                        <span class="badge ${badge} text-uppercase">${request.status.replace('_',' ')}</span>
+                    </div>
+                    <p class="mt-3">${request.description || ''}</p>
+                    <h6 class="mt-4">Timeline</h6>
+                    <ul class="list-group">
+                        ${timeline}
+                    </ul>
+                `;
+            })
+            .catch(err => {
+                trackResult.className = 'mt-4 alert alert-danger';
+                trackResult.textContent = err.message;
+            })
+            .finally(() => {
+                trackResult.classList.remove('d-none');
                 submitButton.disabled = false;
             });
     });

@@ -145,6 +145,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             );
             
             $_SESSION['success_message'] = "Purchase Order $poNumber created successfully";
+        } elseif ($action === 'add_recipe') {
+            $productId = (int) $_POST['product_id'];
+            $ingredientId = (int) $_POST['ingredient_product_id'];
+            $quantity = (float) $_POST['quantity'];
+            $notes = sanitizeInput($_POST['recipe_notes'] ?? '');
+
+            if ($productId <= 0 || $ingredientId <= 0 || $quantity <= 0) {
+                throw new Exception('Please select both products and provide a positive quantity.');
+            }
+            if ($productId === $ingredientId) {
+                throw new Exception('A product cannot reference itself as an ingredient.');
+            }
+
+            $existing = $db->fetchOne("SELECT id FROM product_recipes WHERE product_id = ? AND ingredient_product_id = ?", [$productId, $ingredientId]);
+            if ($existing) {
+                throw new Exception('This ingredient is already defined for the selected recipe.');
+            }
+
+            $db->insert('product_recipes', [
+                'product_id' => $productId,
+                'ingredient_product_id' => $ingredientId,
+                'quantity' => $quantity,
+                'notes' => $notes ?: null
+            ]);
+
+            $_SESSION['success_message'] = 'Recipe ingredient added successfully.';
+        } elseif ($action === 'delete_recipe') {
+            $recipeId = (int) $_POST['recipe_id'];
+            if ($recipeId <= 0) {
+                throw new Exception('Invalid recipe row selected.');
+            }
+
+            $db->delete('product_recipes', 'id = :id', ['id' => $recipeId]);
+            $_SESSION['success_message'] = 'Recipe ingredient removed.';
         }
         
     } catch (Exception $e) {
@@ -160,6 +194,17 @@ try {
     $lowStockProducts = $inventoryService->getLowStockItems(50);
 } catch (Exception $e) {
     $lowStockProducts = [];
+}
+
+$products = $db->fetchAll("SELECT id, name FROM products WHERE is_active = 1 ORDER BY name") ?: [];
+$recipeMap = [];
+if (!empty($products)) {
+    $productIds = array_column($products, 'id');
+    $placeholders = implode(',', array_fill(0, count($productIds), '?'));
+    $recipes = $db->fetchAll("SELECT pr.*, ing.name AS ingredient_name FROM product_recipes pr JOIN products ing ON pr.ingredient_product_id = ing.id WHERE pr.product_id IN ($placeholders) ORDER BY ing.name", $productIds);
+    foreach ($recipes as $recipe) {
+        $recipeMap[$recipe['product_id']][] = $recipe;
+    }
 }
 
 try {

@@ -14,13 +14,21 @@ class RestaurantBillingService
         $this->db = $db;
     }
 
+    private bool $schemaEnsured = false;
+
     public function ensureSchema(): void
     {
+        if ($this->schemaEnsured || $this->db->inTransaction()) {
+            return;
+        }
+
         $this->createOrderPaymentsTable();
         $this->addColumnIfMissing('orders', 'tip_amount', "DECIMAL(15,2) NOT NULL DEFAULT 0 AFTER total_amount");
         $this->addColumnIfMissing('orders', 'amount_paid', "DECIMAL(15,2) NOT NULL DEFAULT 0 AFTER tip_amount");
         $this->ensureIndex('order_payments', 'idx_order_payments_order', 'ADD INDEX idx_order_payments_order (order_id)');
         $this->ensureIndex('order_payments', 'idx_order_payments_method', 'ADD INDEX idx_order_payments_method (payment_method)');
+
+        $this->schemaEnsured = true;
     }
 
     public function getOrderPayments(int $orderId): array

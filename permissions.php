@@ -117,27 +117,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 try {
     $users = $db->fetchAll("SELECT id, username, full_name, role FROM users WHERE is_active = 1 ORDER BY full_name") ?: [];
     
-    // Get permission modules
-    $modules = $db->fetchAll("SELECT * FROM permission_modules WHERE is_active = 1 ORDER BY module_name") ?: [];
-    
-    // Get permission actions
-    $actions = $db->fetchAll("
-        SELECT pa.*, pm.module_name 
-        FROM permission_actions pa 
-        JOIN permission_modules pm ON pa.module_id = pm.id 
-        WHERE pa.is_active = 1 AND pm.is_active = 1 
-        ORDER BY pm.module_name, pa.action_name
+    // Load active system modules
+    $modules = $db->fetchAll("
+        SELECT id, module_key, display_name AS module_name, icon
+        FROM system_modules 
+        WHERE is_active = 1 
+        ORDER BY display_name
     ") ?: [];
+    
+    // Map of actions per module via module_actions bridge
+    $moduleActionsRaw = $db->fetchAll("
+        SELECT 
+            ma.module_id,
+            sm.module_key,
+            sm.display_name AS module_name,
+            sm.icon,
+            sa.action_key,
+            sa.display_name AS action_name,
+            sa.is_sensitive
+        FROM module_actions ma
+        JOIN system_modules sm ON ma.module_id = sm.id
+        JOIN system_actions sa ON ma.action_id = sa.id
+        WHERE sm.is_active = 1
+        ORDER BY sm.display_name, sa.display_name
+    ") ?: [];
+    
+    $moduleActionsMap = [];
+    $actions = [];
+    foreach ($moduleActionsRaw as $row) {
+        $moduleActionsMap[$row['module_key']][$row['action_key']] = $row;
+        if (!isset($actions[$row['action_key']])) {
+            $actions[$row['action_key']] = [
+                'action_key' => $row['action_key'],
+                'action_name' => $row['action_name'],
+                'is_sensitive' => $row['is_sensitive']
+            ];
+        }
+    }
+    $actions = array_values($actions);
     
     // Get user permissions
     $userPermissions = $db->fetchAll("
-        SELECT up.*, pm.module_key, pa.action_key, u.username 
+        SELECT up.*, sm.module_key, sa.action_key, u.username 
         FROM user_permissions up 
-        JOIN permission_modules pm ON up.module_id = pm.id 
-        JOIN permission_actions pa ON up.action_id = pa.id 
+        JOIN system_modules sm ON up.module_id = sm.id 
+        JOIN system_actions sa ON up.action_id = sa.id 
         JOIN users u ON up.user_id = u.id 
         WHERE up.is_active = 1 
-        ORDER BY u.username, pm.module_name, pa.action_name
+        ORDER BY u.username, sm.display_name, sa.display_name
     ") ?: [];
     
     // Define permission groups (role-based templates)
@@ -202,39 +229,33 @@ if ($selectedUserId) {
     try {
         // Build permission matrix directly from database
         $userSpecificPermissions = $db->fetchAll("
-            SELECT pm.module_key, pm.module_name, pa.action_key, pa.action_name
+            SELECT sm.module_key, sa.action_key
             FROM user_permissions up
-            JOIN permission_modules pm ON up.module_id = pm.id
-            JOIN permission_actions pa ON up.action_id = pa.id
+            JOIN system_modules sm ON up.module_id = sm.id
+            JOIN system_actions sa ON up.action_id = sa.id
             WHERE up.user_id = ? AND up.is_active = 1
         ", [$selectedUserId]) ?: [];
+
+        $userPermissionLookup = [];
+        foreach ($userSpecificPermissions as $perm) {
+            $userPermissionLookup[$perm['module_key'] . ':' . $perm['action_key']] = true;
+        }
         
-        // Create matrix structure
         foreach ($modules as $module) {
             $moduleKey = $module['module_key'];
             $permissionMatrix[$moduleKey] = [
                 'module_name' => $module['module_name'],
                 'module_key' => $moduleKey,
-                'icon' => 'bi bi-gear',
+                'icon' => $module['icon'] ?? 'bi bi-gear',
                 'actions' => []
             ];
-            
-            // Check each action for this module
-            foreach ($actions as $action) {
-                if ($action['module_id'] == $module['id']) {
-                    $hasPermission = false;
-                    foreach ($userSpecificPermissions as $userPerm) {
-                        if ($userPerm['module_key'] == $moduleKey && $userPerm['action_key'] == $action['action_key']) {
-                            $hasPermission = true;
-                            break;
-                        }
-                    }
-                    
-                    $permissionMatrix[$moduleKey]['actions'][$action['action_key']] = [
-                        'has_permission' => $hasPermission,
-                        'is_sensitive' => false
-                    ];
-                }
+
+            $moduleActionSet = $moduleActionsMap[$moduleKey] ?? [];
+            foreach ($moduleActionSet as $actionKey => $actionMeta) {
+                $permissionMatrix[$moduleKey]['actions'][$actionKey] = [
+                    'has_permission' => isset($userPermissionLookup[$moduleKey . ':' . $actionKey]),
+                    'is_sensitive' => (bool)($actionMeta['is_sensitive'] ?? false)
+                ];
             }
         }
     } catch (Exception $e) {
@@ -353,13 +374,13 @@ include 'includes/header.php';
                             <tr>
                                 <th style="writing-mode: horizontal-tb;">Module</th>
                                 <?php foreach ($actions as $action): ?>
-                                    <th class="<?= ($action['is_sensitive'] ?? false) ? 'sensitive-action' : '' ?>">
-                                        <?= htmlspecialchars($action['action_name'] ?? $action['action_key'] ?? 'Unknown') ?>
-                                        <?php if ($action['is_sensitive'] ?? false): ?>
-                                            <i class="bi bi-exclamation-triangle-fill text-warning ms-1"></i>
-                                        <?php endif; ?>
-                                    </th>
-                                <?php endforeach; ?>
+                                <th class="<?= ($action['is_sensitive'] ?? false) ? 'sensitive-action' : '' ?>">
+                                    <?= htmlspecialchars($action['action_name'] ?? $action['action_key'] ?? 'Unknown') ?>
+                                    <?php if ($action['is_sensitive'] ?? false): ?>
+                                        <i class="bi bi-exclamation-triangle-fill text-warning ms-1"></i>
+                                    <?php endif; ?>
+                                </th>
+                            <?php endforeach; ?>
                             </tr>
                         </thead>
                         <tbody>
@@ -371,8 +392,13 @@ include 'includes/header.php';
                                 </td>
                                 <?php foreach ($actions as $action): ?>
                                     <?php 
+                                    $moduleActionSet = $moduleActionsMap[$moduleKey] ?? [];
+                                    if (!isset($moduleActionSet[$action['action_key']])) {
+                                        echo '<td class="text-muted">&mdash;</td>';
+                                        continue;
+                                    }
                                     $hasPermission = $module['actions'][$action['action_key']]['has_permission'] ?? false;
-                                    $isSensitive = $module['actions'][$action['action_key']]['is_sensitive'] ?? false;
+                                    $isSensitive = $module['actions'][$action['action_key']]['is_sensitive'] ?? ($moduleActionSet[$action['action_key']]['is_sensitive'] ?? false);
                                     ?>
                                     <td class="text-center <?= $hasPermission ? 'permission-granted' : 'permission-denied' ?> <?= $isSensitive ? 'sensitive-action' : '' ?>">
                                         <i class="bi bi-<?= $hasPermission ? 'check-circle-fill text-success' : 'x-circle-fill text-danger' ?>"></i>
@@ -588,18 +614,21 @@ include 'includes/header.php';
                                             </small>
                                         </div>
                                         <div class="card-body py-2">
-                                            <?php foreach (['view', 'create', 'update', 'delete'] as $actionKey): ?>
-                                                <?php if (in_array($actionKey, array_column($actions, 'action_key'))): ?>
-                                                <div class="form-check form-check-inline">
-                                                    <input class="form-check-input" type="checkbox" name="permissions[]" 
-                                                           value="<?= $module['module_key'] ?>:<?= $actionKey ?>" 
-                                                           id="perm_<?= $module['module_key'] ?>_<?= $actionKey ?>">
-                                                    <label class="form-check-label small" for="perm_<?= $module['module_key'] ?>_<?= $actionKey ?>">
-                                                        <?= ucfirst($actionKey) ?>
-                                                    </label>
-                                                </div>
-                                                <?php endif; ?>
-                                            <?php endforeach; ?>
+                                            <?php $moduleActionSet = $moduleActionsMap[$module['module_key']] ?? []; ?>
+                                            <?php if (!empty($moduleActionSet)): ?>
+                                                <?php foreach ($moduleActionSet as $actionKey => $actionMeta): ?>
+                                                    <div class="form-check form-check-inline">
+                                                        <input class="form-check-input" type="checkbox" name="permissions[]" 
+                                                               value="<?= $module['module_key'] ?>:<?= $actionKey ?>" 
+                                                               id="perm_<?= $module['module_key'] ?>_<?= $actionKey ?>">
+                                                        <label class="form-check-label small" for="perm_<?= $module['module_key'] ?>_<?= $actionKey ?>">
+                                                            <?= htmlspecialchars($actionMeta['action_name'] ?? ucfirst($actionKey)) ?>
+                                                        </label>
+                                                    </div>
+                                                <?php endforeach; ?>
+                                            <?php else: ?>
+                                                <small class="text-muted">No actions configured for this module.</small>
+                                            <?php endif; ?>
                                         </div>
                                     </div>
                                 </div>
@@ -632,12 +661,12 @@ include 'includes/header.php';
                         SELECT 
                             pal.*,
                             u.full_name as user_name,
-                            pm.module_name,
-                            pa.action_name
+                            sm.display_name AS module_name,
+                            sa.display_name AS action_name
                         FROM permission_audit_log pal
                         LEFT JOIN users u ON pal.user_id = u.id
-                        LEFT JOIN permission_modules pm ON pal.module_key = pm.module_key
-                        LEFT JOIN permission_actions pa ON pal.action_key = pa.action_key
+                        LEFT JOIN system_modules sm ON pal.module_id = sm.id
+                        LEFT JOIN system_actions sa ON pal.action_id = sa.id
                         ORDER BY pal.created_at DESC
                         LIMIT 100
                     ");

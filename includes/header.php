@@ -22,6 +22,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
     <!-- PWA Manifest -->
     <link rel="manifest" href="<?= APP_URL ?>/manifest.json">
     <meta name="theme-color" content="#2c3e50">
+    <script defer src="<?= APP_URL ?>/assets/js/offline-manager.js"></script>
     
     <style>
         :root {
@@ -379,6 +380,13 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'page' => 'index.php',
                                 'icon' => 'bi-speedometer2',
                                 'label' => 'Dashboard'
+                            ],
+                            [
+                                'roles' => ['admin','manager','super_admin','developer'],
+                                'href' => '/wapos/executive-dashboard.php',
+                                'page' => 'executive-dashboard.php',
+                                'icon' => 'bi-graph-up-arrow',
+                                'label' => 'Executive KPIs'
                             ],
                             [
                                 'roles' => ['admin','manager','cashier'],
@@ -767,6 +775,17 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                 </div>
             </div>
             <div class="top-bar-actions">
+                <div class="d-none d-md-flex align-items-center gap-2 me-3">
+                    <span id="online-status" class="badge bg-secondary d-flex align-items-center gap-1">
+                        <i class="bi bi-wifi-off"></i>
+                        <span>Offline</span>
+                    </span>
+                    <button class="btn btn-sm btn-outline-secondary d-flex align-items-center" type="button" id="sync-button">
+                        <i class="bi bi-arrow-repeat me-1"></i>
+                        Sync
+                        <span id="pending-count" class="badge bg-danger ms-2 d-none">0</span>
+                    </button>
+                </div>
                 <div class="dropdown">
                     <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
                         <i class="bi bi-person-circle me-2"></i><?= htmlspecialchars($auth->getUser()['username'] ?? 'User') ?>

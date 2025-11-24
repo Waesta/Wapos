@@ -32,6 +32,12 @@ class SalesService
             return;
         }
 
+        if ($this->db->inTransaction()) {
+            // Avoid running DDL inside active transaction; assume schema already prepared.
+            $this->roomChargePaymentEnsured = true;
+            return;
+        }
+
         try {
             $stmt = $this->db->query("SHOW COLUMNS FROM sales LIKE 'payment_method'");
             $column = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
@@ -170,6 +176,8 @@ class SalesService
             $saleId = (int) $this->db->lastInsertId();
 
             // Insert sale items
+            $moduleScope = $data['module_scope'] ?? 'retail';
+
             foreach ($data['items'] as $item) {
                 $this->addSaleItem($saleId, $item);
             }
@@ -180,8 +188,25 @@ class SalesService
                 $saleNumber,
                 $saleId,
                 (int) $userId,
-                $data['module_scope'] ?? 'retail'
+                $moduleScope
             );
+
+            if ($moduleScope === 'restaurant') {
+                foreach ($data['items'] as $item) {
+                    try {
+                        $this->inventoryService->consumeRecipeItems((int) $item['product_id'], (float) $item['qty'], [
+                            'reference_type' => 'sale',
+                            'reference_id' => $saleId,
+                            'reference_number' => $saleNumber,
+                            'source_module' => 'restaurant',
+                            'user_id' => (int) $userId,
+                            'notes' => 'Recipe consumption for sale #' . $saleNumber,
+                        ]);
+                    } catch (Throwable $inventoryError) {
+                        error_log('Recipe consumption failed for sale ' . $saleNumber . ': ' . $inventoryError->getMessage());
+                    }
+                }
+            }
 
             $accountingWarning = null;
             try {
@@ -216,7 +241,7 @@ class SalesService
                 ], $userId ? (int)$userId : null);
             }
 
-            if ($manageTransaction) {
+            if ($manageTransaction && $this->db->inTransaction()) {
                 $this->db->commit();
             }
 

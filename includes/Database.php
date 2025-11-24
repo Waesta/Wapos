@@ -174,6 +174,10 @@ class Database {
     public function rollback() {
         return $this->pdo->rollBack();
     }
+
+    public function inTransaction() {
+        return $this->pdo->inTransaction();
+    }
     
     /**
      * Ensure database connection is alive

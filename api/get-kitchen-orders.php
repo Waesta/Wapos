@@ -1,5 +1,6 @@
 <?php
 require_once '../includes/bootstrap.php';
+require_once '../includes/schema/orders.php';
 
 header('Content-Type: application/json');
 
@@ -9,6 +10,7 @@ if (!$auth->isLoggedIn()) {
 }
 
 $db = Database::getInstance();
+ensureOrdersCompletedAtColumn($db);
 
 try {
     // Get active orders
@@ -45,8 +47,8 @@ try {
         SELECT AVG(TIMESTAMPDIFF(MINUTE, created_at, completed_at)) as avg_minutes
         FROM orders 
         WHERE status = 'completed' 
-        AND DATE(created_at) = CURDATE()
         AND completed_at IS NOT NULL
+        AND DATE(completed_at) = CURDATE()
     ");
     
     if ($avgTimeResult && $avgTimeResult['avg_minutes']) {

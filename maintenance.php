@@ -30,6 +30,7 @@ try {
 
 $summary = [];
 $initialRequests = [];
+$currentUserId = (int)$auth->getUserId();
 try {
     $summary = $service->getSummary();
     $initialRequests = $service->getRequests(['limit' => 50]);
@@ -73,7 +74,9 @@ try {
 
 $statuses = [
     ['value' => 'open', 'label' => 'Open'],
+    ['value' => 'assigned', 'label' => 'Assigned'],
     ['value' => 'in_progress', 'label' => 'In Progress'],
+    ['value' => 'on_hold', 'label' => 'On Hold'],
     ['value' => 'resolved', 'label' => 'Resolved'],
     ['value' => 'closed', 'label' => 'Closed'],
 ];
@@ -106,8 +109,41 @@ include 'includes/header.php';
     </div>
 </div>
 
+<div class="row g-3 mb-3" id="technicianLoadRow">
+    <div class="col-12">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <div>
+                    <strong>Technician Workload</strong>
+                    <div class="text-muted small">Live view of pending assignments per technician</div>
+                </div>
+                <button class="btn btn-sm btn-outline-secondary" id="refreshTechLoadBtn"><i class="bi bi-arrow-repeat me-1"></i>Refresh</button>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0" id="technicianLoadTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Technician</th>
+                                <th class="text-center">Pending</th>
+                                <th class="text-center">In Progress</th>
+                                <th class="text-center">On Hold</th>
+                                <th class="text-center">Total Active</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="5" class="text-center text-muted py-3">No active assignments.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 <div class="row g-3 mb-3" id="summaryCards">
-    <div class="col-md-2">
+    <div class="col-6 col-md-4 col-xl-2">
         <div class="card border-0 shadow-sm">
             <div class="card-body">
                 <p class="text-muted small mb-1">Open</p>
@@ -115,7 +151,15 @@ include 'includes/header.php';
             </div>
         </div>
     </div>
-    <div class="col-md-2">
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <p class="text-muted small mb-1">Assigned</p>
+                <h4 class="fw-bold text-info" id="summaryAssigned">0</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-2">
         <div class="card border-0 shadow-sm">
             <div class="card-body">
                 <p class="text-muted small mb-1">In Progress</p>
@@ -123,7 +167,15 @@ include 'includes/header.php';
             </div>
         </div>
     </div>
-    <div class="col-md-2">
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <p class="text-muted small mb-1">On Hold</p>
+                <h4 class="fw-bold text-warning" id="summaryOnHold">0</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-2">
         <div class="card border-0 shadow-sm">
             <div class="card-body">
                 <p class="text-muted small mb-1">Resolved</p>
@@ -131,7 +183,7 @@ include 'includes/header.php';
             </div>
         </div>
     </div>
-    <div class="col-md-2">
+    <div class="col-6 col-md-4 col-xl-2">
         <div class="card border-0 shadow-sm">
             <div class="card-body">
                 <p class="text-muted small mb-1">Closed</p>
@@ -139,18 +191,21 @@ include 'includes/header.php';
             </div>
         </div>
     </div>
-    <div class="col-md-2">
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-sm-6 col-lg-3">
         <div class="card border-0 shadow-sm">
             <div class="card-body">
-                <p class="text-muted small mb-1">High Priority</p>
+                <p class="text-muted small mb-1">High Priority Open</p>
                 <h4 class="fw-bold text-danger" id="summaryHighPriority">0</h4>
             </div>
         </div>
     </div>
-    <div class="col-md-2">
+    <div class="col-sm-6 col-lg-3">
         <div class="card border-0 shadow-sm">
             <div class="card-body">
-                <p class="text-muted small mb-1">Overdue</p>
+                <p class="text-muted small mb-1">Overdue Tickets</p>
                 <h4 class="fw-bold text-warning" id="summaryOverdue">0</h4>
             </div>
         </div>
@@ -159,11 +214,12 @@ include 'includes/header.php';
 
 <div class="card border-0 shadow-sm mb-3">
     <div class="card-body">
-        <form class="row g-3" id="filterForm">
-            <div class="col-md-3">
-                <label class="form-label">Status</label>
-                <select class="form-select" name="status" id="filterStatus">
-                    <option value="">All statuses</option>
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+            <form class="row g-3 flex-grow-1" id="filterForm">
+                <div class="col-md-3">
+                    <label class="form-label">Status</label>
+                    <select class="form-select" name="status" id="filterStatus">
+                        <option value="">All statuses</option>
                     <?php foreach ($statuses as $status): ?>
                         <option value="<?= htmlspecialchars($status['value']) ?>"><?= htmlspecialchars($status['label']) ?></option>
                     <?php endforeach; ?>
@@ -212,7 +268,12 @@ include 'includes/header.php';
                     <option value="other">Other</option>
                 </select>
             </div>
-        </form>
+            </form>
+            <div class="d-flex flex-column gap-2">
+                <button class="btn btn-outline-dark" id="myAssignmentsBtn"><i class="bi bi-person-badge me-1"></i>My Assignments</button>
+                <button class="btn btn-outline-secondary" id="todayDueBtn"><i class="bi bi-calendar-check me-1"></i>Due Today</button>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -228,7 +289,7 @@ include 'includes/header.php';
                         <th>Status</th>
                         <th>Reporter</th>
                         <th>Tracking</th>
-                        <th>Due</th>
+                        <th>SLA / Timing</th>
                         <th>Assigned</th>
                         <th class="text-end">Actions</th>
                     </tr>
@@ -403,11 +464,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const INITIAL_REQUESTS = <?= json_encode($initialRequests, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
     const SUMMARY_COUNTS = <?= json_encode($summary, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+    const CURRENT_USER_ID = <?= json_encode($currentUserId) ?>;
     const STATUS_LABELS = {
         open: 'Open',
+        assigned: 'Assigned',
         in_progress: 'In Progress',
+        on_hold: 'On Hold',
         resolved: 'Resolved',
         closed: 'Closed'
+    };
+    const STATUS_BADGES = {
+        open: 'secondary',
+        assigned: 'info',
+        in_progress: 'primary',
+        on_hold: 'warning',
+        resolved: 'success',
+        closed: 'dark'
     };
     const PRIORITY_BADGES = {
         high: 'danger',
@@ -447,13 +519,97 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderSummary(data) {
-        const counts = Object.assign({ open: 0, in_progress: 0, resolved: 0, closed: 0, high_priority: 0, overdue: 0 }, data || {});
+        const counts = Object.assign({
+            open: 0,
+            assigned: 0,
+            in_progress: 0,
+            on_hold: 0,
+            resolved: 0,
+            closed: 0,
+            high_priority: 0,
+            overdue: 0
+        }, data || {});
         document.getElementById('summaryOpen').textContent = counts.open;
+        const assignedNode = document.getElementById('summaryAssigned');
+        if (assignedNode) assignedNode.textContent = counts.assigned;
         document.getElementById('summaryInProgress').textContent = counts.in_progress;
+        const onHoldNode = document.getElementById('summaryOnHold');
+        if (onHoldNode) onHoldNode.textContent = counts.on_hold;
         document.getElementById('summaryResolved').textContent = counts.resolved;
         document.getElementById('summaryClosed').textContent = counts.closed;
         document.getElementById('summaryHighPriority').textContent = counts.high_priority;
         document.getElementById('summaryOverdue').textContent = counts.overdue;
+    }
+
+    function renderTechnicianLoad(load) {
+        const tableBody = document.querySelector('#technicianLoadTable tbody');
+        tableBody.innerHTML = '';
+        if (!Array.isArray(load) || load.length === 0) {
+            tableBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">No active assignments.</td></tr>';
+            return;
+        }
+
+        load.forEach(item => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${escapeHtml(item.technician_name || 'Unknown')}</td>
+                <td class="text-center"><span class="badge bg-secondary">${Number(item.pending || 0)}</span></td>
+                <td class="text-center"><span class="badge bg-primary">${Number(item.in_progress || 0)}</span></td>
+                <td class="text-center"><span class="badge bg-warning text-dark">${Number(item.on_hold || 0)}</span></td>
+                <td class="text-center fw-bold">${Number(item.total || 0)}</td>
+            `;
+            tableBody.appendChild(tr);
+        });
+    }
+
+    function parseDate(value, fallbackTime = '00:00:00') {
+        if (!value) return null;
+        if (value.includes('T') || value.includes(' ')) {
+            return new Date(value.replace(' ', 'T'));
+        }
+        return new Date(value + 'T' + fallbackTime);
+    }
+
+    function formatDuration(minutes) {
+        if (minutes === null || isNaN(minutes)) return '';
+        const abs = Math.abs(minutes);
+        const hours = Math.floor(abs / 60);
+        const mins = Math.max(0, abs % 60);
+        const parts = [];
+        if (hours) parts.push(hours + 'h');
+        if (mins || parts.length === 0) parts.push(mins + 'm');
+        return parts.join(' ');
+    }
+
+    function buildTimingHtml(request) {
+        const now = new Date();
+        const createdAt = parseDate(request.created_at);
+        const startedAt = parseDate(request.started_at);
+        const completedAt = parseDate(request.completed_at);
+        const dueDate = parseDate(request.due_date);
+
+        const pieces = [];
+
+        if (dueDate) {
+            const msDiff = dueDate.getTime() - now.getTime();
+            const minutesDiff = Math.round(msDiff / 60000);
+            const isPast = minutesDiff < 0;
+            const badge = isPast ? 'danger' : 'success';
+            const label = isPast ? 'Overdue ' + formatDuration(minutesDiff) : 'Due in ' + formatDuration(minutesDiff);
+            pieces.push(`<span class="badge bg-${badge} bg-opacity-10 text-${badge}">${escapeHtml(label)}</span>`);
+        }
+
+        if (completedAt) {
+            pieces.push(`<div class="small text-muted">Closed ${escapeHtml(completedAt.toLocaleString())}</div>`);
+        } else if (startedAt) {
+            const mins = Math.round((now.getTime() - startedAt.getTime()) / 60000);
+            pieces.push(`<div class="text-muted small">In progress ${escapeHtml(formatDuration(mins))}</div>`);
+        } else if (createdAt) {
+            const mins = Math.round((now.getTime() - createdAt.getTime()) / 60000);
+            pieces.push(`<div class="text-muted small">Open for ${escapeHtml(formatDuration(mins))}</div>`);
+        }
+
+        return pieces.join('<br>') || '<span class="text-muted">—</span>';
     }
 
     function renderRequests(requests) {
@@ -478,6 +634,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const badgeClass = PRIORITY_BADGES[request.priority] || 'secondary';
             const statusLabel = STATUS_LABELS[request.status] || request.status;
+            const statusChip = STATUS_BADGES[request.status] || 'secondary';
 
             tr.innerHTML = `
                 <td>
@@ -490,20 +647,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     ${request.booking_number ? `<div class="small text-muted">Booking ${escapeHtml(request.booking_number)}</div>` : ''}
                 </td>
                 <td><span class="badge bg-${badgeClass}">${escapeHtml(request.priority || '')}</span></td>
-                <td><span class="badge bg-${request.status === 'resolved' || request.status === 'closed' ? 'success' : request.status === 'in_progress' ? 'primary' : 'warning'}">${escapeHtml(statusLabel)}</span></td>
+                <td><span class="badge bg-${statusChip}">${escapeHtml(statusLabel)}</span></td>
                 <td>${reporter.length ? escapeHtml(reporter.join(' • ')) : '<span class="text-muted">Unknown</span>'}</td>
                 <td>${request.tracking_code ? `<span class="badge bg-dark">${escapeHtml(request.tracking_code)}</span>` : '<span class="text-muted">—</span>'}</td>
-                <td>
-                    ${dueText ? `<div><i class="bi bi-calendar-event me-1"></i>${escapeHtml(dueText)}</div>` : ''}
-                    ${startedText ? `<div class="small text-muted">Started ${escapeHtml(startedText)}</div>` : ''}
-                    ${completedText ? `<div class="small text-muted">Done ${escapeHtml(completedText)}</div>` : ''}
-                </td>
+                <td>${buildTimingHtml(request)}</td>
                 <td>${request.assigned_name ? escapeHtml(request.assigned_name) : '<span class="text-muted">Unassigned</span>'}</td>
                 <td class="text-end">
                     <div class="btn-group btn-group-sm" role="group">
                         <button class="btn btn-outline-secondary" data-action="logs" data-id="${request.id}" title="View log"><i class="bi bi-clock-history"></i></button>
                         <button class="btn btn-outline-primary" data-action="edit" data-id="${request.id}" title="Edit"><i class="bi bi-pencil"></i></button>
+                        <button class="btn btn-outline-info" data-action="status" data-id="${request.id}" data-status="assigned" title="Assign / acknowledge"><i class="bi bi-person-check"></i></button>
                         <button class="btn btn-outline-success" data-action="status" data-id="${request.id}" data-status="in_progress" title="Mark in progress"><i class="bi bi-play"></i></button>
+                        <button class="btn btn-outline-warning" data-action="status" data-id="${request.id}" data-status="on_hold" title="Pause"><i class="bi bi-pause"></i></button>
                         <button class="btn btn-outline-success" data-action="status" data-id="${request.id}" data-status="resolved" title="Resolve"><i class="bi bi-check2"></i></button>
                         <button class="btn btn-outline-secondary" data-action="status" data-id="${request.id}" data-status="closed" title="Close"><i class="bi bi-check2-circle"></i></button>
                     </div>
@@ -534,6 +689,15 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(resp => resp.json())
             .then(data => {
                 if (data.success) renderSummary(data.summary);
+            })
+            .catch(() => {});
+    }
+
+    function fetchTechnicianLoad() {
+        return fetch('api/maintenance.php?action=tech_load', { credentials: 'same-origin' })
+            .then(resp => resp.json())
+            .then(data => {
+                if (data.success) renderTechnicianLoad(data.load || []);
             })
             .catch(() => {});
     }
@@ -730,9 +894,26 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    document.getElementById('myAssignmentsBtn').addEventListener('click', () => {
+        const assignedField = document.getElementById('filterAssigned');
+        assignedField.value = CURRENT_USER_ID || '';
+        fetchRequests(getCurrentFilters());
+    });
+
+    document.getElementById('todayDueBtn').addEventListener('click', () => {
+        const statusField = document.getElementById('filterStatus');
+        statusField.value = '';
+        fetchRequests({ status: '', priority: '', assigned_to: '', reporter_type: '', due_today: 1 });
+    });
+
+    document.getElementById('refreshTechLoadBtn').addEventListener('click', () => {
+        fetchTechnicianLoad();
+    });
+
     renderRequests(currentRequests);
     renderSummary(SUMMARY_COUNTS);
     fetchSummary();
+    fetchTechnicianLoad();
 });
 </script>
 

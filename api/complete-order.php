@@ -1,5 +1,6 @@
 <?php
 require_once '../includes/bootstrap.php';
+require_once '../includes/schema/orders.php';
 
 header('Content-Type: application/json');
 
@@ -16,6 +17,7 @@ if (!$data || !isset($data['order_id'])) {
 }
 
 $db = Database::getInstance();
+ensureOrdersCompletedAtColumn($db);
 
 try {
     $db->beginTransaction();
