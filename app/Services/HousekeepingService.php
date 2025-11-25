@@ -329,20 +329,7 @@ class HousekeepingService
                 r.room_number,
                 rb.booking_number,
                 CONCAT_WS(' ', assigned.full_name, assigned.username) AS assigned_name,
-                CONCAT_WS(' ', creator.full_name, creator.username) AS created_by_name,
-                COALESCE((
-                    SELECT JSON_ARRAYAGG(JSON_OBJECT(
-                        'id', hti.id,
-                        'product_id', hti.product_id,
-                        'product_name', prod.name,
-                        'quantity', hti.quantity,
-                        'notes', hti.notes,
-                        'consumed_at', hti.consumed_at
-                    ))
-                    FROM housekeeping_task_items hti
-                    LEFT JOIN products prod ON prod.id = hti.product_id
-                    WHERE hti.task_id = t.id
-                ), JSON_ARRAY()) AS consumables
+                CONCAT_WS(' ', creator.full_name, creator.username) AS created_by_name
             FROM housekeeping_tasks t
             LEFT JOIN rooms r ON t.room_id = r.id
             LEFT JOIN room_bookings rb ON t.booking_id = rb.id
@@ -354,8 +341,14 @@ class HousekeepingService
         $stmt = $this->db->prepare($sql);
         $stmt->execute([':id' => $taskId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            return null;
+        }
 
-        return $row ?: null;
+        $consumablesMap = $this->loadTaskConsumables([$taskId]);
+        $row['consumables'] = $consumablesMap[$taskId] ?? [];
+
+        return $row;
     }
 
     public function getTasks(array $filters = []): array
@@ -406,20 +399,7 @@ class HousekeepingService
                 r.room_number,
                 rb.booking_number,
                 CONCAT_WS(' ', assigned.full_name, assigned.username) AS assigned_name,
-                CONCAT_WS(' ', creator.full_name, creator.username) AS created_by_name,
-                COALESCE((
-                    SELECT JSON_ARRAYAGG(JSON_OBJECT(
-                        'id', hti.id,
-                        'product_id', hti.product_id,
-                        'product_name', prod.name,
-                        'quantity', hti.quantity,
-                        'notes', hti.notes,
-                        'consumed_at', hti.consumed_at
-                    ))
-                    FROM housekeeping_task_items hti
-                    LEFT JOIN products prod ON prod.id = hti.product_id
-                    WHERE hti.task_id = t.id
-                ), JSON_ARRAY()) AS consumables
+                CONCAT_WS(' ', creator.full_name, creator.username) AS created_by_name
             FROM housekeeping_tasks t
             LEFT JOIN rooms r ON t.room_id = r.id
             LEFT JOIN room_bookings rb ON t.booking_id = rb.id
@@ -442,7 +422,19 @@ class HousekeepingService
         $stmt->execute($params);
 
         $tasks = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        return $tasks ?: [];
+        if (!$tasks) {
+            return [];
+        }
+
+        $taskIds = array_column($tasks, 'id');
+        $consumablesMap = $this->loadTaskConsumables($taskIds);
+
+        foreach ($tasks as &$task) {
+            $task['consumables'] = $consumablesMap[$task['id']] ?? [];
+        }
+        unset($task);
+
+        return $tasks;
     }
 
     public function getTaskLogs(int $taskId): array
