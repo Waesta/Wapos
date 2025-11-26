@@ -43,39 +43,83 @@ $totalAmount = array_reduce($items, function ($carry, $item) {
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
     <style>
+        :root {
+            --border-color: #cfd4da;
+            --ink-color: #1f2d3d;
+        }
         body {
-            padding: 24px;
-            background: #f8f9fa;
+            padding: 32px;
+            background: #eef2f6;
+            font-family: 'Segoe UI', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--ink-color);
         }
         .print-container {
             background: #fff;
-            padding: 24px;
-            border-radius: 12px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+            padding: 32px 40px;
+            border-radius: 16px;
+            margin: 0 auto;
+            max-width: 980px;
+            box-shadow: 0 18px 50px rgba(15, 23, 42, 0.12);
+            border: 1px solid #dee2e6;
         }
         .brand-section {
             border-bottom: 2px solid #0d6efd;
             padding-bottom: 16px;
-            margin-bottom: 24px;
+            margin-bottom: 28px;
         }
         .brand-title {
             font-weight: 700;
-            font-size: 1.5rem;
+            font-size: 1.65rem;
             letter-spacing: 0.08em;
+            text-transform: uppercase;
         }
         .meta-label {
-            font-size: 0.85rem;
+            font-size: 0.78rem;
             color: #6c757d;
             text-transform: uppercase;
-            letter-spacing: 0.05em;
+            letter-spacing: 0.08em;
+        }
+        .card.bg-light {
+            background: #f8f9fc !important;
+            border: 1px solid #e2e6ef;
+        }
+        .table {
+            border-color: var(--border-color) !important;
+        }
+        .table th,
+        .table td {
+            padding: 0.65rem 0.85rem;
+            border-color: var(--border-color) !important;
+        }
+        .table thead th {
+            background: #f1f3f9 !important;
+            font-size: 0.82rem;
+            letter-spacing: 0.02em;
         }
         .totals-card {
-            background: #0d6efd;
+            background: linear-gradient(135deg, #0d6efd, #0b5ed7);
             color: #fff;
-            border-radius: 12px;
-            padding: 16px;
+            border-radius: 14px;
+            padding: 18px 20px;
+            border: none;
+        }
+        .signature-line {
+            border-bottom: 1px solid var(--border-color);
+            height: 48px;
+            margin-bottom: 6px;
+        }
+        .signature-label {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #6c757d;
+            margin-bottom: 4px;
         }
         @media print {
+            @page {
+                size: A4;
+                margin: 12mm;
+            }
             body {
                 background: #fff;
                 padding: 0;
@@ -83,10 +127,21 @@ $totalAmount = array_reduce($items, function ($carry, $item) {
             .print-container {
                 box-shadow: none;
                 border-radius: 0;
+                border: none;
                 padding: 0;
+                max-width: 100%;
             }
             .no-print {
                 display: none !important;
+            }
+            .table th,
+            .table td {
+                padding: 0.5rem;
+            }
+            .totals-card {
+                background: #0d6efd;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
             }
         }
     </style>
@@ -224,6 +279,24 @@ $totalAmount = array_reduce($items, function ($carry, $item) {
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <div class="row g-4 mt-4">
+            <div class="col-md-4">
+                <div class="signature-label">Received By</div>
+                <div class="signature-line"></div>
+                <div class="small text-muted">Name & Signature</div>
+            </div>
+            <div class="col-md-4">
+                <div class="signature-label">Checked By</div>
+                <div class="signature-line"></div>
+                <div class="small text-muted">Inventory/Quality</div>
+            </div>
+            <div class="col-md-4">
+                <div class="signature-label">Approved By</div>
+                <div class="signature-line"></div>
+                <div class="small text-muted">Finance/Management</div>
             </div>
         </div>
 

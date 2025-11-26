@@ -145,6 +145,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             );
             
             $_SESSION['success_message'] = "Purchase Order $poNumber created successfully";
+        } elseif ($action === 'save_supplier') {
+            $supplierId = (int)($_POST['supplier_id'] ?? 0);
+            $supplierData = [
+                'name' => sanitizeInput($_POST['name'] ?? ''),
+                'contact_person' => sanitizeInput($_POST['contact_person'] ?? ''),
+                'phone' => sanitizeInput($_POST['phone'] ?? ''),
+                'email' => sanitizeInput($_POST['email'] ?? ''),
+                'tax_id' => sanitizeInput($_POST['tax_number'] ?? ''),
+                'address' => sanitizeInput($_POST['address'] ?? ''),
+                'is_active' => isset($_POST['is_active']) ? 1 : 0,
+                'payment_terms' => null,
+            ];
+
+            if ($supplierData['name'] === '') {
+                throw new Exception('Supplier name is required.');
+            }
+
+            if ($supplierId > 0) {
+                $db->update('suppliers', $supplierData, 'id = :id', ['id' => $supplierId]);
+                $_SESSION['success_message'] = 'Supplier updated successfully.';
+            } else {
+                $newId = $db->insert('suppliers', $supplierData);
+                if (!$newId) {
+                    throw new Exception('Failed to create supplier record.');
+                }
+                $_SESSION['success_message'] = 'Supplier added successfully.';
+            }
         } elseif ($action === 'add_recipe') {
             $productId = (int) $_POST['product_id'];
             $ingredientId = (int) $_POST['ingredient_product_id'];
@@ -228,6 +255,7 @@ try {
 
 try {
     $categories = $db->fetchAll("SELECT * FROM categories WHERE is_active = 1 ORDER BY name") ?: [];
+$currencyJsConfig = CurrencyManager::getInstance()->getJavaScriptConfig();
 } catch (Exception $e) {
     $categories = [];
 }
@@ -397,11 +425,19 @@ include 'includes/header.php';
                                 </thead>
                                 <tbody>
                                     <?php foreach (array_slice($lowStockProducts, 0, 10) as $product): ?>
+                                    <?php
+                                        $currentQty = (float)($product['stock_quantity'] ?? 0);
+                                        $reorderLevel = (float)($product['reorder_level'] ?? 0);
+                                        $suggestedQty = $product['reorder_quantity'] ?? null;
+                                        if ($suggestedQty === null || $suggestedQty <= 0) {
+                                            $suggestedQty = max(1, $reorderLevel * 2);
+                                        }
+                                    ?>
                                     <tr>
                                         <td><?= htmlspecialchars($product['name']) ?></td>
-                                        <td><?= $product['stock_quantity'] ?></td>
-                                        <td><?= $product['reorder_level'] ?></td>
-                                        <td><?= $product['reorder_quantity'] ?: max(1, $product['reorder_level'] * 2) ?></td>
+                                        <td><?= $currentQty ?></td>
+                                        <td><?= $reorderLevel ?></td>
+                                        <td><?= $suggestedQty ?></td>
                                     </tr>
                                     <?php endforeach; ?>
                                 </tbody>
@@ -427,9 +463,13 @@ include 'includes/header.php';
             <p class="mb-2">The following items are running low and may need reordering:</p>
             <div class="row g-2">
                 <?php foreach (array_slice($lowStockProducts, 0, 6) as $product): ?>
+                <?php
+                    $currentQty = (float)($product['stock_quantity'] ?? 0);
+                    $reorderLevel = (float)($product['reorder_level'] ?? 0);
+                ?>
                 <div class="col-md-4">
                     <strong><?= htmlspecialchars($product['name']) ?></strong><br>
-                    <small class="text-muted">Current: <?= $product['stock_quantity'] ?> | Reorder at: <?= $product['reorder_level'] ?></small>
+                    <small class="text-muted">Current: <?= $currentQty ?> | Reorder at: <?= $reorderLevel ?></small>
                 </div>
                 <?php endforeach; ?>
             </div>
@@ -550,7 +590,7 @@ include 'includes/header.php';
                                     <button class="btn btn-sm btn-outline-primary" onclick="adjustStock(<?= $product['id'] ?>, '<?= htmlspecialchars($product['name']) ?>')">
                                         <i class="bi bi-plus-minus"></i>
                                     </button>
-                                    <button class="btn btn-sm btn-outline-secondary" onclick="setReorderLevel(<?= $product['id'] ?>, <?= $product['reorder_level'] ?>, <?= $product['reorder_quantity'] ?>)">
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="setReorderLevel(<?= $product['id'] ?>, <?= (float)($product['reorder_level'] ?? 0) ?>, <?= (float)($product['reorder_quantity'] ?? 0) ?>, <?= json_encode($product['name'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)">
                                         <i class="bi bi-gear"></i>
                                     </button>
                                 </td>
@@ -656,8 +696,8 @@ include 'includes/header.php';
                             foreach ($purchaseOrders as $po):
                             ?>
                             <tr>
-                                <td><?= htmlspecialchars($po['po_number']) ?></td>
-                                <td><?= htmlspecialchars($po['supplier_name']) ?></td>
+                                <td><?= htmlspecialchars($po['po_number'] ?? '') ?></td>
+                                <td><?= htmlspecialchars($po['supplier_name'] ?? '') ?></td>
                                 <td><?= formatDate($po['created_at'], 'd/m/Y') ?></td>
                                 <td><?= formatMoney($po['total_amount']) ?></td>
                                 <td>
@@ -674,7 +714,7 @@ include 'includes/header.php';
                                     <span class="badge bg-<?= $class ?>"><?= ucfirst($po['status']) ?></span>
                                 </td>
                                 <td>
-                                    <button class="btn btn-sm btn-outline-primary" onclick="viewPurchaseOrder(<?= $po['id'] ?>)">
+                                    <button class="btn btn-sm btn-outline-primary" onclick="viewPurchaseOrder(<?= (int)$po['id'] ?>)">
                                         <i class="bi bi-eye"></i>
                                     </button>
                                 </td>
@@ -713,16 +753,16 @@ include 'includes/header.php';
                             <?php foreach ($suppliers as $supplier): ?>
                             <tr>
                                 <td><?= htmlspecialchars($supplier['name']) ?></td>
-                                <td><?= htmlspecialchars($supplier['contact_person']) ?></td>
-                                <td><?= htmlspecialchars($supplier['email']) ?></td>
-                                <td><?= htmlspecialchars($supplier['phone']) ?></td>
+                                <td><?= htmlspecialchars($supplier['contact_person'] ?? '') ?></td>
+                                <td><?= htmlspecialchars($supplier['email'] ?? '') ?></td>
+                                <td><?= htmlspecialchars($supplier['phone'] ?? '') ?></td>
                                 <td>
                                     <span class="badge bg-<?= $supplier['is_active'] ? 'success' : 'secondary' ?>">
                                         <?= $supplier['is_active'] ? 'Active' : 'Inactive' ?>
                                     </span>
                                 </td>
                                 <td>
-                                    <button class="btn btn-sm btn-outline-primary" onclick="editSupplier(<?= $supplier['id'] ?>)">
+                                    <button class="btn btn-sm btn-outline-primary" onclick='openSupplierModal(<?= json_encode($supplier, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)'>
                                         <i class="bi bi-pencil"></i>
                                     </button>
                                 </td>
@@ -732,6 +772,128 @@ include 'includes/header.php';
                     </table>
                 </div>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Purchase Order View Modal -->
+<div class="modal fade" id="purchaseOrderViewModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Purchase Order</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between flex-wrap gap-3">
+                        <div>
+                            <div class="text-muted text-uppercase small">PO Number</div>
+                            <h6 id="poViewNumber" class="mb-0">-</h6>
+                        </div>
+                        <div>
+                            <div class="text-muted text-uppercase small">Supplier</div>
+                            <h6 id="poViewSupplier" class="mb-0">-</h6>
+                        </div>
+                        <div>
+                            <div class="text-muted text-uppercase small">Status</div>
+                            <span id="poViewStatus" class="badge bg-secondary">-</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <small class="text-muted text-uppercase">Created Date</small>
+                            <div id="poViewDate">-</div>
+                        </div>
+                        <div class="col-md-4">
+                            <small class="text-muted text-uppercase">Created By</small>
+                            <div id="poViewCreatedBy">-</div>
+                        </div>
+                        <div class="col-md-4">
+                            <small class="text-muted text-uppercase">Total Amount</small>
+                            <div id="poViewTotal">-</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered">
+                        <thead class="table-light">
+                            <tr>
+                                <th>#</th>
+                                <th>Product</th>
+                                <th class="text-end">Qty</th>
+                                <th class="text-end">Unit Cost</th>
+                                <th class="text-end">Subtotal</th>
+                            </tr>
+                        </thead>
+                        <tbody id="poViewItems">
+                            <tr>
+                                <td colspan="5" class="text-center text-muted">No items</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Supplier Modal -->
+<div class="modal fade" id="supplierModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add Supplier</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" id="supplierForm">
+                <input type="hidden" name="action" value="save_supplier">
+                <input type="hidden" name="supplier_id" id="supplier_id" value="">
+                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken(); ?>">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Supplier Name</label>
+                        <input type="text" name="name" id="supplier_name" class="form-control" required>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Contact Person</label>
+                            <input type="text" name="contact_person" id="supplier_contact" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Phone</label>
+                            <input type="text" name="phone" id="supplier_phone" class="form-control">
+                        </div>
+                    </div>
+                    <div class="row g-3 mt-1">
+                        <div class="col-md-6">
+                            <label class="form-label">Email</label>
+                            <input type="email" name="email" id="supplier_email" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Tax/Registration No.</label>
+                            <input type="text" name="tax_number" id="supplier_tax" class="form-control">
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <label class="form-label">Address</label>
+                        <textarea name="address" id="supplier_address" class="form-control" rows="2"></textarea>
+                    </div>
+                    <div class="form-check form-switch mt-3">
+                        <input class="form-check-input" type="checkbox" name="is_active" id="supplierActiveToggle" checked>
+                        <label class="form-check-label" for="supplierActiveToggle">Supplier is active</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Supplier</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
@@ -868,17 +1030,50 @@ include 'includes/header.php';
 </div>
 
 <script>
+const currencyConfig = <?= json_encode($currencyJsConfig, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+
+function formatCurrencyValue(amount) {
+    const decimals = Number.isFinite(currencyConfig?.decimal_places) ? Math.max(0, currencyConfig.decimal_places) : 2;
+    const decimalSeparator = currencyConfig?.decimal_separator ?? '.';
+    const thousandsSeparator = currencyConfig?.thousands_separator ?? ',';
+    const numericAmount = Number(amount) || 0;
+    const fixed = numericAmount.toFixed(decimals);
+    let [intPart, fracPart = ''] = fixed.split('.');
+    intPart = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, thousandsSeparator);
+    return decimals > 0 ? `${intPart}${decimalSeparator}${fracPart}` : intPart;
+}
+
+function formatCurrencyWithSymbol(amount) {
+    const formatted = formatCurrencyValue(amount);
+    const symbol = currencyConfig?.symbol || '';
+    if (!symbol) {
+        return formatted;
+    }
+    return currencyConfig?.position === 'after' ? `${formatted} ${symbol}` : `${symbol} ${formatted}`;
+}
+
 let poItems = [];
 
-function editSupplier(id) {
-    window.location.href = 'supplier-management.php?id=' + id;
-}
+const poModalEl = document.getElementById('purchaseOrderViewModal');
+const poModal = poModalEl ? new bootstrap.Modal(poModalEl) : null;
+const poNumberEl = document.getElementById('poViewNumber');
+const poSupplierEl = document.getElementById('poViewSupplier');
+const poStatusEl = document.getElementById('poViewStatus');
+const poDateEl = document.getElementById('poViewDate');
+const poCreatedByEl = document.getElementById('poViewCreatedBy');
+const poTotalEl = document.getElementById('poViewTotal');
+const poItemsTbody = document.getElementById('poViewItems');
 
 const inventorySearchInput = document.getElementById('inventorySearch');
 const inventoryCategoryFilter = document.getElementById('inventoryCategoryFilter');
 const inventoryStatusFilter = document.getElementById('inventoryStatusFilter');
 const inventoryRows = Array.from(document.querySelectorAll('#inventoryTable tbody tr'));
 const inventoryEmptyState = document.getElementById('inventoryEmptyState');
+const reorderModalElement = document.getElementById('reorderModal');
+const reorderProductIdInput = document.getElementById('reorder_product_id');
+const reorderProductNameInput = document.getElementById('reorder_product_name');
+const reorderLevelInput = document.getElementById('reorder_level');
+const reorderQuantityInput = document.getElementById('reorder_quantity');
 
 function filterInventory() {
     const searchTerm = (inventorySearchInput?.value || '').trim().toLowerCase();
@@ -918,7 +1113,124 @@ document.addEventListener('DOMContentLoaded', () => {
     inventoryCategoryFilter?.addEventListener('change', filterInventory);
     inventoryStatusFilter?.addEventListener('change', filterInventory);
     filterInventory();
+
+    const addSupplierBtn = document.querySelector('[data-bs-target="#supplierModal"]');
+    addSupplierBtn?.addEventListener('click', () => openSupplierModal());
 });
+
+function openSupplierModal(supplier = null) {
+    const modalElement = document.getElementById('supplierModal');
+    if (!modalElement) return;
+
+    const modal = new bootstrap.Modal(modalElement);
+    document.getElementById('supplier_id').value = supplier?.id || '';
+    document.getElementById('supplier_name').value = supplier?.name || '';
+    document.getElementById('supplier_contact').value = supplier?.contact_person || '';
+    document.getElementById('supplier_phone').value = supplier?.phone || '';
+    document.getElementById('supplier_email').value = supplier?.email || '';
+    document.getElementById('supplier_tax').value = supplier?.tax_id || '';
+    document.getElementById('supplier_address').value = supplier?.address || '';
+    document.getElementById('supplierActiveToggle').checked = supplier ? Number(supplier.is_active) === 1 : true;
+
+    const title = modalElement.querySelector('.modal-title');
+    if (title) {
+        title.textContent = supplier ? 'Edit Supplier' : 'Add Supplier';
+    }
+
+    modal.show();
+}
+
+async function viewPurchaseOrder(id) {
+    if (!poModal) {
+        alert('Purchase order viewer not available.');
+        return;
+    }
+
+    setPoModalState({
+        number: 'Loading…',
+        supplier: '-',
+        status: '-',
+        date: '-',
+        createdBy: '-',
+        total: '-',
+        items: [{ placeholder: true }],
+    });
+    poModal.show();
+
+    try {
+        const response = await fetch(`api/get-purchase-order.php?id=${id}`);
+        const data = await response.json();
+        if (!data.success) {
+            throw new Error(data.message || 'Unable to load purchase order.');
+        }
+
+        const order = data.data.order;
+        const items = data.data.items;
+        setPoModalState({
+            number: order.po_number ?? `PO-${order.id}`,
+            supplier: order.supplier_name ?? '—',
+            status: order.status ?? 'pending',
+            date: order.created_at ? new Date(order.created_at).toLocaleString() : '—',
+            createdBy: order.created_by_name ?? '—',
+            total: formatCurrencyDisplay(order.total_amount ?? 0),
+            items: items,
+        });
+    } catch (error) {
+        console.error(error);
+        setPoModalState({
+            number: 'Error',
+            supplier: '-',
+            status: '-',
+            date: '-',
+            createdBy: '-',
+            total: '-',
+            items: [],
+        });
+        alert(error.message || 'Failed to load purchase order details.');
+    }
+}
+
+function setPoModalState({ number, supplier, status, date, createdBy, total, items }) {
+    if (poNumberEl) poNumberEl.textContent = number;
+    if (poSupplierEl) poSupplierEl.textContent = supplier;
+    if (poStatusEl) {
+        poStatusEl.textContent = status ? status.charAt(0).toUpperCase() + status.slice(1) : '-';
+        poStatusEl.className = 'badge bg-' + (status === 'received' ? 'success' : status === 'pending' ? 'warning' : 'secondary');
+    }
+    if (poDateEl) poDateEl.textContent = date;
+    if (poCreatedByEl) poCreatedByEl.textContent = createdBy;
+    if (poTotalEl) poTotalEl.textContent = total;
+
+    if (!poItemsTbody) return;
+    poItemsTbody.innerHTML = '';
+
+    if (!items || items.length === 0 || (items.length === 1 && items[0].placeholder)) {
+        poItemsTbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Loading…</td></tr>';
+        return;
+    }
+
+    items.forEach((item, index) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${index + 1}</td>
+            <td>${escapeHtml(item.product_name ?? 'Unnamed')}</td>
+            <td class="text-end">${Number(item.quantity ?? 0).toFixed(2)}</td>
+            <td class="text-end">${formatCurrencyDisplay(item.unit_cost ?? 0)}</td>
+            <td class="text-end">${formatCurrencyDisplay(item.subtotal ?? 0)}</td>
+        `;
+        poItemsTbody.appendChild(row);
+    });
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.innerText = str ?? '';
+    return div.innerHTML;
+}
+
+function formatCurrencyDisplay(amount) {
+    return formatCurrencyWithSymbol(amount ?? 0);
+}
 
 function addPOItem() {
     const productSelect = document.querySelector('.po-product');
@@ -974,12 +1286,14 @@ function updatePOItemsDisplay() {
     poItems.forEach((item, index) => {
         const subtotal = item.quantity * item.unit_cost;
         total += subtotal;
+        const unitCostDisplay = formatCurrencyWithSymbol(item.unit_cost);
+        const subtotalDisplay = formatCurrencyWithSymbol(subtotal);
         
         html += `
             <div class="d-flex justify-content-between align-items-center mb-2 p-3 border rounded bg-light">
                 <div>
                     <strong>${item.product_name}</strong><br>
-                    <small class="text-muted">Qty: ${item.quantity} × KES ${formatMoney(item.unit_cost)} = KES ${formatMoney(subtotal)}</small>
+                    <small class="text-muted">Qty: ${item.quantity} × ${unitCostDisplay} = ${subtotalDisplay}</small>
                 </div>
                 <button type="button" class="btn btn-sm btn-danger" onclick="removePOItem(${index})">
                     <i class="bi bi-trash"></i> Remove
@@ -988,7 +1302,7 @@ function updatePOItemsDisplay() {
         `;
     });
     
-    html += `<div class="text-end mt-3 p-3 bg-primary text-white rounded"><h5 class="mb-0">Total: KES ${formatMoney(total)}</h5></div>`;
+    html += `<div class="text-end mt-3 p-3 bg-primary text-white rounded"><h5 class="mb-0">Total: ${formatCurrencyWithSymbol(total)}</h5></div>`;
     container.innerHTML = html;
     
     document.getElementById('poItems').value = JSON.stringify(poItems);
@@ -999,19 +1313,24 @@ function removePOItem(index) {
     updatePOItemsDisplay();
 }
 
-function formatMoney(amount) {
-    return parseFloat(amount).toFixed(2);
-}
-
-function adjustStock(productId, productName) {
+function adjustStock(productId) {
     const modal = new bootstrap.Modal(document.getElementById('stockAdjustmentModal'));
     document.querySelector('[name="product_id"]').value = productId;
     modal.show();
 }
 
-function setReorderLevel(productId, currentLevel, currentQuantity) {
-    // Implementation for setting reorder levels
-    console.log('Set reorder level for product', productId);
+function setReorderLevel(productId, currentLevel = 0, currentQuantity = 0, productName = '') {
+    if (!reorderModalElement) {
+        return;
+    }
+
+    reorderProductIdInput.value = productId;
+    reorderProductNameInput.value = productName || 'Selected Product';
+    reorderLevelInput.value = Number(currentLevel ?? 0);
+    reorderQuantityInput.value = Number(currentQuantity ?? 0);
+
+    const modal = bootstrap.Modal.getOrCreateInstance(reorderModalElement);
+    modal.show();
 }
 
 function validatePOForm() {
@@ -1023,7 +1342,8 @@ function validatePOForm() {
 }
 
 // Initialize the display when modal opens
-document.getElementById('purchaseOrderModal').addEventListener('show.bs.modal', function () {
+const purchaseOrderModalEl = document.getElementById('purchaseOrderModal');
+purchaseOrderModalEl?.addEventListener('show.bs.modal', function () {
     poItems = [];
     updatePOItemsDisplay();
 });

@@ -454,6 +454,45 @@ class HousekeepingService
         return $rows ?: [];
     }
 
+    /**
+     * @param int[] $taskIds
+     * @return array<int, array<int, array<string, mixed>>>
+     */
+    private function loadTaskConsumables(array $taskIds): array
+    {
+        if (empty($taskIds)) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($taskIds), '?'));
+        $sql = "
+            SELECT
+                hti.task_id,
+                hti.id,
+                hti.product_id,
+                prod.name AS product_name,
+                hti.quantity,
+                hti.notes,
+                hti.consumed_at
+            FROM housekeeping_task_items hti
+            LEFT JOIN products prod ON prod.id = hti.product_id
+            WHERE hti.task_id IN ($placeholders)
+            ORDER BY hti.id ASC
+        ";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($taskIds);
+
+        $map = [];
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $taskId = (int)$row['task_id'];
+            unset($row['task_id']);
+            $map[$taskId][] = $row;
+        }
+
+        return $map;
+    }
+
     public function assignTask(int $taskId, ?int $assigneeId, int $userId, ?string $notes = null): array
     {
         $this->ensureSchema();

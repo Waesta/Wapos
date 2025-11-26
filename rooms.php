@@ -114,9 +114,13 @@ $roomsStmt = $pdo->query("
 ");
 $rooms = $roomsStmt ? $roomsStmt->fetchAll(PDO::FETCH_ASSOC) : [];
 
+$currencyManager = CurrencyManager::getInstance();
+$currencySymbol = $currencyManager->getCurrencySymbol();
+$currencyCode = $currencyManager->getCurrencyCode();
+$currencyJsConfig = $currencyManager->getJavaScriptConfig();
+
 $gatewayProvider = strtolower((string)(settings('payments_gateway_provider') ?? ''));
 $isGatewayEnabled = in_array($gatewayProvider, ['relworx', 'pesapal'], true);
-$currencyCode = settings('currency_code') ?? 'KES';
 
 // Active bookings using available structure
 if ($schemaReady) {
@@ -503,7 +507,7 @@ include 'includes/header.php';
                                     (<?= $booking['total_nights'] ?> nights)
                                 </p>
                                 <p class="mb-0">
-                                    <strong>KES <?= formatMoney($booking['total_amount']) ?></strong>
+                                    <strong><?= formatMoney($booking['total_amount']) ?></strong>
                                     <?php if ($booking['payment_status'] !== 'paid'): ?>
                                         <span class="badge bg-warning text-dark ms-2">Pending</span>
                                     <?php endif; ?>
@@ -641,8 +645,8 @@ include 'includes/header.php';
                                     <div class="row g-3">
                                         <div class="col-md-6">
                                             <label class="form-label">Deposit Amount</label>
-                                            <div class="input-group">
-                                                <span class="input-group-text"><?= htmlspecialchars($currencyCode) ?></span>
+                        <div class="input-group">
+                                                <span class="input-group-text"><?= htmlspecialchars($currencySymbol) ?></span>
                                                 <input type="number" class="form-control" name="deposit_amount" id="deposit_amount" min="0" step="0.01" value="0">
                                             </div>
                                         </div>
@@ -695,9 +699,9 @@ include 'includes/header.php';
 </div>
 
 <script>
-// Get currency from PHP
-const currencySymbol = '<?= $db->fetchOne("SELECT setting_value FROM settings WHERE setting_key = 'currency'")["setting_value"] ?? '$' ?>';
-const ROOMS_GATEWAY = window.ROOMS_GATEWAY_CONFIG || { enabled: false, provider: null, currency: 'KES' };
+const currencyConfig = <?= json_encode($currencyJsConfig, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+const currencySymbol = currencyConfig.symbol || '';
+const ROOMS_GATEWAY = window.ROOMS_GATEWAY_CONFIG || { enabled: false, provider: null, currency: currencyConfig.code };
 let bookingGatewayReference = null;
 let bookingGatewayPollTimeout = null;
 let bookingGatewayPollAttempts = 0;

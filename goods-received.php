@@ -255,6 +255,7 @@ if (!empty($pendingPOs)) {
 
 $suppliers = $db->fetchAll("SELECT * FROM suppliers WHERE is_active = 1 ORDER BY name");
 $products = $db->fetchAll("SELECT id, name, sku, unit FROM products WHERE is_active = 1 ORDER BY name");
+$currencyJsConfig = CurrencyManager::getInstance()->getJavaScriptConfig();
 
 $pageTitle = 'Goods Received Notes';
 include 'includes/header.php';
@@ -319,7 +320,7 @@ $grnPolicyHighlights = [
     ],
     [
         'label' => 'Value Received',
-        'value' => 'KES ' . formatMoney($grnMetrics['month']['amount']),
+        'value' => formatMoney($grnMetrics['month']['amount']),
         'icon' => 'currency-dollar',
         'variant' => 'success',
         'description' => 'Total stock value received this month.'
@@ -406,14 +407,24 @@ $grnPolicyHighlights = [
                         </thead>
                         <tbody>
                             <?php foreach ($grns as $grn): ?>
-                            <tr data-search="<?= htmlspecialchars(strtolower($grn['grn_number'] . ' ' . $grn['supplier_name'] . ' ' . ($grn['invoice_number'] ?? ''))) ?>" data-date="<?= htmlspecialchars($grn['received_date']) ?>" data-status="<?= htmlspecialchars($grn['status']) ?>">
-                                <td><strong><?= htmlspecialchars($grn['grn_number']) ?></strong></td>
-                                <td><?= formatDate($grn['received_date'], 'd/m/Y') ?></td>
-                                <td><?= htmlspecialchars($grn['supplier_name']) ?></td>
-                                <td><?= htmlspecialchars($grn['po_number'] ?? '-') ?></td>
-                                <td><?= htmlspecialchars($grn['invoice_number'] ?: '-') ?></td>
+                            <?php
+                                $grnNumber    = $grn['grn_number'] ?? '';
+                                $supplierName = $grn['supplier_name'] ?? '';
+                                $invoiceNo    = $grn['invoice_number'] ?? '';
+                                $status       = $grn['status'] ?? '';
+                                $receivedDate = $grn['received_date'] ?? '';
+                                $receivedBy   = $grn['received_by_name'] ?? '';
+                                $poNumber     = $grn['po_number'] ?? '-';
+                                $searchBlob = strtolower(trim($grnNumber . ' ' . $supplierName . ' ' . $invoiceNo));
+                            ?>
+                            <tr data-search="<?= htmlspecialchars($searchBlob) ?>" data-date="<?= htmlspecialchars($receivedDate) ?>" data-status="<?= htmlspecialchars($status) ?>">
+                                <td><strong><?= htmlspecialchars($grnNumber) ?></strong></td>
+                                <td><?= $receivedDate ? formatDate($receivedDate, 'd/m/Y') : '-' ?></td>
+                                <td><?= htmlspecialchars($supplierName) ?></td>
+                                <td><?= htmlspecialchars($poNumber !== '' ? $poNumber : '-') ?></td>
+                                <td><?= htmlspecialchars($invoiceNo !== '' ? $invoiceNo : '-') ?></td>
                                 <td><?= formatMoney($grn['total_amount']) ?></td>
-                                <td><?= htmlspecialchars($grn['received_by_name']) ?></td>
+                                <td><?= htmlspecialchars($receivedBy) ?></td>
                                 <td>
                                     <span class="badge bg-<?= $grn['status'] === 'completed' ? 'success' : 'secondary' ?>">
                                         <?= ucfirst($grn['status']) ?>
@@ -468,10 +479,10 @@ $grnPolicyHighlights = [
                         </thead>
                         <tbody>
                         <?php foreach ($pendingPOs as $po): ?>
-                        <tr data-supplier="<?= htmlspecialchars($po['supplier_name']) ?>">
-                            <td><strong><?= htmlspecialchars($po['po_number']) ?></strong></td>
+                        <tr data-supplier="<?= htmlspecialchars($po['supplier_name'] ?? '') ?>">
+                            <td><strong><?= htmlspecialchars($po['po_number'] ?? '') ?></strong></td>
                             <td><?= formatDate($po['created_at'], 'd/m/Y') ?></td>
-                            <td><?= htmlspecialchars($po['supplier_name']) ?></td>
+                            <td><?= htmlspecialchars($po['supplier_name'] ?? '') ?></td>
                             <td><?= formatMoney($po['total_amount']) ?></td>
                             <td>
                                 <span class="badge bg-warning"><?= ucfirst($po['status']) ?></span>
@@ -480,7 +491,7 @@ $grnPolicyHighlights = [
                                 <?php
                                 $poItemPayload = $pendingPoItems[$po['id']] ?? [];
                                 ?>
-                                <button class="btn btn-sm btn-success" data-po-id="<?= $po['id'] ?>" data-po-number="<?= htmlspecialchars($po['po_number']) ?>" data-po-items="<?= htmlspecialchars(json_encode($poItemPayload, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8') ?>" onclick="receiveFromPO(this)">
+                                <button class="btn btn-sm btn-success" data-po-id="<?= $po['id'] ?>" data-po-number="<?= htmlspecialchars($po['po_number'] ?? '') ?>" data-supplier-id="<?= (int)($po['supplier_id'] ?? 0) ?>" data-po-items="<?= htmlspecialchars(json_encode($poItemPayload, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8') ?>" onclick="receiveFromPO(this)">
                                     <i class="bi bi-check-circle me-1"></i>Receive Goods
                                 </button>
                             </td>
@@ -524,7 +535,7 @@ $grnPolicyHighlights = [
                                         <strong><?= htmlspecialchars($supplier['name']) ?></strong>
                                         <div class="small text-muted"><?= $supplier['grn_count'] ?> GRNs</div>
                                     </div>
-                                    <span class="badge bg-primary-subtle text-primary">KES <?= formatMoney($supplier['total_amount']) ?></span>
+                                    <span class="badge bg-primary-subtle text-primary"><?= formatMoney($supplier['total_amount']) ?></span>
                                 </li>
                                 <?php endforeach; ?>
                             </ul>
@@ -565,7 +576,7 @@ $grnPolicyHighlights = [
                                         <tr>
                                             <td><?= date('M d, Y', strtotime($row['date'])) ?></td>
                                             <td class="text-end"><?= $row['total'] ?></td>
-                                            <td class="text-end">KES <?= formatMoney($row['amount']) ?></td>
+                                            <td class="text-end"><?= formatMoney($row['amount']) ?></td>
                                         </tr>
                                         <?php endforeach; ?>
                                     </tbody>
@@ -663,6 +674,30 @@ $grnPolicyHighlights = [
 </div>
 
 <script>
+const currencyConfig = <?= json_encode($currencyJsConfig, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+
+function formatCurrencyValue(amount) {
+    const cfg = currencyConfig || {};
+    const decimalsRaw = typeof cfg.decimal_places === 'number' ? cfg.decimal_places : parseInt(cfg.decimal_places ?? 2, 10);
+    const decimals = Number.isFinite(decimalsRaw) ? Math.max(0, decimalsRaw) : 2;
+    const decimalSeparator = cfg.decimal_separator ?? '.';
+    const thousandsSeparator = cfg.thousands_separator ?? ',';
+    const numericAmount = Number(amount) || 0;
+    const fixed = numericAmount.toFixed(decimals);
+    let [intPart, fracPart = ''] = fixed.split('.');
+    intPart = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, thousandsSeparator);
+    return decimals > 0 ? `${intPart}${decimalSeparator}${fracPart}` : intPart;
+}
+
+function formatCurrencyWithSymbol(amount) {
+    const formatted = formatCurrencyValue(amount);
+    const symbol = currencyConfig?.symbol || '';
+    if (!symbol) {
+        return formatted;
+    }
+    return (currencyConfig.position === 'after') ? `${formatted} ${symbol}` : `${symbol} ${formatted}`;
+}
+
 let grnItems = [];
 
 function addGRNItem() {
@@ -723,6 +758,8 @@ function updateGRNDisplay() {
         const subtotal = item.received_quantity * item.unit_cost;
         total += subtotal;
         
+        const unitCostDisplay = formatCurrencyWithSymbol(item.unit_cost);
+        const subtotalDisplay = formatCurrencyWithSymbol(subtotal);
         html += `
             <div class="card mb-2">
                 <div class="card-body p-3">
@@ -730,7 +767,7 @@ function updateGRNDisplay() {
                         <div>
                             <strong>${item.product_name}</strong><br>
                             <small class="text-muted">
-                                Qty: ${item.received_quantity} × KES ${item.unit_cost.toFixed(2)} = KES ${subtotal.toFixed(2)}
+                                Qty: ${item.received_quantity} × ${unitCostDisplay} = ${subtotalDisplay}
                                 ${item.expiry_date ? ' | Expiry: ' + item.expiry_date : ''}
                                 ${item.batch_number ? ' | Batch: ' + item.batch_number : ''}
                             </small>
@@ -744,7 +781,7 @@ function updateGRNDisplay() {
         `;
     });
     
-    html += `<div class="alert alert-primary"><h5 class="mb-0">Total: KES ${total.toFixed(2)}</h5></div>`;
+    html += `<div class="alert alert-primary"><h5 class="mb-0">Total: ${formatCurrencyWithSymbol(total)}</h5></div>`;
     container.innerHTML = html;
     
     document.getElementById('grnItems').value = JSON.stringify(grnItems);
@@ -838,7 +875,8 @@ function viewGRN(grnId) {
 }
 
 // Initialize
-document.getElementById('grnModal').addEventListener('show.bs.modal', function () {
+const grnModalElement = document.getElementById('grnModal');
+grnModalElement?.addEventListener('show.bs.modal', function () {
     if (!document.getElementById('poId').value) {
         grnItems = [];
         updateGRNDisplay();

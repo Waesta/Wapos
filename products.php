@@ -196,7 +196,7 @@ include 'includes/header.php';
         <div class="card border-0 shadow-sm">
             <div class="card-body">
                 <small class="text-muted text-uppercase">Stock Value</small>
-                <h3 class="mb-0">KES <?= formatMoney($totalStockValue) ?></h3>
+                <h3 class="mb-0"><?= formatMoney($totalStockValue) ?></h3>
                 <span class="badge bg-primary-subtle text-primary mt-2">On Hand</span>
             </div>
         </div>
@@ -205,7 +205,7 @@ include 'includes/header.php';
         <div class="card border-0 shadow-sm">
             <div class="card-body">
                 <small class="text-muted text-uppercase">Margin Health</small>
-                <h3 class="mb-0">KES <?= formatMoney($averageMargin) ?></h3>
+                <h3 class="mb-0"><?= formatMoney($averageMargin) ?></h3>
                 <span class="badge bg-info-subtle text-info mt-2">Avg / item · <?= number_format($marginPercent, 1) ?>%</span>
             </div>
         </div>
@@ -257,7 +257,7 @@ include 'includes/header.php';
                                 <strong><?= htmlspecialchars($category) ?></strong>
                                 <div class="small text-muted"><?= $stats['active'] ?> active of <?= $stats['count'] ?> products</div>
                             </div>
-                            <span class="badge bg-light text-dark">KES <?= formatMoney($stats['stock_value']) ?></span>
+                            <span class="badge bg-light text-dark"><?= formatMoney($stats['stock_value']) ?></span>
                         </li>
                         <?php endforeach; ?>
                     </ul>
@@ -291,7 +291,7 @@ include 'includes/header.php';
                                 <td><?= htmlspecialchars($product['name']) ?></td>
                                 <td><?= formatMoney($product['cost_price']) ?></td>
                                 <td><?= formatMoney($product['selling_price']) ?></td>
-                                <td class="text-danger">KES <?= formatMoney($margin) ?></td>
+                                <td class="text-danger"><?= formatMoney($margin) ?></td>
                             </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -356,9 +356,9 @@ include 'includes/header.php';
                         <td><?= htmlspecialchars($product['sku']) ?></td>
                         <td><strong><?= htmlspecialchars($product['name']) ?></strong></td>
                         <td><?= htmlspecialchars($product['category_name'] ?? '-') ?></td>
-                        <td>KES <?= formatMoney($product['cost_price']) ?></td>
-                        <td class="fw-bold">KES <?= formatMoney($product['selling_price']) ?></td>
-                        <td class="<?= $marginValue < 0 ? 'text-danger' : 'text-muted' ?>">KES <?= formatMoney($marginValue) ?></td>
+                        <td><?= formatMoney($product['cost_price']) ?></td>
+                        <td class="fw-bold"><?= formatMoney($product['selling_price']) ?></td>
+                        <td class="<?= $marginValue < 0 ? 'text-danger' : 'text-muted' ?>"><?= formatMoney($marginValue) ?></td>
                         <td>
                             <?php if ($product['stock_quantity'] <= $product['min_stock_level']): ?>
                                 <span class="badge bg-warning text-dark"><?= $product['stock_quantity'] ?></span>

@@ -32,6 +32,26 @@ CREATE TABLE IF NOT EXISTS product_batches (
     FOREIGN KEY (location_id) REFERENCES locations(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
+-- Add stock movements table
+CREATE TABLE IF NOT EXISTS stock_movements (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    product_id INT UNSIGNED NOT NULL,
+    movement_type ENUM('in', 'out', 'transfer', 'damaged', 'adjustment') NOT NULL,
+    quantity DECIMAL(10,3) NOT NULL,
+    old_quantity DECIMAL(10,3) NOT NULL,
+    new_quantity DECIMAL(10,3) NOT NULL,
+    reason VARCHAR(100) NOT NULL,
+    notes TEXT,
+    source_module VARCHAR(50) DEFAULT NULL,
+    reference VARCHAR(50),
+    user_id INT UNSIGNED NOT NULL,
+    location_id INT UNSIGNED,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_product_id (product_id),
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+    FOREIGN KEY (location_id) REFERENCES locations(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
 -- Add stock transfers table
 CREATE TABLE IF NOT EXISTS stock_transfers (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
