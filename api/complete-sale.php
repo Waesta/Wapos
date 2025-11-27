@@ -52,6 +52,7 @@ register_shutdown_function($fatalHandler);
 require_once '../includes/bootstrap.php';
 
 use App\Services\AccountingService;
+use App\Services\LoyaltyService;
 use App\Services\SalesService;
 
 header('Content-Type: application/json');
@@ -121,6 +122,16 @@ $totals = $data['totals'] ?? [];
 $paymentMethod = $data['payment_method'] ?? 'cash';
 $roomBookingId = isset($data['room_booking_id']) ? (int)$data['room_booking_id'] : null;
 
+$loyaltyPayload = $data['loyalty'] ?? null;
+$loyaltyDiscount = 0.0;
+
+if ($loyaltyPayload !== null) {
+    if (empty($loyaltyPayload['customer_id'])) {
+        respondJson(422, ['success' => false, 'message' => 'customer_id is required when loyalty data is provided'], ob_get_clean());
+    }
+    $loyaltyDiscount = max(0.0, (float)($loyaltyPayload['discount_amount'] ?? 0.0));
+}
+
 if ($paymentMethod === 'room_charge' && (!$roomBookingId || $roomBookingId <= 0)) {
     respondJson(422, ['success' => false, 'message' => 'room_booking_id is required when payment method is room_charge'], ob_get_clean());
 }
@@ -135,7 +146,8 @@ if ($subtotal <= 0) {
 
 $taxAmount = isset($data['tax_amount']) ? (float) $data['tax_amount'] : ($totals['tax'] ?? 0.0);
 $discountAmount = isset($data['discount_amount']) ? (float) $data['discount_amount'] : ($totals['discount'] ?? 0.0);
-$grandTotal = isset($data['total_amount']) ? (float) $data['total_amount'] : ($totals['grand'] ?? ($subtotal + $taxAmount - $discountAmount));
+$discountAmount += $loyaltyDiscount;
+$grandTotal = max(0.0, $subtotal + $taxAmount - $discountAmount);
 
 $amountPaid = isset($data['amount_paid']) ? (float) $data['amount_paid'] : $grandTotal;
 $changeAmount = isset($data['change_amount']) ? (float) $data['change_amount'] : max(0, $amountPaid - $grandTotal);
@@ -149,6 +161,10 @@ $pdo = $database->getConnection();
 
 $accountingService = new AccountingService($pdo);
 $salesService = new SalesService($pdo, $accountingService);
+$loyaltyService = null;
+if ($loyaltyPayload !== null) {
+    $loyaltyService = new LoyaltyService($pdo);
+}
 
 try {
     $result = $salesService->createSale([
@@ -175,6 +191,23 @@ try {
 
     if (!empty($result['accounting_warning'])) {
         error_log('complete-sale accounting warning: ' . $result['accounting_warning']);
+    }
+
+    if ($loyaltyService !== null && !empty($result['sale_id'])) {
+        try {
+            $loyaltyResult = $loyaltyService->applySaleLoyalty([
+                'customer_id' => (int) $loyaltyPayload['customer_id'],
+                'program_id' => isset($loyaltyPayload['program_id']) ? (int) $loyaltyPayload['program_id'] : null,
+                'points_to_redeem' => isset($loyaltyPayload['points_to_redeem']) ? (int) $loyaltyPayload['points_to_redeem'] : 0,
+                'discount_amount' => $loyaltyDiscount,
+                'sale_id' => (int) $result['sale_id'],
+                'sale_total' => $grandTotal,
+            ]);
+            $result['loyalty'] = $loyaltyResult;
+        } catch (Throwable $loyaltyError) {
+            error_log('loyalty application failed: ' . $loyaltyError->getMessage());
+            $result['loyalty_warning'] = $loyaltyError->getMessage();
+        }
     }
 
     $buffer = ob_get_clean();

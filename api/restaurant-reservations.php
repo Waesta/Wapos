@@ -146,6 +146,27 @@ try {
             echo json_encode(['success' => true, 'reservation' => $reservation, 'message' => 'Status updated successfully.']);
             return;
 
+        case 'record_deposit_payment':
+            $reservationId = isset($input['reservation_id']) ? (int)$input['reservation_id'] : 0;
+            if ($reservationId <= 0) {
+                throw new Exception('reservation_id is required.');
+            }
+
+            $paymentPayload = [
+                'amount' => $input['amount'] ?? null,
+                'method' => $input['method'] ?? null,
+                'reference' => $input['reference'] ?? null,
+                'notes' => $input['notes'] ?? null,
+            ];
+
+            $reservation = $service->recordDepositPayment($reservationId, $paymentPayload, (int)$auth->getUserId());
+            echo json_encode([
+                'success' => true,
+                'reservation' => $reservation,
+                'message' => 'Deposit payment recorded successfully.',
+            ]);
+            return;
+
         default:
             throw new Exception('Unsupported action.');
     }

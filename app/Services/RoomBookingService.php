@@ -13,10 +13,93 @@ class RoomBookingService
     private const LEGACY_BOOKINGS_TABLE = 'bookings';
     private const NEW_BOOKINGS_TABLE = 'room_bookings';
     private const FOLIOS_TABLE = 'room_folios';
+    private const PAYMENTS_TABLE = 'room_booking_payments';
+    private const PAYMENT_METHODS = ['mobile_money', 'cash', 'card', 'bank_transfer'];
 
     public function __construct(PDO $db)
     {
         $this->db = $db;
+    }
+
+    private function createRoomBookingPaymentsTable(): void
+    {
+        $sql = 'CREATE TABLE IF NOT EXISTS ' . self::PAYMENTS_TABLE . ' (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            booking_id INT UNSIGNED NOT NULL,
+            amount DECIMAL(10,2) NOT NULL,
+            method VARCHAR(50) NOT NULL,
+            reference VARCHAR(100) NULL,
+            customer_phone VARCHAR(30) NULL,
+            notes TEXT NULL,
+            gateway_reference VARCHAR(100) NULL,
+            recorded_by INT UNSIGNED NULL,
+            recorded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT fk_room_booking_payment_booking FOREIGN KEY (booking_id) REFERENCES ' . self::NEW_BOOKINGS_TABLE . ' (id) ON DELETE CASCADE,
+            INDEX idx_booking_payment_booking (booking_id)
+        ) ENGINE=InnoDB';
+
+        try {
+            $this->db->exec($sql);
+        } catch (Exception $e) {
+            $fallback = 'CREATE TABLE IF NOT EXISTS ' . self::PAYMENTS_TABLE . ' (
+                id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                booking_id INT UNSIGNED NOT NULL,
+                amount DECIMAL(10,2) NOT NULL,
+                method VARCHAR(50) NOT NULL,
+                reference VARCHAR(100) NULL,
+                customer_phone VARCHAR(30) NULL,
+                notes TEXT NULL,
+                gateway_reference VARCHAR(100) NULL,
+                recorded_by INT UNSIGNED NULL,
+                recorded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_booking_payment_booking (booking_id)
+            ) ENGINE=InnoDB';
+            $this->db->exec($fallback);
+        }
+    }
+
+    private function recordBookingPayment(int $bookingId, array $payload, ?int $userId = null): void
+    {
+        $amount = isset($payload['amount']) ? (float)$payload['amount'] : 0;
+        if ($amount <= 0) {
+            throw new Exception('Payment amount must be greater than zero.');
+        }
+
+        $method = strtolower(trim((string)($payload['method'] ?? '')));
+        if (!in_array($method, self::PAYMENT_METHODS, true)) {
+            throw new Exception('Unsupported payment method.');
+        }
+
+        $reference = trim((string)($payload['reference'] ?? '')) ?: null;
+        $customerPhone = trim((string)($payload['customer_phone'] ?? '')) ?: null;
+        if ($method === 'mobile_money') {
+            if (!$customerPhone || strlen($customerPhone) < 7) {
+                throw new Exception('Customer phone number is required for mobile money payments.');
+            }
+        } else {
+            $customerPhone = null;
+        }
+
+        $notes = trim((string)($payload['notes'] ?? '')) ?: null;
+        $gatewayReference = trim((string)($payload['gateway_reference'] ?? '')) ?: null;
+        $recordedAt = $payload['date'] ?? null;
+
+        $stmt = $this->db->prepare(
+            'INSERT INTO ' . self::PAYMENTS_TABLE . ' (booking_id, amount, method, reference, customer_phone, notes, gateway_reference, recorded_by, recorded_at)
+             VALUES (:booking_id, :amount, :method, :reference, :customer_phone, :notes, :gateway_reference, :recorded_by, COALESCE(:recorded_at, NOW()))'
+        );
+
+        $stmt->execute([
+            ':booking_id' => $bookingId,
+            ':amount' => $amount,
+            ':method' => $method,
+            ':reference' => $reference,
+            ':customer_phone' => $customerPhone,
+            ':notes' => $notes,
+            ':gateway_reference' => $gatewayReference,
+            ':recorded_by' => $userId ?: null,
+            ':recorded_at' => $recordedAt,
+        ]);
     }
 
     /**
@@ -37,6 +120,10 @@ class RoomBookingService
             $this->createRoomFoliosTable();
         } else {
             $this->syncRoomFoliosColumns();
+        }
+
+        if (!$this->tableExists(self::PAYMENTS_TABLE)) {
+            $this->createRoomBookingPaymentsTable();
         }
 
         $this->ensureMigrationTable();
@@ -308,6 +395,18 @@ class RoomBookingService
 
         $totalAmount = round($rate * $nights, 2);
         $deposit = isset($payload['deposit_amount']) ? max(0, (float)$payload['deposit_amount']) : 0.0;
+        $depositMethod = $payload['deposit_method'] ?? null;
+        if ($deposit > 0) {
+            if (!$depositMethod || !in_array($depositMethod, self::PAYMENT_METHODS, true)) {
+                throw new Exception('Deposit payment method is required.');
+            }
+            if ($depositMethod === 'mobile_money') {
+                $depositPhone = trim((string)($payload['deposit_customer_phone'] ?? ''));
+                if ($depositPhone === '' || strlen($depositPhone) < 7) {
+                    throw new Exception('Customer phone number is required for mobile money deposits.');
+                }
+            }
+        }
         $paymentStatus = $deposit >= $totalAmount ? 'paid' : ($deposit > 0 ? 'partial' : 'pending');
 
         $bookingNumber = $this->generateBookingNumber();
@@ -441,10 +540,19 @@ class RoomBookingService
             ]);
 
             if ($deposit > 0) {
+                $this->recordBookingPayment($bookingId, [
+                    'amount' => $deposit,
+                    'method' => $depositMethod,
+                    'reference' => $payload['deposit_reference'] ?? null,
+                    'customer_phone' => $payload['deposit_customer_phone'] ?? null,
+                    'notes' => $payload['deposit_notes'] ?? null,
+                    'date' => $checkInDate,
+                ], $userId);
+
                 $folioStmt->execute([
                     ':booking_id' => $bookingId,
                     ':item_type' => 'payment',
-                    ':description' => 'Deposit payment',
+                    ':description' => sprintf('Deposit payment (%s)', strtoupper(str_replace('_', ' ', $depositMethod))),
                     ':amount' => -1 * $deposit,
                     ':quantity' => 1,
                     ':date_charged' => $checkInDate,

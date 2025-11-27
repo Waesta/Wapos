@@ -35,12 +35,14 @@ foreach ($settingsRaw as $setting) {
     $settings[$setting['setting_key']] = $setting['setting_value'];
 }
 
-$currencySymbol = $settings['currency_symbol'] ?? ($settings['currency'] ?? CURRENCY_SYMBOL ?? '$');
+$currencyManager = CurrencyManager::getInstance();
+$currencySymbol = $currencyManager->getCurrencySymbol();
 $businessName = $settings['business_name'] ?? APP_NAME;
 $logoPath = $settings['business_logo'] ?? null;
 
-$formatCurrency = function ($value) use ($currencySymbol) {
-    return sprintf('%s %s', $currencySymbol, number_format((float)$value, 2));
+$hasCurrencySymbol = trim((string)$currencySymbol) !== '';
+$formatCurrency = function ($value) use ($currencyManager, $hasCurrencySymbol) {
+    return $currencyManager->formatMoney((float)$value, $hasCurrencySymbol);
 };
 
 $totalCharges = (float)($totals['total_charges'] ?? 0);

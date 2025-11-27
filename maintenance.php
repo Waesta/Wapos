@@ -91,6 +91,17 @@ $pageTitle = 'Maintenance';
 include 'includes/header.php';
 ?>
 
+<style>
+    .maintenance-layout {
+        max-width: 1400px;
+        margin-left: auto;
+        margin-right: auto;
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+</style>
+<div class="maintenance-layout py-3">
+
 <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 mb-3">
     <div>
         <h4 class="mb-0"><i class="bi bi-tools me-2"></i>Maintenance Dashboard</h4>
@@ -916,5 +927,7 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchTechnicianLoad();
 });
 </script>
+
+</div>
 
 <?php include 'includes/footer.php'; ?>

@@ -3,6 +3,7 @@
 use App\Services\SystemBackupService;
 use App\Services\ScheduledTaskService;
 use App\Services\DataPortService;
+use App\Services\LoyaltyService;
 
 require_once 'includes/bootstrap.php';
 $auth->requireRole(['admin', 'developer', 'accountant', 'super_admin']);
@@ -12,6 +13,12 @@ $pdo = $db->getConnection();
 $backupService = new SystemBackupService($pdo);
 $scheduledTaskService = new ScheduledTaskService($pdo);
 $dataPortService = new DataPortService($pdo);
+$loyaltyService = new LoyaltyService($pdo);
+$activeLoyaltyProgram = $loyaltyService->getActiveProgram();
+if (!$activeLoyaltyProgram) {
+    $activeLoyaltyProgram = $loyaltyService->ensureDefaultProgram();
+}
+$loyaltyStats = $activeLoyaltyProgram ? $loyaltyService->getProgramStats((int)$activeLoyaltyProgram['id']) : null;
 $backupConfig = $backupService->getConfig();
 $backupLogs = $backupService->listBackups(25);
 $dataPortEntities = $dataPortService->getEntities();
@@ -245,6 +252,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
+        if (isset($_POST['loyalty_program_id'])) {
+            try {
+                $loyaltyProgramId = (int) ($_POST['loyalty_program_id'] ?? 0);
+                $loyaltyPayload = [
+                    'name' => trim($_POST['loyalty_name'] ?? ''),
+                    'description' => trim($_POST['loyalty_description'] ?? ''),
+                    'points_per_dollar' => (float) ($_POST['loyalty_points_per_currency'] ?? ($activeLoyaltyProgram['points_per_dollar'] ?? 1)),
+                    'redemption_rate' => (float) ($_POST['loyalty_redemption_rate'] ?? ($activeLoyaltyProgram['redemption_rate'] ?? 0.01)),
+                    'min_points_redemption' => (int) ($_POST['loyalty_min_points'] ?? ($activeLoyaltyProgram['min_points_redemption'] ?? 100)),
+                    'is_active' => 1,
+                ];
+
+                if ($loyaltyProgramId > 0) {
+                    $loyaltyService->saveProgram($loyaltyProgramId, $loyaltyPayload);
+                } else {
+                    $activeLoyaltyProgram = $loyaltyService->createProgram($loyaltyPayload);
+                    $loyaltyProgramId = (int) ($activeLoyaltyProgram['id'] ?? 0);
+                }
+
+                $activeLoyaltyProgram = $loyaltyService->setActiveProgram($loyaltyProgramId);
+                $loyaltyStats = $loyaltyService->getProgramStats($loyaltyProgramId);
+            } catch (Throwable $loyaltyException) {
+                $_SESSION['error_message'] = 'Failed to update loyalty settings: ' . $loyaltyException->getMessage();
+            }
+        }
+
         $backupConfigPosted = [
             'frequency' => sanitizeInput($_POST['backup_frequency'] ?? ''),
             'time' => sanitizeInput($_POST['backup_time_of_day'] ?? ''),
@@ -344,6 +377,12 @@ $sections = [
         'icon' => 'bi-shield-lock',
         'description' => 'Automate backups, manage retention, and handle data import/export workflows.',
         'roles' => ['super_admin', 'developer', 'admin', 'accountant'],
+    ],
+    'loyalty_rewards' => [
+        'title' => 'Loyalty & Rewards',
+        'icon' => 'bi-stars',
+        'description' => 'Tune earn and redeem rules shared by Retail, Restaurant, and Rooms.',
+        'roles' => ['admin', 'manager', 'super_admin'],
     ],
 ];
 
@@ -861,6 +900,74 @@ $visibleSections = array_filter($sections, function ($section) use ($userRole) {
                                 </div>
                             </div>
                         </div>
+                    <?php elseif ($key === 'loyalty_rewards'): ?>
+                        <?php if (!$activeLoyaltyProgram): ?>
+                            <div class="alert alert-warning mb-0">
+                                <i class="bi bi-exclamation-triangle me-2"></i>No loyalty program found. Save the form to create the default program automatically.
+                            </div>
+                        <?php else: ?>
+                            <input type="hidden" name="loyalty_program_id" value="<?= (int) $activeLoyaltyProgram['id'] ?>">
+                            <div class="row g-3 align-items-stretch">
+                                <div class="col-md-7">
+                                    <div class="mb-3">
+                                        <label class="form-label">Program Name</label>
+                                        <input type="text" class="form-control" name="loyalty_name" value="<?= htmlspecialchars($activeLoyaltyProgram['name'] ?? '') ?>" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Program Description</label>
+                                        <textarea class="form-control" name="loyalty_description" rows="2" placeholder="Visible to staff when linking loyalty customers."><?= htmlspecialchars($activeLoyaltyProgram['description'] ?? '') ?></textarea>
+                                    </div>
+                                    <div class="row g-3">
+                                        <div class="col-md-6">
+                                            <label class="form-label">Points per <?= htmlspecialchars($settings['currency_code'] ?? 'unit') ?></label>
+                                            <input type="number" step="0.01" min="0" class="form-control" name="loyalty_points_per_currency" value="<?= htmlspecialchars($activeLoyaltyProgram['points_per_dollar'] ?? 1) ?>" required>
+                                            <div class="form-text">How many points a customer earns per currency spent.</div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label">Redemption Rate (value per point)</label>
+                                            <input type="number" step="0.001" min="0" class="form-control" name="loyalty_redemption_rate" value="<?= htmlspecialchars($activeLoyaltyProgram['redemption_rate'] ?? 0.01) ?>" required>
+                                            <div class="form-text">Monetary value granted when redeeming one point.</div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label">Minimum Points to Redeem</label>
+                                            <input type="number" min="0" step="1" class="form-control" name="loyalty_min_points" value="<?= htmlspecialchars($activeLoyaltyProgram['min_points_redemption'] ?? 100) ?>" required>
+                                            <div class="form-text">Prevents redeeming very small balances.</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-5">
+                                    <div class="card h-100 border-0 shadow-sm">
+                                        <div class="card-body">
+                                            <h6 class="mb-3">Program Snapshot</h6>
+                                            <?php if ($loyaltyStats): ?>
+                                                <div class="d-flex flex-column gap-3">
+                                                    <div>
+                                                        <span class="text-muted small text-uppercase">Members</span>
+                                                        <div class="fs-4 fw-semibold"><?= number_format($loyaltyStats['members'] ?? 0) ?></div>
+                                                    </div>
+                                                    <div class="d-flex justify-content-between">
+                                                        <div>
+                                                            <span class="text-muted small">Points Earned</span>
+                                                            <div class="fw-semibold text-primary"><?= number_format($loyaltyStats['points_earned'] ?? 0) ?></div>
+                                                        </div>
+                                                        <div>
+                                                            <span class="text-muted small">Redeemed</span>
+                                                            <div class="fw-semibold text-success"><?= number_format($loyaltyStats['points_redeemed'] ?? 0) ?></div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            <?php else: ?>
+                                                <p class="text-muted mb-0">Loyalty usage data will appear after the first transaction.</p>
+                                            <?php endif; ?>
+                                            <hr>
+                                            <a href="loyalty-programs.php" class="btn btn-outline-primary w-100">
+                                                <i class="bi bi-box-arrow-up-right me-1"></i>Open Loyalty Console
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endif; ?>
                     <?php endif; ?>
                 </div>
             </section>

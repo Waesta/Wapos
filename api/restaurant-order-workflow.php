@@ -108,6 +108,17 @@ function placeOrder($db, $data, $auth) {
     
     try {
         $orderType = $data['order_type'] ?? 'dine-in';
+        $customerName = isset($data['customer_name']) ? trim((string)$data['customer_name']) : '';
+        $customerPhone = isset($data['customer_phone']) ? trim((string)$data['customer_phone']) : '';
+
+        if ($orderType !== 'dine-in') {
+            if ($customerName === '' || $customerPhone === '') {
+                throw new Exception('Customer name and phone are required for takeout and delivery orders.');
+            }
+        } else {
+            $customerName = $customerName !== '' ? $customerName : null;
+            $customerPhone = $customerPhone !== '' ? $customerPhone : null;
+        }
         $deliveryLat = (isset($data['delivery_latitude']) && is_numeric($data['delivery_latitude']))
             ? (float)$data['delivery_latitude']
             : null;
@@ -153,8 +164,8 @@ function placeOrder($db, $data, $auth) {
             'order_number' => $orderNumber,
             'order_type' => $orderType,
             'table_id' => $data['table_id'] ?? null,
-            'customer_name' => $data['customer_name'] ?? null,
-            'customer_phone' => $data['customer_phone'] ?? null,
+            'customer_name' => $customerName,
+            'customer_phone' => $customerPhone,
             'delivery_address' => $data['delivery_address'] ?? null,
             'delivery_instructions' => $data['delivery_instructions'] ?? null,
             'subtotal' => $subtotal,

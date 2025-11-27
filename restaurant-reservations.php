@@ -26,9 +26,24 @@ try {
     $tables = [];
 }
 
+$currencyManager = CurrencyManager::getInstance();
+$currencyJsConfig = $currencyManager->getJavaScriptConfig();
+$currencyCode = $currencyManager->getCurrencyCode();
+$gatewayProvider = strtolower((string)(settings('payments_gateway_provider') ?? ''));
+$isGatewayEnabled = in_array($gatewayProvider, ['relworx', 'pesapal'], true);
+
 $pageTitle = 'Restaurant Reservations';
 include 'includes/header.php';
 ?>
+
+<script>
+    window.RESERVATION_GATEWAY_CONFIG = {
+        enabled: <?= $isGatewayEnabled ? 'true' : 'false' ?>,
+        provider: '<?= addslashes($gatewayProvider) ?>',
+        currency: '<?= addslashes($currencyCode) ?>'
+    };
+    window.CURRENCY_CONFIG = <?= json_encode($currencyJsConfig, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+</script>
 
 <div class="container-fluid py-4 stack-lg" role="main">
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
@@ -159,6 +174,7 @@ include 'includes/header.php';
                         <th>Date</th>
                         <th>Time</th>
                         <th>Status</th>
+                        <th>Deposit</th>
                         <th>Notes</th>
                         <th>Created By</th>
                         <th class="text-end">Actions</th>
@@ -166,7 +182,7 @@ include 'includes/header.php';
                 </thead>
                 <tbody id="reservationsTableBody">
                     <tr>
-                        <td colspan="9" class="text-center py-4 text-muted">Loading reservations...</td>
+                        <td colspan="10" class="text-center py-4 text-muted">Loading reservations...</td>
                     </tr>
                 </tbody>
             </table>
@@ -248,6 +264,107 @@ include 'includes/header.php';
                         <div class="col-md-6">
                             <label for="reservationSpecialRequests" class="form-label">Special Requests</label>
                             <textarea id="reservationSpecialRequests" class="form-control" rows="2" maxlength="500" placeholder="Allergies, preferences, occasions..."></textarea>
+                        </div>
+                        <div class="col-12">
+                            <div class="card border">
+                                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <h6 class="mb-0">Deposit Settings</h6>
+                                        <small class="text-muted">Capture upfront payments when required.</small>
+                                    </div>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" id="reservationDepositRequired">
+                                        <label class="form-check-label" for="reservationDepositRequired">Deposit required</label>
+                                    </div>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row g-3">
+                                        <div class="col-md-4">
+                                            <label class="form-label" for="reservationDepositAmount">Deposit Amount</label>
+                                            <input type="number" class="form-control" id="reservationDepositAmount" min="0" step="0.01" placeholder="e.g. 50.00" disabled>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label" for="reservationDepositDueAt">Deposit Due By</label>
+                                            <input type="datetime-local" class="form-control" id="reservationDepositDueAt" disabled>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label" for="reservationCancellationPolicy">Cancellation Policy</label>
+                                            <textarea class="form-control" id="reservationCancellationPolicy" rows="1" maxlength="500" placeholder="Optional" disabled></textarea>
+                                        </div>
+                                        <div class="col-12">
+                                            <label class="form-label" for="reservationDepositNotes">Internal Deposit Notes</label>
+                                            <textarea class="form-control" id="reservationDepositNotes" rows="2" maxlength="500" placeholder="Internal notes for the team" disabled></textarea>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <div class="card bg-light" id="reservationDepositSummaryCard" hidden>
+                                <div class="card-body">
+                                    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+                                        <div>
+                                            <div class="text-muted text-uppercase small">Deposit Status</div>
+                                            <div id="reservationDepositStatusBadge">-</div>
+                                        </div>
+                                        <div class="text-end">
+                                            <div class="text-muted text-uppercase small">Balance</div>
+                                            <div class="fs-5 fw-semibold" id="reservationDepositBalance">-</div>
+                                        </div>
+                                    </div>
+                                    <div class="row g-3">
+                                        <div class="col-md-6">
+                                            <div class="card h-100">
+                                                <div class="card-body">
+                                                    <h6 class="fw-semibold">Payments</h6>
+                                                    <div class="small text-muted mb-2">Chronological log of recorded deposits.</div>
+                                                    <div id="reservationDepositPayments" class="deposit-payments-list small">No payments yet.</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="card h-100">
+                                                <div class="card-body">
+                                                    <h6 class="fw-semibold">Record Payment</h6>
+                                                    <div class="row g-2">
+                                                        <div class="col-md-6">
+                                                            <label class="form-label small" for="depositPaymentAmount">Amount</label>
+                                                            <input type="number" class="form-control" id="depositPaymentAmount" min="0" step="0.01" placeholder="e.g. 25.00">
+                                                        </div>
+                                                        <div class="col-md-6">
+                                                            <label class="form-label small" for="depositPaymentMethod">Method</label>
+                                                            <select class="form-select" id="depositPaymentMethod">
+                                                                <option value="">Select method</option>
+                                                                <option value="mobile_money">Mobile Money</option>
+                                                                <option value="cash">Cash</option>
+                                                                <option value="card">Card</option>
+                                                                <option value="bank_transfer">Bank Transfer</option>
+                                                            </select>
+                                                        </div>
+                                                        <div class="col-md-6" id="depositPaymentPhoneWrap" hidden>
+                                                            <label class="form-label small" for="depositPaymentPhone">Customer Phone</label>
+                                                            <input type="tel" class="form-control" id="depositPaymentPhone" placeholder="e.g. +2567...">
+                                                            <div class="form-text">Required for mobile money prompts.</div>
+                                                        </div>
+                                                        <div class="col-md-6">
+                                                            <label class="form-label small" for="depositPaymentReference">Reference</label>
+                                                            <input type="text" class="form-control" id="depositPaymentReference" placeholder="Txn ID / receipt">
+                                                        </div>
+                                                        <div class="col-12">
+                                                            <label class="form-label small" for="depositPaymentNotes">Notes</label>
+                                                            <textarea class="form-control" id="depositPaymentNotes" rows="2" maxlength="250" placeholder="Optional"></textarea>
+                                                        </div>
+                                                    </div>
+                                                    <button type="button" class="btn btn-sm btn-success mt-3" id="recordDepositPaymentBtn">
+                                                        <i class="bi bi-cash-coin me-2"></i>Record Payment
+                                                    </button>
+                                                    <div class="alert alert-info d-none mt-3" id="depositPaymentGatewayStatus"></div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </form>
@@ -358,6 +475,23 @@ const reservationGuestNameField = document.getElementById('reservationGuestName'
 const reservationGuestPhoneField = document.getElementById('reservationGuestPhone');
 const reservationStatusField = document.getElementById('reservationStatus');
 const reservationSpecialRequestsField = document.getElementById('reservationSpecialRequests');
+const reservationDepositRequiredField = document.getElementById('reservationDepositRequired');
+const reservationDepositAmountField = document.getElementById('reservationDepositAmount');
+const reservationDepositDueField = document.getElementById('reservationDepositDueAt');
+const reservationCancellationPolicyField = document.getElementById('reservationCancellationPolicy');
+const reservationDepositNotesField = document.getElementById('reservationDepositNotes');
+const depositSummaryCard = document.getElementById('reservationDepositSummaryCard');
+const reservationDepositStatusBadge = document.getElementById('reservationDepositStatusBadge');
+const reservationDepositBalance = document.getElementById('reservationDepositBalance');
+const reservationDepositPayments = document.getElementById('reservationDepositPayments');
+const depositPaymentAmountField = document.getElementById('depositPaymentAmount');
+const depositPaymentMethodField = document.getElementById('depositPaymentMethod');
+const depositPaymentPhoneWrap = document.getElementById('depositPaymentPhoneWrap');
+const depositPaymentPhoneField = document.getElementById('depositPaymentPhone');
+const depositPaymentReferenceField = document.getElementById('depositPaymentReference');
+const depositPaymentNotesField = document.getElementById('depositPaymentNotes');
+const depositPaymentGatewayStatus = document.getElementById('depositPaymentGatewayStatus');
+const recordDepositPaymentBtn = document.getElementById('recordDepositPaymentBtn');
 
 const statusReservationIdField = document.getElementById('statusReservationId');
 const statusSelectField = document.getElementById('statusSelect');
@@ -393,6 +527,13 @@ function showAlert(type, message) {
         alertInstance.close();
     }, 6000);
 }
+
+const RESERVATION_GATEWAY = window.RESERVATION_GATEWAY_CONFIG || { enabled: false, provider: null, currency: (window.CURRENCY_CONFIG?.code || 'KES') };
+let depositGatewayReference = null;
+let depositGatewayPollTimeout = null;
+let depositGatewayPollAttempts = 0;
+const DEPOSIT_GATEWAY_POLL_INTERVAL = 4000;
+const DEPOSIT_GATEWAY_MAX_ATTEMPTS = 30;
 
 async function loadSummary() {
     try {
@@ -469,6 +610,7 @@ function renderReservationRow(reservation) {
     `;
     const tableLabel = buildTableLabel(reservation);
     const actions = buildRowActions(reservation);
+    const depositSummary = buildDepositSummaryChip(reservation);
 
     return `
         <tr>
@@ -478,10 +620,40 @@ function renderReservationRow(reservation) {
             <td>${formatDate(reservation.reservation_date)}</td>
             <td>${formatTime(reservation.reservation_time)}</td>
             <td><span class="badge bg-${badgeClass}">${statusLabel}</span></td>
+            <td>${depositSummary}</td>
             <td class="text-truncate" style="max-width: 180px;" title="${reservation.special_requests || ''}">${reservation.special_requests || '<span class="text-muted">None</span>'}</td>
             <td>${escapeHtml(reservation.created_by_name || '-')}</td>
             <td class="text-end">${actions}</td>
         </tr>`;
+}
+
+function buildDepositSummaryChip(reservation) {
+    if (!reservation.deposit_required) {
+        return '<span class="badge bg-secondary-subtle text-secondary">Not required</span>';
+    }
+
+    const status = (reservation.deposit_status || 'pending').toLowerCase();
+    const badgeMap = {
+        paid: 'success',
+        pending: 'warning',
+        due: 'danger',
+        waived: 'secondary',
+        forfeited: 'dark',
+        refunded: 'info'
+    };
+    const amount = reservation.deposit_amount ? Number(reservation.deposit_amount).toFixed(2) : '-';
+    const paid = Number(reservation.deposit_total_paid || 0).toFixed(2);
+    const balance = reservation.deposit_balance !== null && reservation.deposit_balance !== undefined
+        ? Number(reservation.deposit_balance).toFixed(2)
+        : '-';
+    const badge = badgeMap[status] || 'secondary';
+    const label = status.replace('_', ' ').replace(/\w/g, c => c.toUpperCase());
+    return `
+        <div class="stack-xxs">
+            <div><span class="badge bg-${badge}">${label}</span></div>
+            <div class="small text-muted">${paid} / ${amount}<br><strong>Bal:</strong> ${balance}</div>
+        </div>
+    `;
 }
 
 function buildTableLabel(reservation) {
@@ -535,6 +707,9 @@ function resetReservationForm() {
     reservationIdField.value = '';
     reservationDurationField.value = 120;
     reservationStatusField.value = 'confirmed';
+    toggleDepositFields(false);
+    depositSummaryCard.hidden = true;
+    reservationDepositPayments.innerHTML = 'No payments yet.';
 }
 
 function openCreateModal() {
@@ -570,6 +745,13 @@ async function openEditModal(reservationId) {
         reservationGuestPhoneField.value = reservation.guest_phone || '';
         reservationStatusField.value = reservation.status || 'confirmed';
         reservationSpecialRequestsField.value = reservation.special_requests || '';
+        reservationDepositRequiredField.checked = !!reservation.deposit_required;
+        toggleDepositFields(reservationDepositRequiredField.checked);
+        reservationDepositAmountField.value = reservation.deposit_amount || '';
+        reservationDepositDueField.value = normalizeDateTimeLocalValue(reservation.deposit_due_at);
+        reservationCancellationPolicyField.value = reservation.cancellation_policy || '';
+        reservationDepositNotesField.value = reservation.deposit_notes || '';
+        updateDepositSummary(reservation);
 
         reservationModal.show();
     } catch (error) {
@@ -594,7 +776,12 @@ async function saveReservation() {
         guest_name: reservationGuestNameField.value,
         guest_phone: reservationGuestPhoneField.value,
         status: reservationStatusField.value,
-        special_requests: reservationSpecialRequestsField.value
+        special_requests: reservationSpecialRequestsField.value,
+        deposit_required: reservationDepositRequiredField.checked ? 1 : 0,
+        deposit_amount: reservationDepositRequiredField.checked ? reservationDepositAmountField.value : null,
+        deposit_due_at: reservationDepositRequiredField.checked ? reservationDepositDueField.value : null,
+        cancellation_policy: reservationDepositRequiredField.checked ? reservationCancellationPolicyField.value : null,
+        deposit_notes: reservationDepositRequiredField.checked ? reservationDepositNotesField.value : null
     };
 
     const capacity = parseInt(reservationTableField.selectedOptions[0]?.dataset.capacity || '0', 10);
@@ -718,6 +905,11 @@ const bootstrapInit = () => {
     trapFocus(reservationModalEl);
     trapFocus(statusModalEl);
     filterDate.value = todayISO();
+    reservationDepositRequiredField.addEventListener('change', () => {
+        toggleDepositFields(reservationDepositRequiredField.checked);
+    });
+    depositPaymentMethodField.addEventListener('change', handleDepositPaymentMethodChange);
+    recordDepositPaymentBtn.addEventListener('click', recordDepositPayment);
     loadSummary();
     loadReservations();
 };
@@ -726,6 +918,268 @@ if (typeof bootstrap === 'undefined') {
     window.addEventListener('load', bootstrapInit, { once: true });
 } else {
     bootstrapInit();
+}
+
+function toggleDepositFields(enabled) {
+    [
+        reservationDepositAmountField,
+        reservationDepositDueField,
+        reservationCancellationPolicyField,
+        reservationDepositNotesField
+    ].forEach(field => {
+        field.disabled = !enabled;
+        if (!enabled) {
+            field.value = '';
+        }
+    });
+    depositSummaryCard.hidden = !enabled;
+}
+
+function normalizeDateTimeLocalValue(value) {
+    if (!value) return '';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+        return '';
+    }
+    const iso = parsed.toISOString();
+    return iso.slice(0, 16);
+}
+
+function updateDepositSummary(reservation) {
+    const enabled = !!reservation.deposit_required;
+    depositSummaryCard.hidden = !enabled;
+    if (!enabled) {
+        return;
+    }
+
+    const status = (reservation.deposit_status || 'pending').replace('_', ' ');
+    reservationDepositStatusBadge.innerHTML = `<span class="badge bg-primary">${status}</span>`;
+    const balance = reservation.deposit_balance !== null && reservation.deposit_balance !== undefined
+        ? Number(reservation.deposit_balance).toFixed(2)
+        : '-';
+    reservationDepositBalance.textContent = balance;
+
+    if (reservation.deposit_payments && reservation.deposit_payments.length > 0) {
+        reservationDepositPayments.innerHTML = reservation.deposit_payments.map(payment => `
+            <div class="d-flex justify-content-between align-items-start border-bottom py-2">
+                <div>
+                    <div class="fw-semibold">${Number(payment.amount).toFixed(2)} ${escapeHtml(payment.method || '')}</div>
+                    <div class="text-muted small">${formatDateTime(payment.recorded_at)}${payment.reference ? ' · Ref: ' + escapeHtml(payment.reference) : ''}${payment.customer_phone ? ' · ' + escapeHtml(payment.customer_phone) : ''}</div>
+                    ${payment.notes ? `<div class="small">${escapeHtml(payment.notes)}</div>` : ''}
+                </div>
+                <div class="text-muted small text-end">${payment.recorded_by ? `User #${payment.recorded_by}` : ''}</div>
+            </div>
+        `).join('');
+    } else {
+        reservationDepositPayments.innerHTML = 'No payments yet.';
+    }
+    clearDepositGatewayStatus();
+}
+
+function formatDateTime(value) {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString();
+}
+
+function handleDepositPaymentMethodChange() {
+    const method = depositPaymentMethodField.value;
+    const isMobile = method === 'mobile_money';
+    depositPaymentPhoneWrap.hidden = !isMobile;
+    if (!isMobile) {
+        depositPaymentPhoneField.value = '';
+    }
+}
+
+async function recordDepositPayment() {
+    const reservationId = reservationIdField.value;
+    if (!reservationId) {
+        showAlert('danger', 'Save the reservation before logging payments.');
+        return;
+    }
+
+    const amount = parseFloat(depositPaymentAmountField.value);
+    if (Number.isNaN(amount) || amount <= 0) {
+        depositPaymentAmountField.focus();
+        return;
+    }
+
+    const isMobileMoney = depositPaymentMethodField.value === 'mobile_money';
+    if (isMobileMoney) {
+        const phone = depositPaymentPhoneField.value.trim();
+        if (phone.length < 7) {
+            depositPaymentPhoneField.focus();
+            return;
+        }
+    }
+
+    const paymentPayload = {
+        amount,
+        method: depositPaymentMethodField.value,
+        customer_phone: isMobileMoney ? depositPaymentPhoneField.value : null,
+        reference: depositPaymentReferenceField.value,
+        notes: depositPaymentNotesField.value
+    };
+
+    recordDepositPaymentBtn.disabled = true;
+    recordDepositPaymentBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Recording...';
+
+    try {
+        if (isMobileMoney && RESERVATION_GATEWAY.enabled) {
+            await initiateReservationGatewayPayment(reservationId, paymentPayload);
+        } else {
+            await submitDepositPayment(reservationId, paymentPayload);
+        }
+    } catch (error) {
+        showAlert('danger', error.message);
+    } finally {
+        recordDepositPaymentBtn.disabled = false;
+        recordDepositPaymentBtn.innerHTML = '<i class="bi bi-cash-coin me-2"></i>Record Payment';
+    }
+}
+
+async function submitDepositPayment(reservationId, paymentPayload) {
+    const response = await fetch('api/restaurant-reservations.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            action: 'record_deposit_payment',
+            reservation_id: reservationId,
+            ...paymentPayload
+        })
+    });
+    const result = await response.json();
+    if (!result.success) {
+        throw new Error(result.message || 'Failed to record payment');
+    }
+
+    showAlert('success', result.message || 'Deposit payment recorded.');
+    updateDepositSummary(result.reservation);
+    depositPaymentAmountField.value = '';
+    depositPaymentMethodField.value = '';
+    handleDepositPaymentMethodChange();
+    depositPaymentReferenceField.value = '';
+    depositPaymentNotesField.value = '';
+    depositPaymentPhoneField.value = '';
+    clearDepositGatewayStatus();
+    await loadReservations();
+}
+
+function setDepositGatewayStatus(message, type = 'info') {
+    if (!depositPaymentGatewayStatus) return;
+    depositPaymentGatewayStatus.className = `alert alert-${type}`;
+    depositPaymentGatewayStatus.textContent = message;
+    depositPaymentGatewayStatus.classList.remove('d-none');
+}
+
+function clearDepositGatewayStatus() {
+    if (!depositPaymentGatewayStatus) return;
+    depositPaymentGatewayStatus.classList.add('d-none');
+    depositPaymentGatewayStatus.textContent = '';
+    depositGatewayReference = null;
+    depositGatewayPollAttempts = 0;
+    if (depositGatewayPollTimeout) {
+        clearTimeout(depositGatewayPollTimeout);
+        depositGatewayPollTimeout = null;
+    }
+}
+
+async function initiateReservationGatewayPayment(reservationId, paymentPayload) {
+    try {
+        setDepositGatewayStatus('Sending mobile money prompt to customer...', 'info');
+        const requestBody = {
+            amount: paymentPayload.amount,
+            currency: RESERVATION_GATEWAY.currency,
+            customer_phone: paymentPayload.customer_phone,
+            customer_name: reservationGuestNameField.value || null,
+            customer_email: null,
+            metadata: {
+                source: 'restaurant_reservation_deposit',
+                reservation_id: reservationId,
+                guest_phone: reservationGuestPhoneField.value,
+                deposit_form: true
+            },
+            context_type: 'restaurant_reservation',
+            context_id: Number(reservationId) || Date.now()
+        };
+
+        const response = await fetch('api/payments/initiate.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody)
+        });
+        const result = await response.json();
+        if (!result.success) {
+            throw new Error(result.message || 'Unable to initiate payment');
+        }
+
+        const data = result.data || {};
+        depositGatewayReference = data.reference;
+        depositGatewayPollAttempts = 0;
+        setDepositGatewayStatus(data.instructions || 'Prompt sent. Waiting for customer confirmation...', 'info');
+
+        if (['success', 'completed', 'paid', 'approved'].includes((data.status || '').toLowerCase())) {
+            await submitDepositPayment(reservationId, {
+                ...paymentPayload,
+                reference: paymentPayload.reference || data.provider_reference || data.reference
+            });
+            return;
+        }
+
+        await pollReservationGatewayStatus(reservationId, paymentPayload);
+    } catch (error) {
+        clearDepositGatewayStatus();
+        throw error;
+    }
+}
+
+async function pollReservationGatewayStatus(reservationId, paymentPayload) {
+    if (!depositGatewayReference) {
+        clearDepositGatewayStatus();
+        throw new Error('Missing payment reference; please try again.');
+    }
+
+    depositGatewayPollAttempts += 1;
+    if (depositGatewayPollAttempts > DEPOSIT_GATEWAY_MAX_ATTEMPTS) {
+        setDepositGatewayStatus('Payment is still pending. Please confirm with the customer or try again.', 'warning');
+        throw new Error('Payment pending. No charge recorded.');
+    }
+
+    try {
+        const response = await fetch(`api/payments/status.php?reference=${encodeURIComponent(depositGatewayReference)}`);
+        const result = await response.json();
+        if (!result.success || !result.data) {
+            throw new Error(result.message || 'Unable to fetch payment status');
+        }
+
+        const record = result.data;
+        const status = (record.status || '').toLowerCase();
+
+        if (['success', 'completed', 'paid', 'approved'].includes(status)) {
+            setDepositGatewayStatus('Deposit confirmed! Recording payment...', 'success');
+            await submitDepositPayment(reservationId, {
+                ...paymentPayload,
+                reference: paymentPayload.reference || record.reference || depositGatewayReference
+            });
+            return;
+        }
+
+        if (['failed', 'declined', 'cancelled', 'expired', 'error'].includes(status)) {
+            clearDepositGatewayStatus();
+            throw new Error(`Payment failed: ${record.status}`);
+        }
+
+        setDepositGatewayStatus(record.instructions || 'Awaiting customer confirmation...', 'info');
+        depositGatewayPollTimeout = setTimeout(() => {
+            pollReservationGatewayStatus(reservationId, paymentPayload).catch(error => {
+                showAlert('danger', error.message);
+            });
+        }, DEPOSIT_GATEWAY_POLL_INTERVAL);
+    } catch (error) {
+        clearDepositGatewayStatus();
+        throw error;
+    }
 }
 </script>
 

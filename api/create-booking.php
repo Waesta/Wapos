@@ -32,6 +32,10 @@ $payload = [
     'rate_per_night' => (float)($_POST['room_rate'] ?? 0),
     'special_requests' => sanitizeInput($_POST['special_requests'] ?? ''),
     'deposit_amount' => isset($_POST['deposit_amount']) ? (float)$_POST['deposit_amount'] : 0.0,
+    'deposit_method' => sanitizeInput($_POST['deposit_method'] ?? ''),
+    'deposit_reference' => sanitizeInput($_POST['deposit_reference'] ?? ''),
+    'deposit_customer_phone' => sanitizeInput($_POST['deposit_customer_phone'] ?? ''),
+    'deposit_notes' => sanitizeInput($_POST['deposit_notes'] ?? ''),
 ];
 
 try {

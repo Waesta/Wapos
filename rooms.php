@@ -624,7 +624,9 @@ include 'includes/header.php';
                                     </div>
                                     <div class="d-flex justify-content-between">
                                         <span><strong>Total Amount:</strong></span>
-                                        <strong class="text-primary fs-5" id="total_amount"><?= formatMoney(0) ?></strong>
+                                        <strong class="text-primary fs-5" id="total_amount">
+                                            <?= formatMoney(0, false) ?>
+                                        </strong>
                                     </div>
                                 </div>
                             </div>
@@ -643,18 +645,34 @@ include 'includes/header.php';
                                         <?php endif; ?>
                                     </div>
                                     <div class="row g-3">
-                                        <div class="col-md-6">
+                                        <div class="col-md-4">
                                             <label class="form-label">Deposit Amount</label>
-                        <div class="input-group">
-                                                <span class="input-group-text"><?= htmlspecialchars($currencySymbol) ?></span>
-                                                <input type="number" class="form-control" name="deposit_amount" id="deposit_amount" min="0" step="0.01" value="0">
-                                            </div>
+                                            <input type="number" class="form-control" name="deposit_amount" id="deposit_amount" min="0" step="0.01" value="0">
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label">Deposit Method</label>
+                                            <select class="form-select" name="deposit_method" id="deposit_method">
+                                                <option value="">Select method</option>
+                                                <option value="mobile_money">Mobile Money</option>
+                                                <option value="cash">Cash</option>
+                                                <option value="card">Card</option>
+                                                <option value="bank_transfer">Bank Transfer</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label">Reference</label>
+                                            <input type="text" class="form-control" name="deposit_reference" id="deposit_reference" placeholder="Txn ID / receipt">
+                                        </div>
+                                        <div class="col-md-6" id="depositPhoneWrap" hidden>
+                                            <label class="form-label">Customer Phone</label>
+                                            <input type="tel" class="form-control" name="deposit_customer_phone" id="deposit_customer_phone" placeholder="e.g. +2567...">
+                                            <div class="form-text">Required for mobile money prompts.</div>
                                         </div>
                                         <?php if ($isGatewayEnabled): ?>
-                                        <div class="col-md-6" id="depositPhoneWrap">
-                                            <label class="form-label">Mobile Money Phone</label>
-                                            <input type="tel" class="form-control" name="deposit_mobile_phone" id="deposit_mobile_phone" placeholder="e.g. +2567...">
-                                            <div class="form-text">A payment prompt will be sent to this number when you submit.</div>
+                                        <div class="col-md-6">
+                                            <div class="alert alert-info py-2 mb-0 small">
+                                                Mobile money deposits will trigger a payment prompt to the customer phone.
+                                            </div>
                                         </div>
                                         <?php endif; ?>
                                     </div>
@@ -700,7 +718,9 @@ include 'includes/header.php';
 
 <script>
 const currencyConfig = <?= json_encode($currencyJsConfig, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
-const currencySymbol = currencyConfig.symbol || '';
+const currencyDecimals = Number.isInteger(currencyConfig.decimal_places)
+    ? currencyConfig.decimal_places
+    : 2;
 const ROOMS_GATEWAY = window.ROOMS_GATEWAY_CONFIG || { enabled: false, provider: null, currency: currencyConfig.code };
 let bookingGatewayReference = null;
 let bookingGatewayPollTimeout = null;
@@ -710,6 +730,24 @@ const BOOKING_GATEWAY_MAX_ATTEMPTS = 30;
 
 let folioModal;
 let folioModalElement;
+
+const depositMethodField = document.getElementById('deposit_method');
+const depositPhoneWrap = document.getElementById('depositPhoneWrap');
+const depositPhoneField = document.getElementById('deposit_customer_phone');
+
+function handleDepositMethodChange() {
+    if (!depositMethodField || !depositPhoneWrap) {
+        return;
+    }
+    const isMobileMoney = depositMethodField.value === 'mobile_money';
+    depositPhoneWrap.hidden = !isMobileMoney;
+    if (!isMobileMoney && depositPhoneField) {
+        depositPhoneField.value = '';
+    }
+}
+
+depositMethodField?.addEventListener('change', handleDepositMethodChange);
+handleDepositMethodChange();
 
 function setBookingStatus(message, type = 'info') {
     const statusEl = document.getElementById('bookingDepositStatus');
@@ -778,7 +816,7 @@ function calculateTotal() {
         if (nights > 0) {
             const total = nights * rate;
             document.getElementById('total_nights').textContent = nights;
-            document.getElementById('total_amount').textContent = currencySymbol + ' ' + total.toFixed(2);
+            document.getElementById('total_amount').textContent = formatNeutralAmount(total);
         }
     }
 }
@@ -786,7 +824,8 @@ function calculateTotal() {
 function resetBookingForm() {
     document.getElementById('bookingForm').reset();
     document.getElementById('total_nights').textContent = '0';
-    document.getElementById('total_amount').textContent = currencySymbol + ' 0.00';
+    document.getElementById('total_amount').textContent = formatNeutralAmount(0);
+    handleDepositMethodChange();
 }
 
 function checkIn(bookingId) {
@@ -830,7 +869,7 @@ function viewFolio(bookingId) {
             const rows = Array.isArray(folio) && folio.length > 0 ? folio.map(entry => {
                 const amount = parseFloat(entry.amount ?? 0);
                 const amountClass = amount < 0 ? 'text-success' : '';
-                const formattedAmount = `${amount < 0 ? '-' : ''}${currencySymbol} ${Math.abs(amount).toFixed(2)}`;
+                const formattedAmount = formatNeutralAmount(amount);
                 const typeLabel = formatFolioType(entry.item_type);
                 const date = entry.date_charged ? formatDate(entry.date_charged) : '';
                 const details = entry.description || typeLabel;
@@ -857,7 +896,7 @@ function viewFolio(bookingId) {
                         <div class="card border-0 shadow-sm h-100">
                             <div class="card-body">
                                 <p class="text-muted mb-1 small">Total Charges</p>
-                                <h4 class="mb-0">${currencySymbol} ${(totals.total_charges ?? 0).toFixed(2)}</h4>
+                                <h4 class="mb-0">${formatNeutralAmount(totals.total_charges ?? 0)}</h4>
                             </div>
                         </div>
                     </div>
@@ -865,7 +904,7 @@ function viewFolio(bookingId) {
                         <div class="card border-0 shadow-sm h-100">
                             <div class="card-body">
                                 <p class="text-muted mb-1 small">Payments & Deposits</p>
-                                <h4 class="mb-0 text-success">${currencySymbol} ${(totals.total_payments ?? 0).toFixed(2)}</h4>
+                                <h4 class="mb-0 text-success">${formatNeutralAmount(totals.total_payments ?? 0)}</h4>
                             </div>
                         </div>
                     </div>
@@ -874,7 +913,7 @@ function viewFolio(bookingId) {
                             <div class="card-body">
                                 <p class="text-muted mb-1 small">Balance Due</p>
                                 <h4 class="mb-0 ${((totals.balance_due ?? 0) > 0.01) ? 'text-danger' : 'text-success'}">
-                                    ${currencySymbol} ${(totals.balance_due ?? 0).toFixed(2)}
+                                    ${formatNeutralAmount(totals.balance_due ?? 0)}
                                 </h4>
                             </div>
                         </div>
@@ -930,6 +969,14 @@ function escapeHtml(str) {
         .replace(/'/g, '&#39;');
 }
 
+function formatNeutralAmount(value) {
+    const amount = Number(value) || 0;
+    return amount.toLocaleString(undefined, {
+        minimumFractionDigits: currencyDecimals,
+        maximumFractionDigits: currencyDecimals
+    });
+}
+
 function formatDate(dateString) {
     try {
         const date = new Date(dateString);
@@ -947,17 +994,25 @@ document.getElementById('bookingForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const form = e.target;
     const depositAmount = parseFloat(document.getElementById('deposit_amount').value) || 0;
-    const depositPhoneInput = document.getElementById('deposit_mobile_phone');
-    const depositPhone = depositPhoneInput ? depositPhoneInput.value.trim() : '';
+    const depositMethod = depositMethodField ? depositMethodField.value : '';
+    const depositPhone = depositPhoneField ? depositPhoneField.value.trim() : '';
 
     clearBookingStatus();
 
-    if (ROOMS_GATEWAY.enabled && depositAmount > 0) {
-        if (depositPhone.length < 7) {
-            alert('Enter the customer phone number to send the mobile money prompt.');
-            depositPhoneInput?.focus();
-            return;
-        }
+    if (depositAmount > 0 && !depositMethod) {
+        setBookingStatus('Select a deposit payment method.', 'danger');
+        depositMethodField?.focus();
+        return;
+    }
+
+    const isMobileMoney = depositMethod === 'mobile_money';
+    if (depositAmount > 0 && isMobileMoney && depositPhone.length < 7) {
+        setBookingStatus('Enter the customer phone number for the mobile money deposit.', 'danger');
+        depositPhoneField?.focus();
+        return;
+    }
+
+    if (ROOMS_GATEWAY.enabled && depositAmount > 0 && isMobileMoney) {
         await initiateBookingDeposit(form, depositAmount, depositPhone);
         return;
     }

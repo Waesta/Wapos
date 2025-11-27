@@ -38,6 +38,7 @@ try {
             if ($roomNumber !== '') {
                 $labelParts[] = 'Room ' . $roomNumber;
             }
+
             if ($guestName !== '') {
                 $labelParts[] = $guestName;
             }
@@ -452,39 +453,56 @@ window.EXISTING_ORDER_ITEMS = <?= json_encode($existingItemsPayload, JSON_HEX_TA
                 <?php if ($orderType !== 'dine-in'): ?>
                     <div class="stack-sm">
                         <h6 class="text-uppercase text-muted fw-semibold small mb-2">Customer Details</h6>
-                        <input type="text" id="customerName" class="form-control" placeholder="Customer name (optional)">
-                        <input type="tel" id="customerPhone" class="form-control" placeholder="Customer phone (optional)">
-                        <textarea id="deliveryAddress" class="form-control" rows="2" placeholder="Delivery address"></textarea>
-                        <div class="row g-2">
-                            <div class="col-6">
-                                <input type="number" step="0.000001" id="deliveryLatitude" class="form-control" placeholder="Latitude">
-                            </div>
-                            <div class="col-6">
-                                <input type="number" step="0.000001" id="deliveryLongitude" class="form-control" placeholder="Longitude">
-                            </div>
-                        </div>
-                        <div class="form-text">Coordinates help auto-calculate delivery fees. Use decimal degrees.</div>
-                        <?php if (!empty($googleMapsApiKey)): ?>
-                            <div class="d-flex flex-wrap gap-2">
-                                <button type="button" class="btn btn-outline-primary btn-sm" onclick="toggleDeliveryMap()">
-                                    <i class="bi bi-geo-alt"></i> Pick on Map
-                                </button>
-                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="useCurrentLocation()">
-                                    <i class="bi bi-crosshair"></i> Use My Location
-                                </button>
-                            </div>
-                            <div id="deliveryMapWrapper" class="delivery-map-wrapper mt-2" style="display:none;">
-                                <input id="deliveryMapSearch" type="text" class="form-control map-search-box" placeholder="Search address or place">
-                                <div class="delivery-map-container">
-                                    <div id="deliveryMap"></div>
+                        <?php if ($orderType === 'takeout'): ?>
+                            <div class="alert alert-info small mb-2">
+                                <div class="fw-semibold mb-1">On-premise pickup?</div>
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="form-check form-switch m-0">
+                                        <?php $existingDelivery = !empty($existingOrderMeta['delivery_address']); ?>
+                                        <input class="form-check-input" type="checkbox" role="switch" id="requireDeliveryDetails" <?= $existingDelivery ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="requireDeliveryDetails">Require delivery drop-off details</label>
+                                    </div>
                                 </div>
-                                <small class="text-muted d-block mt-2">Tap the map to refine the drop-off.</small>
-                            </div>
-                        <?php else: ?>
-                            <div class="alert alert-warning small mb-0">
-                                Configure a Google Maps API key in Settings to enable map-based location selection.
+                                <div class="text-muted mt-1">Leave off for guests already at the counter. Turn on when dispatching to a customer off-site.</div>
                             </div>
                         <?php endif; ?>
+                        <input type="text" id="customerName" class="form-control" placeholder="Customer name" autocomplete="off">
+                        <input type="tel" id="customerPhone" class="form-control" placeholder="Customer phone" autocomplete="off">
+                        <div id="deliveryDetailFields">
+                            <textarea id="deliveryAddress" class="form-control" rows="2" placeholder="Delivery address"></textarea>
+                            <div class="row g-2">
+                                <div class="col-6">
+                                    <input type="number" step="0.000001" id="deliveryLatitude" class="form-control" placeholder="Latitude">
+                                </div>
+                                <div class="col-6">
+                                    <input type="number" step="0.000001" id="deliveryLongitude" class="form-control" placeholder="Longitude">
+                                </div>
+                            </div>
+                            <div class="form-text">Coordinates help auto-calculate delivery fees. Use decimal degrees.</div>
+                            <?php if (!empty($googleMapsApiKey)): ?>
+                                <div class="d-flex flex-wrap gap-2">
+                                    <button type="button" class="btn btn-outline-primary btn-sm" onclick="toggleDeliveryMap()">
+                                        <i class="bi bi-geo-alt"></i> Pick on Map
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="useCurrentLocation()">
+                                        <i class="bi bi-crosshair"></i> Use My Location
+                                    </button>
+                                </div>
+                                <div id="deliveryMapWrapper" class="delivery-map-wrapper mt-2" style="display:none;">
+                                    <input id="deliveryMapSearch" type="text" class="form-control map-search-box" placeholder="Search address or place">
+                                    <div class="delivery-map-container">
+                                        <div id="deliveryMap"></div>
+                                    </div>
+                                    <small class="text-muted d-block mt-2">Tap the map to refine the drop-off.</small>
+                                </div>
+                            <?php else: ?>
+                                <div class="alert alert-warning small mb-0">
+                                    Configure a Google Maps API key in Settings to enable map-based location selection.
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                        <div class="text-danger small d-none" id="customerIdentityHelper">Name and phone are required for takeout & delivery orders.</div>
+                        <div class="text-danger small d-none" id="deliveryDetailsHelper">Delivery address is required when serving off-site guests.</div>
                     </div>
                 <?php endif; ?>
 
@@ -530,8 +548,16 @@ window.EXISTING_ORDER_ITEMS = <?= json_encode($existingItemsPayload, JSON_HEX_TA
                         </div>
                     <?php endif; ?>
                     <div class="cart-total-row">
-                        <strong>Total</strong>
-                        <strong class="text-primary" id="total"><?= formatMoney(0, false) ?></strong>
+                        <span>Order Total</span>
+                        <span id="total"><?= formatMoney(0, false) ?></span>
+                    </div>
+                    <div class="cart-total-row d-none" id="tipRow">
+                        <span>Tip / Gratuity</span>
+                        <span id="tipAmountDisplay">0.00</span>
+                    </div>
+                    <div class="cart-total-row grand-total-row">
+                        <strong>Total Due (incl. tip)</strong>
+                        <strong class="text-primary" id="grandTotalAmount"><?= formatMoney(0, false) ?></strong>
                     </div>
                 </div>
 
@@ -543,6 +569,38 @@ window.EXISTING_ORDER_ITEMS = <?= json_encode($existingItemsPayload, JSON_HEX_TA
                         <option value="mobile_money">Mobile Money</option>
                         <option value="room_charge">Charge to Room</option>
                     </select>
+                </div>
+
+                <div class="stack-sm">
+                    <label for="tipAmountInput" class="form-label mb-1">Tip / Gratuity (optional)</label>
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text"><i class="bi bi-gift"></i></span>
+                        <input type="number" class="form-control" id="tipAmountInput" min="0" step="0.01" placeholder="0.00" autocomplete="off">
+                        <button type="button" class="btn btn-outline-secondary" onclick="clearTipAmount()">Clear</button>
+                    </div>
+                    <div class="form-text">Record gratuities for payout audits. Leave blank if none.</div>
+                </div>
+
+                <div id="cashPaymentSection" class="stack-sm" style="display: none;">
+                    <label for="cashAmountReceived" class="form-label mb-1">Amount Received</label>
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text"><i class="bi bi-cash-stack"></i></span>
+                        <input type="number"
+                               class="form-control"
+                               id="cashAmountReceived"
+                               placeholder="0.00"
+                               step="0.01"
+                               min="0"
+                               autocomplete="off">
+                        <button type="button" class="btn btn-outline-secondary" id="cashExactTenderBtn" onclick="fillExactTender()">
+                            Exact Total
+                        </button>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mt-2">
+                        <span class="text-muted small">Change Due</span>
+                        <strong id="cashChangeDisplay">0.00</strong>
+                    </div>
+                    <div class="text-danger small d-none" id="cashTenderHelper">Amount received must be at least the total due.</div>
                 </div>
 
                 <div id="roomChargeSection" class="stack-sm" style="display: none;">
@@ -645,6 +703,14 @@ window.EXISTING_ORDER_ITEMS = <?= json_encode($existingItemsPayload, JSON_HEX_TA
 <script>
 let cart = [];
 let currentItem = null;
+let orderFinancials = {
+    subtotal: 0,
+    tax: 0,
+    deliveryFee: 0,
+    total: 0,
+    tip: 0,
+    grandTotal: 0,
+};
 const TAX_RATE = 16;
 const currencySymbol = <?= json_encode($currencySymbol) ?>;
 const orderType = '<?= $orderType ?>';
@@ -1228,19 +1294,37 @@ function updateCart() {
     const taxAmount = subtotal * (TAX_RATE / 100);
     const deliveryFee = getDeliveryFeeValue();
     const total = subtotal + taxAmount + deliveryFee;
+    const tipAmount = getTipAmount();
+    const grandTotal = total + tipAmount;
+
+    orderFinancials = {
+        subtotal,
+        tax: taxAmount,
+        deliveryFee,
+        total,
+        tip: tipAmount,
+        grandTotal,
+    };
     
     const subtotalEl = document.getElementById('subtotal');
     const taxEl = document.getElementById('taxAmount');
     const deliveryFeeEl = document.getElementById('deliveryFeeDisplay');
     const totalEl = document.getElementById('total');
+    const tipRow = document.getElementById('tipRow');
+    const tipDisplay = document.getElementById('tipAmountDisplay');
+    const grandTotalEl = document.getElementById('grandTotalAmount');
 
     if (subtotalEl) subtotalEl.textContent = subtotal.toFixed(2);
     if (taxEl) taxEl.textContent = taxAmount.toFixed(2);
     if (deliveryFeeEl) deliveryFeeEl.textContent = deliveryFee.toFixed(2);
     if (totalEl) totalEl.textContent = total.toFixed(2);
-    
+    if (tipRow) tipRow.classList.toggle('d-none', tipAmount <= 0);
+    if (tipDisplay) tipDisplay.textContent = tipAmount.toFixed(2);
+    if (grandTotalEl) grandTotalEl.textContent = grandTotal.toFixed(2);
+
     // Update button states
     updateButtonStates();
+    refreshCashTenderUI();
 }
 
 function removeFromCart(index) {
@@ -1300,34 +1384,59 @@ function hydrateExistingOrder() {
         paymentMethodSelect.value = EXISTING_ORDER_META.payment_method;
     }
 
+    if (typeof EXISTING_ORDER_META.tip_amount === 'number') {
+        setTipAmount(EXISTING_ORDER_META.tip_amount, false);
+    }
+
     updateCart();
     return true;
 }
 
 async function submitOrder() {
     if (cart.length === 0) return;
+    if (!requireCustomerIdentity(true)) {
+        alert('Customer name and phone are required for takeout and delivery orders.');
+        return;
+    }
+    if (!requireDeliveryDetailsValid(true)) {
+        alert('Please capture a delivery address for off-site orders.');
+        return;
+    }
+    const paymentMethodInput = document.getElementById('paymentMethod');
+    const paymentMethod = paymentMethodInput ? paymentMethodInput.value : 'cash';
+    if (!requireDeliveryDetailsValid(true)) {
+        return;
+    }
     
     const subtotal = cart.reduce((sum, item) => sum + item.total, 0);
     const taxAmount = subtotal * (TAX_RATE / 100);
     const deliveryFee = getDeliveryFeeValue();
     const total = subtotal + taxAmount + deliveryFee;
-    
+    const tipAmount = getTipAmount();
+    const grandTotal = total + tipAmount;
+
     const orderData = {
         action: 'place_order',
         order_type: '<?= $orderType ?>',
         table_id: <?= $tableId ?? 'null' ?>,
         customer_name: getInputValue('customerName') || null,
         customer_phone: getInputValue('customerPhone') || null,
-        payment_method: getInputValue('paymentMethod') || 'cash',
+        payment_method: paymentMethod,
         subtotal: subtotal,
         tax_amount: taxAmount,
         delivery_fee: deliveryFee,
         total_amount: total,
+        tip_amount: tipAmount,
         delivery_address: getInputValue('deliveryAddress') || null,
         delivery_latitude: getCoordinateValue('deliveryLatitude'),
         delivery_longitude: getCoordinateValue('deliveryLongitude'),
         items: cart
     };
+    if (paymentMethod === 'cash') {
+        const cashPayload = getCashTenderPayload();
+        orderData.amount_received = cashPayload.amount_received;
+        orderData.change_amount = cashPayload.change_amount;
+    }
     
     try {
         const response = await fetch('api/restaurant-order-workflow.php', {
@@ -1410,8 +1519,15 @@ async function processPayment() {
     const taxAmount = subtotal * (TAX_RATE / 100);
     const deliveryFee = getDeliveryFeeValue();
     const total = subtotal + taxAmount + deliveryFee;
-    
-    if (!confirm(`Process payment of ${currencySymbol} ${total.toFixed(2)} via ${paymentMethod}?`)) {
+    const tipAmount = getTipAmount();
+    const totalDue = total + tipAmount;
+
+    if (paymentMethod === 'cash' && !cashTenderValid(true)) {
+        alert('Enter the amount received before processing payment.');
+        return;
+    }
+
+    if (!confirm(`Process payment of ${currencySymbol} ${totalDue.toFixed(2)} via ${paymentMethod}?`)) {
         return;
     }
     
@@ -1420,8 +1536,15 @@ async function processPayment() {
             action: 'process_payment',
             order_id: currentOrderId,
             payment_method: paymentMethod,
-            amount_paid: total
+            amount_paid: total,
+            tip_amount: tipAmount
         };
+
+        if (paymentMethod === 'cash') {
+            const cashPayload = getCashTenderPayload();
+            payload.amount_received = cashPayload.amount_received;
+            payload.change_amount = cashPayload.change_amount;
+        }
 
         if (paymentMethod === 'room_charge') {
             const roomSelect = document.getElementById('roomBookingSelect');
@@ -1579,6 +1702,7 @@ function handlePaymentMethodChange() {
         roomChargeSection.style.display = methodSelect.value === 'room_charge' ? 'block' : 'none';
     }
 
+    refreshCashTenderUI(false);
     updateButtonStates();
 }
 
@@ -1589,6 +1713,9 @@ function updateButtonStates() {
     const paymentMethodInput = document.getElementById('paymentMethod');
     const paymentMethod = paymentMethodInput ? paymentMethodInput.value : 'cash';
     const roomChargeReady = roomChargeSelectionValid();
+    const identityReady = requireCustomerIdentity(false);
+    const deliveryReady = requireDeliveryDetailsValid(false);
+    const cashReady = paymentMethod !== 'cash' ? true : cashTenderValid(false);
     
     // Enable/disable buttons based on state with error handling
     try {
@@ -1597,13 +1724,282 @@ function updateButtonStates() {
         const kitchenBtn = document.getElementById('kitchenBtn');
         const receiptBtn = document.getElementById('receiptBtn');
         
-        if (invoiceBtn) invoiceBtn.disabled = !hasItems;
-        if (paymentBtn) paymentBtn.disabled = !hasItems;
+        if (invoiceBtn) invoiceBtn.disabled = !hasItems || !identityReady || !deliveryReady;
+        if (paymentBtn) paymentBtn.disabled = !hasItems || !identityReady || !deliveryReady || (paymentMethod === 'room_charge' && !roomChargeReady) || (paymentMethod === 'cash' && !cashReady);
         if (kitchenBtn) kitchenBtn.disabled = !hasOrder;
         if (receiptBtn) receiptBtn.disabled = !isPaid;
     } catch (error) {
         console.error('Error updating button states:', error);
     }
+}
+
+function customerIdentityValid() {
+    if (!customerIdentityRequired()) {
+        return true;
+    }
+
+    const nameInput = document.getElementById('customerName');
+    const phoneInput = document.getElementById('customerPhone');
+    const name = (nameInput?.value || '').trim();
+    const phone = (phoneInput?.value || '').trim();
+
+    return name !== '' && phone !== '';
+}
+
+function requireCustomerIdentity(showFeedback = true) {
+    const helper = document.getElementById('customerIdentityHelper');
+
+    if (!customerIdentityRequired()) {
+        if (helper) helper.classList.add('d-none');
+        return true;
+    }
+
+    const nameInput = document.getElementById('customerName');
+    const phoneInput = document.getElementById('customerPhone');
+
+    const name = (nameInput?.value || '').trim();
+    const phone = (phoneInput?.value || '').trim();
+    const valid = name !== '' && phone !== '';
+
+    if (helper) {
+        if (valid) {
+            helper.classList.add('d-none');
+        } else if (showFeedback) {
+            helper.classList.remove('d-none');
+        } else {
+            helper.classList.add('d-none');
+        }
+    }
+
+    if (nameInput) {
+        if (!valid && showFeedback && name === '') {
+            nameInput.classList.add('is-invalid');
+        } else {
+            nameInput.classList.remove('is-invalid');
+        }
+    }
+
+    if (phoneInput) {
+        if (!valid && showFeedback && phone === '') {
+            phoneInput.classList.add('is-invalid');
+        } else {
+            phoneInput.classList.remove('is-invalid');
+        }
+    }
+
+    if (!valid && showFeedback) {
+        if (name === '' && nameInput) {
+            nameInput.focus();
+        } else if (phoneInput) {
+            phoneInput.focus();
+        }
+    }
+
+    return valid;
+}
+
+function customerIdentityRequired() {
+    if (orderType === 'delivery') {
+        return true;
+    }
+
+    if (orderType === 'takeout') {
+        return deliveryDetailsRequired();
+    }
+
+    return false;
+}
+
+function deliveryDetailsRequired() {
+    if (orderType === 'delivery') {
+        return true;
+    }
+
+    if (orderType === 'takeout') {
+        const toggle = document.getElementById('requireDeliveryDetails');
+        return toggle ? toggle.checked : false;
+    }
+
+    return false;
+}
+
+function refreshDeliveryDetailsUI() {
+    const required = deliveryDetailsRequired();
+    const section = document.getElementById('deliveryDetailFields');
+    const helper = document.getElementById('deliveryDetailsHelper');
+
+    if (section) {
+        section.style.display = required ? 'block' : 'none';
+    }
+
+    if (!required && helper) {
+        helper.classList.add('d-none');
+    }
+}
+
+function requireDeliveryDetailsValid(showFeedback = true) {
+    if (!deliveryDetailsRequired()) {
+        const helper = document.getElementById('deliveryDetailsHelper');
+        if (helper) helper.classList.add('d-none');
+        return true;
+    }
+
+    const addressInput = document.getElementById('deliveryAddress');
+    const helper = document.getElementById('deliveryDetailsHelper');
+    const address = (addressInput?.value || '').trim();
+    const valid = address !== '';
+
+    if (helper) {
+        helper.classList.toggle('d-none', valid || !showFeedback);
+    }
+    if (addressInput) {
+        addressInput.classList.toggle('is-invalid', !valid && showFeedback);
+    }
+
+    if (!valid && showFeedback && addressInput) {
+        addressInput.focus();
+    }
+
+    return valid;
+}
+
+function getTipInput() {
+    return document.getElementById('tipAmountInput');
+}
+
+function sanitizeTipValue(value) {
+    if (value === '' || value === null || value === undefined) {
+        return 0;
+    }
+    const parsed = parseFloat(value);
+    if (Number.isNaN(parsed) || parsed < 0) {
+        return 0;
+    }
+    return parsed;
+}
+
+function getTipAmount() {
+    const input = getTipInput();
+    if (!input) {
+        return 0;
+    }
+    return sanitizeTipValue(input.value);
+}
+
+function setTipAmount(value, triggerUpdate = true) {
+    const input = getTipInput();
+    if (!input) {
+        return;
+    }
+    const cleanValue = sanitizeTipValue(value);
+    input.value = cleanValue > 0 ? cleanValue.toFixed(2) : '';
+    if (triggerUpdate) {
+        updateCart();
+    }
+}
+
+function clearTipAmount() {
+    const input = getTipInput();
+    if (!input) {
+        return;
+    }
+    input.value = '';
+    updateCart();
+}
+
+function refreshCashTenderUI(showFeedback = false) {
+    const methodSelect = document.getElementById('paymentMethod');
+    const section = document.getElementById('cashPaymentSection');
+    const input = document.getElementById('cashAmountReceived');
+    const changeDisplay = document.getElementById('cashChangeDisplay');
+
+    if (!methodSelect || !section) {
+        return;
+    }
+
+    const isCash = methodSelect.value === 'cash';
+    section.style.display = isCash ? 'block' : 'none';
+
+    if (!isCash) {
+        clearCashTenderAlerts();
+        return;
+    }
+
+    if (input && changeDisplay) {
+        const tendered = parseFloat(input.value || '0');
+        const totalDue = orderFinancials.grandTotal || orderFinancials.total || 0;
+        changeDisplay.textContent = Math.max(0, tendered - totalDue).toFixed(2);
+    }
+
+    cashTenderValid(showFeedback);
+}
+
+function clearCashTenderAlerts() {
+    const helper = document.getElementById('cashTenderHelper');
+    const input = document.getElementById('cashAmountReceived');
+    if (helper) helper.classList.add('d-none');
+    if (input) input.classList.remove('is-invalid');
+}
+
+function cashTenderValid(showFeedback = true) {
+    const methodSelect = document.getElementById('paymentMethod');
+    const input = document.getElementById('cashAmountReceived');
+    const helper = document.getElementById('cashTenderHelper');
+
+    if (!methodSelect || methodSelect.value !== 'cash') {
+        clearCashTenderAlerts();
+        return true;
+    }
+
+    if (!input) {
+        return false;
+    }
+
+    const tendered = parseFloat(input.value || '0');
+    const totalDue = orderFinancials.grandTotal || orderFinancials.total || 0;
+    const valid = tendered >= totalDue && tendered > 0;
+
+    if (helper) {
+        helper.classList.toggle('d-none', valid || !showFeedback);
+    }
+    input.classList.toggle('is-invalid', !valid && showFeedback);
+
+    if (!valid && showFeedback) {
+        input.focus();
+    }
+
+    const changeDisplay = document.getElementById('cashChangeDisplay');
+    if (changeDisplay) {
+        changeDisplay.textContent = Math.max(0, tendered - totalDue).toFixed(2);
+    }
+
+    return valid;
+}
+
+function fillExactTender() {
+    const input = document.getElementById('cashAmountReceived');
+    if (!input) {
+        return;
+    }
+    const totalDue = orderFinancials.grandTotal || orderFinancials.total || 0;
+    input.value = totalDue.toFixed(2);
+    refreshCashTenderUI(false);
+    updateButtonStates();
+}
+
+function getCashTenderPayload() {
+    const input = document.getElementById('cashAmountReceived');
+    if (!input) {
+        return { amount_received: null, change_amount: null };
+    }
+
+    const tendered = parseFloat(input.value || '0');
+    const total = orderFinancials.grandTotal || orderFinancials.total || 0;
+    const change = Math.max(0, tendered - total);
+    return {
+        amount_received: tendered,
+        change_amount: change,
+    };
 }
 
 function showPrintResults(printResults) {
@@ -1709,6 +2105,42 @@ document.addEventListener('DOMContentLoaded', () => {
         paymentMethodSelect.addEventListener('change', handlePaymentMethodChange);
         handlePaymentMethodChange();
     }
+
+    const identityInputs = ['customerName', 'customerPhone'];
+    identityInputs.forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) {
+            input.addEventListener('input', () => {
+                requireCustomerIdentity(false);
+                updateButtonStates();
+            });
+        }
+    });
+
+    const cashInput = document.getElementById('cashAmountReceived');
+    if (cashInput) {
+        cashInput.addEventListener('input', () => {
+            refreshCashTenderUI(false);
+            updateButtonStates();
+        });
+    }
+
+    const tipInput = document.getElementById('tipAmountInput');
+    if (tipInput) {
+        tipInput.addEventListener('input', () => {
+            updateCart();
+        });
+    }
+
+    const deliveryToggle = document.getElementById('requireDeliveryDetails');
+    if (deliveryToggle) {
+        deliveryToggle.addEventListener('change', () => {
+            refreshDeliveryDetailsUI();
+            updateCart();
+        });
+    }
+
+    refreshDeliveryDetailsUI();
 
     const roomBookingSelect = document.getElementById('roomBookingSelect');
     if (roomBookingSelect) {

@@ -35,6 +35,18 @@ if (!empty($orders)) {
     }
 }
 
+$avgTimeResult = $db->fetchOne("
+    SELECT AVG(TIMESTAMPDIFF(MINUTE, created_at, completed_at)) AS avg_minutes
+    FROM orders
+    WHERE status = 'completed'
+      AND completed_at IS NOT NULL
+      AND DATE(completed_at) = CURDATE()
+");
+
+$avgPrepTime = isset($avgTimeResult['avg_minutes']) && $avgTimeResult['avg_minutes'] !== null
+    ? round($avgTimeResult['avg_minutes']) . 'm'
+    : '--';
+
 $initialReadyOrderIds = array_map(
     'intval',
     array_column(
@@ -279,7 +291,7 @@ include 'includes/header.php';
             </article>
             <article class="kitchen-stat-card">
                 <i class="bi bi-speedometer2 text-primary fs-2"></i>
-                <h3 id="avgTime">--</h3>
+                <h3 id="avgTime"><?= htmlspecialchars($avgPrepTime) ?></h3>
                 <span class="text-muted">Avg Prep Time</span>
             </article>
         </section>

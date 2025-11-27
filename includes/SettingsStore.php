@@ -12,6 +12,7 @@ class SettingsStore
     {
         self::ensureSchema();
         $db = Database::getInstance();
+        $pdo = $db->getConnection();
         $rows = $db->fetchAll('SELECT setting_key, setting_value FROM settings');
 
         self::$cache = [];
@@ -153,7 +154,7 @@ class SettingsStore
         ] as $column => $ddl) {
             if (!in_array($column, self::$settingsColumns, true)) {
                 try {
-                    $db->exec($ddl);
+                    $pdo->exec($ddl);
                     self::$settingsColumns[] = $column;
                 } catch (PDOException $e) {
                     error_log('SettingsStore failed to add column ' . $column . ': ' . $e->getMessage());

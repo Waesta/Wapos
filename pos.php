@@ -364,12 +364,26 @@ include 'includes/header.php';
                             </div>
                             <label for="loyaltyCardNumber" class="form-label small text-muted mb-1">Card / Phone</label>
                             <div class="input-group input-group-sm">
-                                <input type="text" class="form-control" id="loyaltyCardNumber" placeholder="Scan or type number">
-                                <button class="btn btn-outline-primary" type="button" id="linkLoyaltyBtn">
+                                <input type="text" class="form-control" id="loyaltyCardNumber" placeholder="Scan or type number" autocomplete="off">
+                                <button class="btn btn-outline-primary" type="button" id="linkLoyaltyBtn" title="Link Loyalty">
                                     <i class="bi bi-link-45deg"></i>
                                 </button>
+                                <button class="btn btn-outline-secondary d-none" type="button" id="loyaltyClearBtn" title="Clear Loyalty">
+                                    <i class="bi bi-x-lg"></i>
+                                </button>
                             </div>
-                            <div class="mt-2 small text-muted" id="loyaltyDetails">Customer rewards will appear here.</div>
+                            <div class="d-flex flex-column gap-2 mt-2">
+                                <div class="small" id="loyaltyBalance" aria-live="polite"></div>
+                                <div class="d-flex flex-column gap-2">
+                                    <label class="form-label small text-muted mb-1" for="loyaltyRedeemPoints">Redeem Points</label>
+                                    <div class="d-flex gap-2">
+                                        <input type="number" class="form-control form-control-sm" id="loyaltyRedeemPoints" placeholder="0" min="0" step="1" disabled>
+                                        <button class="btn btn-outline-success btn-sm" type="button" id="loyaltyRedeemBtn" disabled>Apply</button>
+                                        <button class="btn btn-outline-secondary btn-sm" type="button" id="loyaltyRedeemClearBtn" disabled>Clear</button>
+                                    </div>
+                                </div>
+                                <div class="small text-muted" id="loyaltyDetails">Customer rewards will appear here.</div>
+                            </div>
                         </div>
                     </div>
                     <div class="col-lg-4">
@@ -396,6 +410,10 @@ include 'includes/header.php';
                     <div class="d-flex justify-content-between mb-2">
                         <span class="text-muted">Tax (<span id="taxRate">0</span>%)</span>
                         <strong id="taxAmount">0.00</strong>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2 d-none" id="loyaltyDiscountRow">
+                        <span class="text-muted">Loyalty Discount</span>
+                        <strong class="text-success" id="loyaltyDiscountAmount">-0.00</strong>
                     </div>
                     <div class="d-flex justify-content-between align-items-center py-2 border-top border-bottom my-2">
                         <span class="fw-semibold">Total Due</span>
@@ -543,6 +561,10 @@ include 'includes/header.php';
                                     <span class="text-muted">Payment Method</span>
                                     <span id="confirmPaymentMethod">Cash</span>
                                 </div>
+                                <div class="d-flex justify-content-between d-none" id="confirmLoyaltyDiscountRow">
+                                    <span class="text-muted">Loyalty Discount</span>
+                                    <span id="confirmLoyaltyDiscount" class="text-success">-0.00</span>
+                                </div>
                                 <div class="d-flex justify-content-between d-none" id="confirmRoomChargeRow">
                                     <span class="text-muted">Charged To</span>
                                     <span id="confirmRoomCharge"></span>
@@ -678,6 +700,236 @@ const MOBILE_MONEY_POLL_MAX_ATTEMPTS = 30;
 const FINALIZE_BUTTON_DEFAULT_HTML = '<i class="bi bi-check-circle me-2"></i>Complete Transaction';
 const MOBILE_MONEY_SUCCESS_STATUSES = ['success', 'completed', 'paid', 'approved'];
 const MOBILE_MONEY_FAILURE_STATUSES = ['failed', 'declined', 'cancelled', 'expired', 'error'];
+
+const loyaltyState = {
+    linked: false,
+    customerId: null,
+    customerName: null,
+    programId: null,
+    program: null,
+    balance: 0,
+    minRedemption: 0,
+    pointsToRedeem: 0,
+    discountAmount: 0,
+    effectiveDiscount: 0,
+    detailMessage: 'Customer rewards will appear here.'
+};
+
+function requestLoyalty(payload) {
+    return fetch('api/loyalty.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    }).then(async response => {
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.message || 'Unable to process loyalty request.');
+        }
+        return data;
+    });
+}
+
+function resetLoyaltyState(clearCardInput = false) {
+    loyaltyState.linked = false;
+    loyaltyState.customerId = null;
+    loyaltyState.customerName = null;
+    loyaltyState.programId = null;
+    loyaltyState.program = null;
+    loyaltyState.balance = 0;
+    loyaltyState.minRedemption = 0;
+    loyaltyState.pointsToRedeem = 0;
+    loyaltyState.discountAmount = 0;
+    loyaltyState.effectiveDiscount = 0;
+    loyaltyState.detailMessage = 'Customer rewards will appear here.';
+    if (clearCardInput) {
+        const cardInput = document.getElementById('loyaltyCardNumber');
+        if (cardInput) {
+            cardInput.value = '';
+        }
+    }
+    const redeemInput = document.getElementById('loyaltyRedeemPoints');
+    if (redeemInput) {
+        redeemInput.value = '';
+    }
+    updateLoyaltyUI();
+    updateCart();
+}
+
+function updateLoyaltyUI(message = null, tone = 'muted') {
+    const statusEl = document.getElementById('loyaltyStatus');
+    if (statusEl) {
+        statusEl.textContent = loyaltyState.linked ? 'Linked' : 'Not linked';
+        statusEl.classList.toggle('text-success', loyaltyState.linked);
+        statusEl.classList.toggle('text-muted', !loyaltyState.linked);
+    }
+
+    const balanceEl = document.getElementById('loyaltyBalance');
+    if (balanceEl) {
+        if (loyaltyState.linked && loyaltyState.program) {
+            const approx = loyaltyState.balance * parseFloat(loyaltyState.program.redemption_rate || 0);
+            balanceEl.textContent = `Balance: ${loyaltyState.balance} pts (~${formatCurrency(approx)})`;
+        } else {
+            balanceEl.textContent = 'Link a customer to view loyalty balance.';
+        }
+    }
+
+    const detailsEl = document.getElementById('loyaltyDetails');
+    if (detailsEl) {
+        const text = message ?? loyaltyState.detailMessage;
+        detailsEl.textContent = text;
+        detailsEl.classList.remove('text-danger', 'text-success');
+        detailsEl.classList.add(`text-${tone}`);
+    }
+
+    const clearBtn = document.getElementById('loyaltyClearBtn');
+    if (clearBtn) {
+        clearBtn.classList.toggle('d-none', !loyaltyState.linked);
+        clearBtn.disabled = !loyaltyState.linked;
+    }
+
+    const redeemInput = document.getElementById('loyaltyRedeemPoints');
+    const redeemBtn = document.getElementById('loyaltyRedeemBtn');
+    const redeemClearBtn = document.getElementById('loyaltyRedeemClearBtn');
+
+    if (redeemInput) {
+        redeemInput.disabled = !loyaltyState.linked;
+        redeemInput.placeholder = loyaltyState.linked && loyaltyState.minRedemption > 0
+            ? `Min ${loyaltyState.minRedemption}`
+            : '0';
+    }
+    if (redeemBtn) {
+        const currentValue = redeemInput ? parseInt(redeemInput.value || '0', 10) : 0;
+        redeemBtn.disabled = !loyaltyState.linked || !Number.isFinite(currentValue) || currentValue <= 0;
+    }
+    if (redeemClearBtn) {
+        redeemClearBtn.disabled = loyaltyState.pointsToRedeem === 0;
+    }
+}
+
+function setLoyaltyLoading(isLoading) {
+    const linkBtn = document.getElementById('linkLoyaltyBtn');
+    if (linkBtn) {
+        linkBtn.disabled = isLoading;
+        linkBtn.innerHTML = isLoading ? '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>' : '<i class="bi bi-link-45deg"></i>';
+    }
+    const redeemBtn = document.getElementById('loyaltyRedeemBtn');
+    if (redeemBtn && isLoading) {
+        redeemBtn.disabled = true;
+    }
+}
+
+function getLoyaltyDiscountValue(subtotal, taxAmount) {
+    if (!loyaltyState.linked || loyaltyState.discountAmount <= 0) {
+        loyaltyState.effectiveDiscount = 0;
+        return 0;
+    }
+    const maxDiscount = Math.max(0, subtotal + taxAmount);
+    const discount = Math.min(loyaltyState.discountAmount, maxDiscount);
+    loyaltyState.effectiveDiscount = discount;
+    return discount;
+}
+
+async function handleLoyaltyLink() {
+    const identifierInput = document.getElementById('loyaltyCardNumber');
+    if (!identifierInput) {
+        return;
+    }
+    const identifier = identifierInput.value.trim();
+    if (!identifier) {
+        alert('Enter a card or phone number to link.');
+        return;
+    }
+    setLoyaltyLoading(true);
+    try {
+        const data = await requestLoyalty({ action: 'link', identifier });
+        loyaltyState.linked = true;
+        loyaltyState.customerId = parseInt(data.customer?.id ?? 0, 10) || null;
+        loyaltyState.customerName = data.customer?.name || null;
+        loyaltyState.programId = parseInt(data.program?.id ?? 0, 10) || null;
+        loyaltyState.program = data.program || null;
+        loyaltyState.balance = parseInt(data.enrollment?.points_balance ?? 0, 10) || 0;
+        loyaltyState.minRedemption = parseInt(data.program?.min_points_redemption ?? 0, 10) || 0;
+        loyaltyState.pointsToRedeem = 0;
+        loyaltyState.discountAmount = 0;
+        loyaltyState.effectiveDiscount = 0;
+        const lastActivity = (data.history || [])[0];
+        if (lastActivity) {
+            const activityDate = new Date(lastActivity.created_at);
+            loyaltyState.detailMessage = `${lastActivity.transaction_type} ${lastActivity.points} pts on ${activityDate.toLocaleString()}`;
+        } else {
+            loyaltyState.detailMessage = 'Linked customer has no loyalty transactions yet.';
+        }
+        updateLoyaltyUI();
+        updateCart();
+    } catch (error) {
+        console.error('Loyalty link error:', error);
+        updateLoyaltyUI(error.message || 'Unable to link loyalty.', 'danger');
+        alert(error.message || 'Failed to link loyalty customer.');
+    } finally {
+        setLoyaltyLoading(false);
+    }
+}
+
+function clearLoyaltyLink() {
+    resetLoyaltyState(false);
+}
+
+async function applyLoyaltyRedemption() {
+    if (!loyaltyState.linked || !loyaltyState.customerId) {
+        alert('Link a loyalty customer first.');
+        return;
+    }
+    const input = document.getElementById('loyaltyRedeemPoints');
+    if (!input) {
+        return;
+    }
+    const points = parseInt(input.value || '0', 10);
+    if (!Number.isFinite(points) || points <= 0) {
+        alert('Enter the number of points to redeem.');
+        return;
+    }
+    if (points > loyaltyState.balance) {
+        alert('Customer does not have enough points.');
+        return;
+    }
+    if (loyaltyState.minRedemption > 0 && points < loyaltyState.minRedemption) {
+        alert(`Minimum redemption is ${loyaltyState.minRedemption} points.`);
+        return;
+    }
+    try {
+        setLoyaltyLoading(true);
+        const data = await requestLoyalty({
+            action: 'preview',
+            customer_id: loyaltyState.customerId,
+            program_id: loyaltyState.programId,
+            points
+        });
+        const preview = data.preview || {};
+        loyaltyState.pointsToRedeem = points;
+        loyaltyState.discountAmount = parseFloat(preview.value ?? 0) || 0;
+        loyaltyState.detailMessage = `Redeeming ${points} pts for ${formatCurrency(loyaltyState.discountAmount)} discount.`;
+        updateLoyaltyUI('Redemption applied.', 'success');
+        updateCart();
+    } catch (error) {
+        console.error('Loyalty preview error:', error);
+        updateLoyaltyUI(error.message || 'Unable to preview redemption.', 'danger');
+        alert(error.message || 'Failed to preview redemption.');
+    } finally {
+        setLoyaltyLoading(false);
+    }
+}
+
+function clearLoyaltyRedemption() {
+    loyaltyState.pointsToRedeem = 0;
+    loyaltyState.discountAmount = 0;
+    loyaltyState.effectiveDiscount = 0;
+    const input = document.getElementById('loyaltyRedeemPoints');
+    if (input) {
+        input.value = '';
+    }
+    updateLoyaltyUI('Redemption cleared.', 'muted');
+    updateCart();
+}
 
 // Currency formatting function
 function formatCurrency(amount) {

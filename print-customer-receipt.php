@@ -28,6 +28,77 @@ $items = $db->fetchAll("
     ORDER BY oi.id
 ", [$orderId]);
 
+$payments = $db->fetchAll(
+    'SELECT payment_method, amount, tip_amount, metadata, created_at
+     FROM order_payments
+     WHERE order_id = ?
+     ORDER BY id ASC',
+    [$orderId]
+);
+
+$decodedPayments = [];
+$totalTendered = 0.0;
+$totalTips = 0.0;
+$changeGiven = 0.0;
+
+foreach ($payments as $payment) {
+    $metadata = [];
+    if (!empty($payment['metadata'])) {
+        $meta = json_decode($payment['metadata'], true);
+        if (json_last_error() === JSON_ERROR_NONE && is_array($meta)) {
+            $metadata = $meta;
+        }
+    }
+
+    $amount = (float)$payment['amount'];
+    $tip = (float)($payment['tip_amount'] ?? 0);
+    $tenderContribution = $amount + $tip;
+
+    if ($payment['payment_method'] === 'cash' && isset($metadata['amount_received'])) {
+        $tenderContribution = (float)$metadata['amount_received'];
+        if (isset($metadata['change_amount'])) {
+            $changeGiven += (float)$metadata['change_amount'];
+        }
+    }
+
+    $totalTendered += $tenderContribution;
+    $totalTips += $tip;
+
+    $decodedPayments[] = [
+        'method' => $payment['payment_method'],
+        'amount' => $amount,
+        'tip' => $tip,
+        'metadata' => $metadata,
+        'recorded_at' => $payment['created_at'],
+        'tendered' => $tenderContribution,
+    ];
+}
+
+$amountPaid = isset($order['amount_paid']) ? (float)$order['amount_paid'] : (float)$order['total_amount'];
+$recordedTip = isset($order['tip_amount']) ? (float)$order['tip_amount'] : 0.0;
+if ($recordedTip > 0 && $totalTips <= 0) {
+    $totalTips = $recordedTip;
+}
+
+if ($totalTendered <= 0) {
+    $totalTendered = $amountPaid + $totalTips;
+}
+
+$changeDue = $changeGiven > 0
+    ? $changeGiven
+    : max(0, round($totalTendered - ($order['total_amount'] + $totalTips), 2));
+
+$paymentMethodLabel = $order['payment_method'] ?? 'cash';
+if (!empty($decodedPayments)) {
+    if (count($decodedPayments) > 1) {
+        $paymentMethodLabel = 'split payments';
+    } else {
+        $paymentMethodLabel = $decodedPayments[0]['method'];
+    }
+}
+
+$paymentMethodLabel = ucfirst(str_replace('_', ' ', $paymentMethodLabel));
+
 // Get settings from cache
 $settings = function_exists('settings_many')
     ? settings_many([
@@ -343,20 +414,29 @@ $settings = function_exists('settings_many')
     <!-- Payment Details -->
     <div class="payment-details">
         <div style="text-align: center; font-weight: bold; margin-bottom: 3px;">PAYMENT INFORMATION</div>
-        <div><strong>Payment Method:</strong> <?= ucfirst(str_replace('_', ' ', $order['payment_method'])) ?></div>
-        <div><strong>Amount Paid:</strong> <?= formatMoney($order['total_amount']) ?></div>
-        <div><strong>Payment Status:</strong> ✅ PAID</div>
-        <div><strong>Transaction Time:</strong> <?= formatDate($order['updated_at'], 'd/m/Y H:i:s') ?></div>
-        
-        <?php if (in_array($order['payment_method'], ['card', 'credit_card', 'debit_card'])): ?>
-        <div style="margin-top: 3px;">
-            <strong>Card Number:</strong> ****-****-****-<?= substr(str_pad(rand(1000, 9999), 4, '0', STR_PAD_LEFT), -4) ?>
-        </div>
+        <div><strong>Status:</strong> ✅ PAID</div>
+        <div><strong>Payment Method:</strong> <?= htmlspecialchars($paymentMethodLabel) ?></div>
+        <div><strong>Amount Due:</strong> <?= formatMoney($order['total_amount']) ?></div>
+        <div><strong>Amount Tendered:</strong> <?= formatMoney($totalTendered) ?></div>
+        <?php if ($totalTips > 0): ?>
+        <div><strong>Tip:</strong> <?= formatMoney($totalTips) ?></div>
         <?php endif; ?>
-        
-        <?php if ($order['payment_method'] === 'mobile_money'): ?>
-        <div style="margin-top: 3px;">
-            <strong>Transaction ID:</strong> <?= strtoupper(substr(md5($order['order_number'] . $order['created_at']), 0, 10)) ?>
+        <div><strong>Change Given:</strong> <?= formatMoney($changeDue) ?></div>
+        <div><strong>Processed At:</strong> <?= formatDate($order['updated_at'], 'd/m/Y H:i:s') ?></div>
+
+        <?php if (!empty($decodedPayments)): ?>
+        <div style="margin-top: 6px;">
+            <strong>Breakdown:</strong>
+            <?php foreach ($decodedPayments as $entry): ?>
+                <div style="margin-left: 8px;">
+                    • <?= htmlspecialchars(ucfirst(str_replace('_', ' ', $entry['method']))) ?>:
+                    <?= formatMoney($entry['amount']) ?>
+                    <?php if ($entry['tip'] > 0): ?> (+ Tip <?= formatMoney($entry['tip']) ?>)<?php endif; ?>
+                    <?php if ($entry['method'] === 'cash' && isset($entry['metadata']['amount_received'])): ?>
+                        | Received <?= formatMoney($entry['metadata']['amount_received']) ?><?php if (isset($entry['metadata']['change_amount'])): ?>, Change <?= formatMoney($entry['metadata']['change_amount']) ?><?php endif; ?>
+                    <?php endif; ?>
+                </div>
+            <?php endforeach; ?>
         </div>
         <?php endif; ?>
     </div>

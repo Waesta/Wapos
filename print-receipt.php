@@ -6,7 +6,7 @@ $auth->requireLogin();
 $db = Database::getInstance();
 $saleId = $_GET['id'] ?? 0;
 
-// Get sale details
+// Get sale details and loyalty summary
 $sale = $db->fetchOne("
     SELECT s.*, u.full_name as cashier_name
     FROM sales s
@@ -22,6 +22,8 @@ if (!$sale) {
 $items = $db->fetchAll("
     SELECT * FROM sale_items WHERE sale_id = ? ORDER BY id
 ", [$saleId]);
+
+$loyaltySummary = $db->fetchOne("SELECT * FROM sale_loyalty_summary WHERE sale_id = ?", [$saleId]);
 
 // Get settings
 $settingsRaw = $db->fetchAll("SELECT setting_key, setting_value FROM settings");
@@ -287,6 +289,23 @@ foreach ($settingsRaw as $setting) {
             <span>Payment Method:</span>
             <span><?= ucfirst(str_replace('_', ' ', $sale['payment_method'])) ?></span>
         </div>
+        <?php if ($loyaltySummary): ?>
+            <hr>
+            <div class="total-line">
+                <span>Loyalty Earned:</span>
+                <span><?= number_format($loyaltySummary['points_earned'] ?? 0) ?> pts</span>
+            </div>
+            <?php if (!empty($loyaltySummary['points_redeemed'])): ?>
+            <div class="total-line">
+                <span>Loyalty Redeemed:</span>
+                <span><?= number_format($loyaltySummary['points_redeemed']) ?> pts (<?= formatMoney($loyaltySummary['discount_amount'] ?? 0) ?>)</span>
+            </div>
+            <?php endif; ?>
+            <div class="total-line">
+                <span>Balance After:</span>
+                <span><?= number_format($loyaltySummary['balance_after'] ?? 0) ?> pts</span>
+            </div>
+        <?php endif; ?>
         <?php if (in_array($sale['payment_method'], ['card', 'credit_card', 'debit_card'])): ?>
         <div class="total-line" style="font-size: 10px;">
             <span>Card Number:</span>

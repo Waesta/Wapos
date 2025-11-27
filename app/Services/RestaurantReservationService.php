@@ -6,14 +6,25 @@ use DateTime;
 use Exception;
 use PDO;
 use PDOException;
+use Throwable;
 
 class RestaurantReservationService
 {
     private PDO $db;
 
     private const TABLE_NAME = 'table_reservations';
+    private const DEPOSIT_TABLE = 'reservation_deposit_payments';
     private const STATUSES = ['pending', 'confirmed', 'seated', 'completed', 'cancelled', 'no_show'];
     private const BLOCKING_STATUSES = ['pending', 'confirmed', 'seated'];
+    private const DEPOSIT_STATUSES = ['not_required', 'pending', 'due', 'paid', 'waived', 'forfeited', 'refunded'];
+    private const MANUAL_DEPOSIT_STATUSES = ['waived', 'forfeited', 'refunded'];
+    private const PAYMENT_METHODS = ['mobile_money', 'cash', 'card', 'bank_transfer'];
+    private const PAYMENT_METHOD_LABELS = [
+        'mobile_money' => 'Mobile Money',
+        'cash' => 'Cash',
+        'card' => 'Card',
+        'bank_transfer' => 'Bank Transfer',
+    ];
 
     public function __construct(PDO $db)
     {
@@ -24,6 +35,7 @@ class RestaurantReservationService
     {
         $this->createReservationsTable();
         $this->syncReservationsTable();
+        $this->ensureDepositSchema();
     }
 
     private function createReservationsTable(): void
@@ -41,6 +53,16 @@ class RestaurantReservationService
             status VARCHAR(30) NOT NULL DEFAULT "confirmed",
             special_requests TEXT NULL,
             internal_notes TEXT NULL,
+            deposit_required TINYINT(1) NOT NULL DEFAULT 0,
+            deposit_amount DECIMAL(10,2) NULL DEFAULT NULL,
+            deposit_due_at DATETIME NULL DEFAULT NULL,
+            deposit_status VARCHAR(30) NOT NULL DEFAULT "not_required",
+            deposit_total_paid DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            deposit_payment_method VARCHAR(50) NULL DEFAULT NULL,
+            deposit_reference VARCHAR(100) NULL DEFAULT NULL,
+            deposit_paid_at DATETIME NULL DEFAULT NULL,
+            cancellation_policy TEXT NULL,
+            deposit_notes TEXT NULL,
             created_by INT UNSIGNED NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -62,11 +84,43 @@ class RestaurantReservationService
         $this->addColumnIfMissing('duration_minutes', 'INT NOT NULL DEFAULT 120');
         $this->addColumnIfMissing('special_requests', 'TEXT NULL');
         $this->addColumnIfMissing('internal_notes', 'TEXT NULL');
+        $this->addColumnIfMissing('deposit_required', 'TINYINT(1) NOT NULL DEFAULT 0');
+        $this->addColumnIfMissing('deposit_amount', 'DECIMAL(10,2) NULL DEFAULT NULL');
+        $this->addColumnIfMissing('deposit_due_at', 'DATETIME NULL DEFAULT NULL');
+        $this->addColumnIfMissing('deposit_status', 'VARCHAR(30) NOT NULL DEFAULT "not_required"');
+        $this->addColumnIfMissing('deposit_total_paid', 'DECIMAL(10,2) NOT NULL DEFAULT 0.00');
+        $this->addColumnIfMissing('deposit_payment_method', 'VARCHAR(50) NULL DEFAULT NULL');
+        $this->addColumnIfMissing('deposit_reference', 'VARCHAR(100) NULL DEFAULT NULL');
+        $this->addColumnIfMissing('deposit_paid_at', 'DATETIME NULL DEFAULT NULL');
+        $this->addColumnIfMissing('cancellation_policy', 'TEXT NULL');
+        $this->addColumnIfMissing('deposit_notes', 'TEXT NULL');
         $this->addColumnIfMissing('seated_at', 'TIMESTAMP NULL DEFAULT NULL');
         $this->addColumnIfMissing('completed_at', 'TIMESTAMP NULL DEFAULT NULL');
         $this->addColumnIfMissing('created_by', 'INT UNSIGNED NULL');
         $this->addForeignKeyIfMissing('fk_reservations_creator', 'created_by', 'users', 'id', 'SET NULL');
         $this->ensureStatusValues();
+    }
+
+    private function ensureDepositSchema(): void
+    {
+        $sql = 'CREATE TABLE IF NOT EXISTS ' . self::DEPOSIT_TABLE . ' (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            reservation_id INT UNSIGNED NOT NULL,
+            amount DECIMAL(10,2) NOT NULL,
+            method VARCHAR(50) NOT NULL,
+            reference VARCHAR(100) NULL DEFAULT NULL,
+            customer_phone VARCHAR(30) NULL DEFAULT NULL,
+            notes TEXT NULL,
+            recorded_by INT UNSIGNED NULL,
+            recorded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            metadata TEXT NULL,
+            CONSTRAINT fk_reservation_deposit_reservation FOREIGN KEY (reservation_id) REFERENCES ' . self::TABLE_NAME . ' (id) ON DELETE CASCADE,
+            CONSTRAINT fk_reservation_deposit_user FOREIGN KEY (recorded_by) REFERENCES users (id) ON DELETE SET NULL,
+            INDEX idx_reservation_deposit (reservation_id),
+            INDEX idx_reservation_deposit_recorded (recorded_at)
+        ) ENGINE=InnoDB';
+
+        $this->db->exec($sql);
     }
 
     private function addColumnIfMissing(string $column, string $definition): void
@@ -174,6 +228,23 @@ class RestaurantReservationService
 
         $specialRequests = trim((string)($payload['special_requests'] ?? '')) ?: null;
 
+        $depositRequired = !empty($payload['deposit_required']) ? 1 : 0;
+        $depositAmount = $this->sanitizeMoneyValue($payload['deposit_amount'] ?? null);
+        if ($depositRequired) {
+            if ($depositAmount === null || $depositAmount <= 0) {
+                throw new Exception('Deposit amount must be greater than zero when required.');
+            }
+        } else {
+            $depositAmount = null;
+        }
+
+        $depositDueAt = $depositRequired
+            ? $this->validateDepositDueDate($payload['deposit_due_at'] ?? null, $reservationDate, $reservationTime)
+            : null;
+        $cancellationPolicy = trim((string)($payload['cancellation_policy'] ?? '')) ?: null;
+        $depositNotes = trim((string)($payload['deposit_notes'] ?? '')) ?: null;
+        $initialDepositStatus = $depositRequired ? 'pending' : 'not_required';
+
         $stmt = $this->db->prepare(
             'INSERT INTO ' . self::TABLE_NAME . ' (
                 table_id,
@@ -186,6 +257,16 @@ class RestaurantReservationService
                 duration_minutes,
                 status,
                 special_requests,
+                deposit_required,
+                deposit_amount,
+                deposit_due_at,
+                deposit_status,
+                deposit_total_paid,
+                deposit_payment_method,
+                deposit_reference,
+                deposit_paid_at,
+                cancellation_policy,
+                deposit_notes,
                 created_by,
                 created_at,
                 updated_at
@@ -200,6 +281,16 @@ class RestaurantReservationService
                 :duration_minutes,
                 :status,
                 :special_requests,
+                :deposit_required,
+                :deposit_amount,
+                :deposit_due_at,
+                :deposit_status,
+                :deposit_total_paid,
+                :deposit_payment_method,
+                :deposit_reference,
+                :deposit_paid_at,
+                :cancellation_policy,
+                :deposit_notes,
                 :created_by,
                 NOW(),
                 NOW()
@@ -217,11 +308,21 @@ class RestaurantReservationService
             ':duration_minutes' => $durationMinutes,
             ':status' => $status,
             ':special_requests' => $specialRequests,
+            ':deposit_required' => $depositRequired,
+            ':deposit_amount' => $depositAmount,
+            ':deposit_due_at' => $depositDueAt,
+            ':deposit_status' => $initialDepositStatus,
+            ':deposit_total_paid' => 0.00,
+            ':deposit_payment_method' => null,
+            ':deposit_reference' => null,
+            ':deposit_paid_at' => null,
+            ':cancellation_policy' => $cancellationPolicy,
+            ':deposit_notes' => $depositNotes,
             ':created_by' => $userId,
         ]);
 
         $reservationId = (int)$this->db->lastInsertId();
-        return $this->getReservation($reservationId) ?? [];
+        return $this->refreshDepositSnapshot($reservationId);
     }
 
     public function updateReservation(int $reservationId, array $payload): array
@@ -333,6 +434,62 @@ class RestaurantReservationService
             $params[':special_requests'] = $specialRequests !== '' ? $specialRequests : null;
         }
 
+        $depositRequired = (int)$existing['deposit_required'];
+        if (array_key_exists('deposit_required', $payload)) {
+            $depositRequired = !empty($payload['deposit_required']) ? 1 : 0;
+            $fields[] = 'deposit_required = :deposit_required';
+            $params[':deposit_required'] = $depositRequired;
+
+            if ($depositRequired === 0) {
+                $fields[] = 'deposit_status = :deposit_status_reset';
+                $params[':deposit_status_reset'] = 'not_required';
+            } elseif ((int)$existing['deposit_required'] === 0) {
+                $fields[] = 'deposit_status = :deposit_status_pending';
+                $params[':deposit_status_pending'] = 'pending';
+            }
+        }
+
+        if ($depositRequired) {
+            if (array_key_exists('deposit_amount', $payload)) {
+                $newDepositAmount = $this->sanitizeMoneyValue($payload['deposit_amount']);
+                if ($newDepositAmount === null || $newDepositAmount <= 0) {
+                    throw new Exception('Deposit amount must be greater than zero when required.');
+                }
+                $fields[] = 'deposit_amount = :deposit_amount';
+                $params[':deposit_amount'] = $newDepositAmount;
+            } elseif ($existing['deposit_amount'] === null || (float)$existing['deposit_amount'] <= 0) {
+                throw new Exception('Deposit amount must be greater than zero when required.');
+            }
+
+            if (array_key_exists('deposit_due_at', $payload)) {
+                $depositDueAt = $this->validateDepositDueDate($payload['deposit_due_at'], $reservationDate, $reservationTime);
+                $fields[] = 'deposit_due_at = :deposit_due_at';
+                $params[':deposit_due_at'] = $depositDueAt;
+            }
+        } else {
+            if ($existing['deposit_amount'] !== null || array_key_exists('deposit_amount', $payload)) {
+                $fields[] = 'deposit_amount = :deposit_amount_reset';
+                $params[':deposit_amount_reset'] = null;
+            }
+
+            if ($existing['deposit_due_at'] !== null || array_key_exists('deposit_due_at', $payload)) {
+                $fields[] = 'deposit_due_at = :deposit_due_at_reset';
+                $params[':deposit_due_at_reset'] = null;
+            }
+        }
+
+        if (array_key_exists('cancellation_policy', $payload)) {
+            $policy = trim((string)$payload['cancellation_policy']);
+            $fields[] = 'cancellation_policy = :cancellation_policy';
+            $params[':cancellation_policy'] = $policy !== '' ? $policy : null;
+        }
+
+        if (array_key_exists('deposit_notes', $payload)) {
+            $notes = trim((string)$payload['deposit_notes']);
+            $fields[] = 'deposit_notes = :deposit_notes';
+            $params[':deposit_notes'] = $notes !== '' ? $notes : null;
+        }
+
         if (empty($fields)) {
             return $existing;
         }
@@ -343,7 +500,7 @@ class RestaurantReservationService
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
 
-        return $this->getReservation($reservationId) ?? [];
+        return $this->refreshDepositSnapshot($reservationId);
     }
 
     public function updateStatus(int $reservationId, string $status, ?string $notes, int $userId): array
@@ -432,32 +589,12 @@ class RestaurantReservationService
 
     public function getReservation(int $reservationId): ?array
     {
-        $sql = '
-            SELECT r.*, 
-                   t.table_number,
-                   t.table_name,
-                   t.capacity,
-                   CONCAT_WS(" ", creator.full_name, creator.username) AS created_by_name
-            FROM ' . self::TABLE_NAME . ' r
-            LEFT JOIN restaurant_tables t ON r.table_id = t.id
-            LEFT JOIN users creator ON creator.id = r.created_by
-            WHERE r.id = :id
-        ';
-
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute([':id' => $reservationId]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if ($row) {
-            $row['internal_notes_history'] = $this->formatInternalNotesHistory($row['internal_notes'] ?? null);
-            $row['status_timestamps'] = [
-                'created_at' => $row['created_at'] ?? null,
-                'seated_at' => $row['seated_at'] ?? null,
-                'completed_at' => $row['completed_at'] ?? null,
-            ];
+        $reservation = $this->fetchReservationRow($reservationId);
+        if (!$reservation) {
+            return null;
         }
 
-        return $row ?: null;
+        return $this->refreshDepositSnapshot($reservationId, $reservation);
     }
 
     private function formatInternalNotesHistory(?string $rawNotes): array
@@ -528,5 +665,202 @@ class RestaurantReservationService
 
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
         return $rows ?: [];
+    }
+
+    public function getDepositPayments(int $reservationId): array
+    {
+        $this->ensureSchema();
+
+        $stmt = $this->db->prepare(
+            'SELECT id, reservation_id, amount, method, reference, customer_phone, notes, recorded_by, recorded_at
+             FROM ' . self::DEPOSIT_TABLE . '
+             WHERE reservation_id = :reservation_id
+             ORDER BY recorded_at ASC, id ASC'
+        );
+        $stmt->execute([':reservation_id' => $reservationId]);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    public function recordDepositPayment(int $reservationId, array $payload, int $userId): array
+    {
+        $this->ensureSchema();
+
+        $reservation = $this->fetchReservationRow($reservationId);
+        if (!$reservation) {
+            throw new Exception('Reservation not found.');
+        }
+
+        if ((int)$reservation['deposit_required'] === 0) {
+            throw new Exception('Deposit is not required for this reservation.');
+        }
+
+        $amount = $this->sanitizeMoneyValue($payload['amount'] ?? null);
+        if ($amount === null || $amount <= 0) {
+            throw new Exception('Deposit payment amount must be greater than zero.');
+        }
+
+        $method = strtolower(trim((string)($payload['method'] ?? '')));
+        if ($method === '') {
+            throw new Exception('Payment method is required.');
+        }
+        if (!in_array($method, self::PAYMENT_METHODS, true)) {
+            throw new Exception('Unsupported payment method.');
+        }
+
+        $reference = trim((string)($payload['reference'] ?? '')) ?: null;
+        $customerPhone = trim((string)($payload['customer_phone'] ?? '')) ?: null;
+        if ($method === 'mobile_money') {
+            if (!$customerPhone || strlen($customerPhone) < 7) {
+                throw new Exception('Mobile money payments require the customer phone number.');
+            }
+        } else {
+            $customerPhone = null;
+        }
+        $notes = trim((string)($payload['notes'] ?? '')) ?: null;
+
+        $stmt = $this->db->prepare(
+            'INSERT INTO ' . self::DEPOSIT_TABLE . ' (reservation_id, amount, method, reference, customer_phone, notes, recorded_by, recorded_at)
+             VALUES (:reservation_id, :amount, :method, :reference, :customer_phone, :notes, :recorded_by, NOW())'
+        );
+
+        $stmt->execute([
+            ':reservation_id' => $reservationId,
+            ':amount' => $amount,
+            ':method' => $method,
+            ':reference' => $reference,
+            ':customer_phone' => $customerPhone,
+            ':notes' => $notes,
+            ':recorded_by' => $userId > 0 ? $userId : null,
+        ]);
+
+        return $this->refreshDepositSnapshot($reservationId);
+    }
+
+    private function refreshDepositSnapshot(int $reservationId, ?array $reservation = null): array
+    {
+        $reservation = $reservation ?? $this->fetchReservationRow($reservationId);
+        if (!$reservation) {
+            throw new Exception('Reservation not found.');
+        }
+
+        $depositRequired = (int)($reservation['deposit_required'] ?? 0) === 1;
+        $depositAmount = $reservation['deposit_amount'] !== null ? (float)$reservation['deposit_amount'] : null;
+        $payments = $depositRequired ? $this->getDepositPayments($reservationId) : [];
+
+        $totalPaid = 0.0;
+        $lastPayment = null;
+        foreach ($payments as $payment) {
+            $totalPaid += (float)$payment['amount'];
+            $lastPayment = $payment;
+        }
+
+        $currentStatus = $reservation['deposit_status'] ?? 'not_required';
+        $newStatus = $currentStatus;
+        if (!$depositRequired) {
+            $newStatus = 'not_required';
+        } elseif (!in_array($currentStatus, self::MANUAL_DEPOSIT_STATUSES, true)) {
+            if ($depositAmount !== null && $depositAmount > 0 && ($totalPaid + 0.0001) >= $depositAmount) {
+                $newStatus = 'paid';
+            } elseif (!empty($reservation['deposit_due_at']) && strtotime((string)$reservation['deposit_due_at']) < time()) {
+                $newStatus = 'due';
+            } else {
+                $newStatus = 'pending';
+            }
+        }
+
+        $updateStmt = $this->db->prepare(
+            'UPDATE ' . self::TABLE_NAME . ' SET
+                deposit_total_paid = :total_paid,
+                deposit_payment_method = :payment_method,
+                deposit_reference = :deposit_reference,
+                deposit_paid_at = :deposit_paid_at,
+                deposit_status = :deposit_status,
+                updated_at = NOW()
+             WHERE id = :id'
+        );
+
+        $updateStmt->execute([
+            ':total_paid' => round($totalPaid, 2),
+            ':payment_method' => $lastPayment['method'] ?? null,
+            ':deposit_reference' => $lastPayment['reference'] ?? null,
+            ':deposit_paid_at' => $lastPayment['recorded_at'] ?? null,
+            ':deposit_status' => $newStatus,
+            ':id' => $reservationId,
+        ]);
+
+        $reservation['deposit_total_paid'] = round($totalPaid, 2);
+        $reservation['deposit_payment_method'] = $lastPayment['method'] ?? null;
+        $reservation['deposit_reference'] = $lastPayment['reference'] ?? null;
+        $reservation['deposit_paid_at'] = $lastPayment['recorded_at'] ?? null;
+        $reservation['deposit_status'] = $newStatus;
+        $reservation['deposit_payments'] = $payments;
+        $reservation['deposit_balance'] = $depositAmount !== null ? max(0.0, round($depositAmount - $totalPaid, 2)) : null;
+        $reservation['internal_notes_history'] = $this->formatInternalNotesHistory($reservation['internal_notes'] ?? null);
+        $reservation['status_timestamps'] = [
+            'created_at' => $reservation['created_at'] ?? null,
+            'seated_at' => $reservation['seated_at'] ?? null,
+            'completed_at' => $reservation['completed_at'] ?? null,
+        ];
+
+        return $reservation;
+    }
+
+    private function fetchReservationRow(int $reservationId): ?array
+    {
+        $sql = '
+            SELECT r.*, 
+                   t.table_number,
+                   t.table_name,
+                   t.capacity,
+                   CONCAT_WS(" ", creator.full_name, creator.username) AS created_by_name
+            FROM ' . self::TABLE_NAME . ' r
+            LEFT JOIN restaurant_tables t ON r.table_id = t.id
+            LEFT JOIN users creator ON creator.id = r.created_by
+            WHERE r.id = :id
+        ';
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute([':id' => $reservationId]);
+
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row ?: null;
+    }
+
+    private function sanitizeMoneyValue($value): ?float
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (is_string($value)) {
+            $normalized = str_replace([',', ' '], '', $value);
+        } else {
+            $normalized = (string)$value;
+        }
+
+        if (!is_numeric($normalized)) {
+            return null;
+        }
+
+        return round((float)$normalized, 2);
+    }
+
+    private function validateDepositDueDate(?string $rawDueAt, string $reservationDate, string $reservationTime): string
+    {
+        $rawDueAt = $rawDueAt ? trim($rawDueAt) : '';
+        if ($rawDueAt === '') {
+            throw new Exception('Deposit due date/time is required when a deposit is enabled.');
+        }
+
+        $prepared = str_contains($rawDueAt, 'T') ? str_replace('T', ' ', $rawDueAt) : $rawDueAt;
+        $dueAt = DateTime::createFromFormat('Y-m-d H:i', $prepared) ?: new DateTime($prepared);
+
+        $reservationStart = new DateTime($reservationDate . ' ' . $reservationTime);
+        if ($dueAt > $reservationStart) {
+            throw new Exception('Deposit due date must be on or before the reservation start time.');
+        }
+
+        return $dueAt->format('Y-m-d H:i:s');
     }
 }

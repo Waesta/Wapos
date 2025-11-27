@@ -194,11 +194,15 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
             padding: 0;
             overflow-y: auto;
             z-index: 1000;
+            transform: translateX(0);
+            transition: transform 0.3s ease;
+            box-shadow: var(--shadow-sm);
         }
         .main-content {
             margin-left: var(--sidebar-width);
             min-height: 100vh;
             background: var(--color-background);
+            transition: margin-left 0.3s ease;
         }
         .sidebar-brand-title {
             color: #fdfdff;
@@ -317,29 +321,124 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
             padding: 15px 30px;
             border-bottom: 1px solid #dee2e6;
             display: flex;
-            justify-content: space-between;
             align-items: center;
             gap: var(--spacing-md);
+            flex-wrap: wrap;
         }
         .top-bar-title {
             display: flex;
             flex-direction: column;
+            flex: 1 1 auto;
+            min-width: 220px;
         }
         .top-bar-actions {
             display: flex;
             align-items: center;
             gap: var(--spacing-sm);
+            flex: 1 1 auto;
+            justify-content: flex-end;
+            flex-wrap: wrap;
         }
-        @media (max-width: 768px) {
+        .top-bar-sync {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-xs);
+            flex-wrap: wrap;
+        }
+        .top-bar-actions .dropdown .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--spacing-xs);
+        }
+        #online-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+        .sidebar-toggle-btn,
+        .sidebar-close-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        @media (max-width: 1200px) {
+            :root {
+                --sidebar-width: 230px;
+            }
+        }
+
+        @media (max-width: 1024px) {
+            :root {
+                --sidebar-width: 280px;
+            }
             .sidebar {
+                width: min(85vw, 320px);
                 transform: translateX(-100%);
-                transition: transform 0.3s ease;
+                box-shadow: var(--shadow-md);
             }
             .sidebar.show {
                 transform: translateX(0);
             }
             .main-content {
                 margin-left: 0;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .top-bar {
+                flex-direction: column;
+                align-items: flex-start;
+                padding: 12px 20px;
+            }
+            .top-bar-actions {
+                width: 100%;
+                flex-direction: column;
+                align-items: stretch;
+                gap: var(--spacing-sm);
+            }
+            .top-bar-sync {
+                width: 100%;
+                flex-direction: column;
+                align-items: stretch;
+                gap: var(--spacing-xs);
+            }
+            .top-bar-sync button {
+                width: 100%;
+            }
+            .top-bar-sync #online-status {
+                width: auto;
+                align-self: flex-start;
+            }
+            .top-bar-actions .dropdown {
+                width: 100%;
+            }
+            .top-bar-actions .dropdown > .btn {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+
+        @media (max-width: 576px) {
+            :root {
+                --sidebar-width: 100%;
+            }
+            .top-bar {
+                padding: 10px 16px;
+            }
+            .sidebar .nav-link {
+                padding: 0.65rem 0.75rem;
+                margin: 0 2px;
+            }
+            .top-bar-title h4 {
+                font-size: 1.05rem;
+            }
+        }
+
+        @media (min-width: 1025px) {
+            .sidebar-toggle-btn,
+            .sidebar-close-btn {
+                display: none !important;
             }
         }
     </style>
@@ -358,7 +457,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                 </h5>
                 <small class="sidebar-brand-subtitle">Point of Sale System</small>
             </div>
-            <button class="btn btn-outline-light d-md-none" type="button" id="sidebarCloseBtn" aria-label="Close navigation">
+            <button class="btn btn-outline-light sidebar-close-btn" type="button" id="sidebarCloseBtn" aria-label="Close navigation">
                 <i class="bi bi-x-lg"></i>
             </button>
         </div>
@@ -394,7 +493,12 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'page' => 'executive-dashboard.php',
                                 'icon' => 'bi-graph-up-arrow',
                                 'label' => 'Executive KPIs'
-                            ],
+                            ]
+                        ]
+                    ],
+                    'retail' => [
+                        'label' => 'Retail',
+                        'items' => [
                             [
                                 'roles' => ['admin','manager','cashier'],
                                 'href' => '/wapos/pos.php',
@@ -414,6 +518,14 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'page' => 'restaurant.php',
                                 'icon' => 'bi-cup-hot',
                                 'label' => 'Orders',
+                                'module' => 'restaurant'
+                            ],
+                            [
+                                'roles' => ['admin','manager'],
+                                'href' => '/wapos/manage-modifiers.php',
+                                'page' => 'manage-modifiers.php',
+                                'icon' => 'bi-sliders2',
+                                'label' => 'Modifiers',
                                 'module' => 'restaurant'
                             ],
                             [
@@ -572,7 +684,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                         ]
                     ],
                     'sales' => [
-                        'label' => 'Sales',
+                        'label' => 'Sales Ops',
                         'items' => [
                             [
                                 'roles' => ['admin','manager','cashier'],
@@ -703,6 +815,14 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'icon' => 'bi-currency-exchange',
                                 'label' => 'Currency',
                                 'module' => 'settings'
+                            ],
+                            [
+                                'roles' => ['admin','manager','super_admin'],
+                                'href' => '/wapos/settings.php#loyalty_rewards',
+                                'page' => 'settings.php',
+                                'icon' => 'bi-stars',
+                                'label' => 'Loyalty Settings',
+                                'module' => 'customers'
                             ]
                         ]
                     ]
@@ -773,7 +893,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
     <div class="main-content" id="mainContent">
         <div class="top-bar">
             <div class="d-flex align-items-center gap-3">
-                <button class="btn btn-outline-primary d-md-none" type="button" id="sidebarToggleBtn" aria-label="Toggle navigation">
+                <button class="btn btn-outline-primary sidebar-toggle-btn" type="button" id="sidebarToggleBtn" aria-label="Toggle navigation">
                     <i class="bi bi-list"></i>
                 </button>
                 <div class="top-bar-title">
@@ -782,7 +902,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                 </div>
             </div>
             <div class="top-bar-actions">
-                <div class="d-none d-md-flex align-items-center gap-2 me-3">
+                <div class="top-bar-sync d-flex align-items-center gap-2 flex-wrap me-0">
                     <span id="online-status" class="badge bg-secondary d-flex align-items-center gap-1">
                         <i class="bi bi-wifi-off"></i>
                         <span>Offline</span>
