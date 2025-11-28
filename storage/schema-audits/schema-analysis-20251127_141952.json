@@ -1,0 +1,357 @@
+{
+    "report_path": "C:\\xampp\\htdocs\\wapos\\storage\\schema-audits\\schema-report-latest.json",
+    "generated_at": "2025-11-27T16:12:14+03:00",
+    "table_count": 100,
+    "tables_with_zero_rows": [
+        "account_reconciliations",
+        "accounting_periods",
+        "accounts",
+        "audit_log",
+        "audit_logs",
+        "backup_logs",
+        "bookings",
+        "categories",
+        "chart_of_accounts",
+        "customer_addresses",
+        "customer_delivery_preferences",
+        "customer_loyalty_points",
+        "customers",
+        "deliveries",
+        "delivery_distance_cache",
+        "delivery_feedback",
+        "delivery_metrics",
+        "delivery_notifications",
+        "delivery_pricing_audit",
+        "delivery_pricing_rules",
+        "delivery_routes",
+        "delivery_status_history",
+        "delivery_zones",
+        "demo_feedback",
+        "expense_categories",
+        "goods_received_notes",
+        "grn",
+        "grn_items",
+        "group_permissions",
+        "housekeeping_task_items",
+        "housekeeping_task_logs",
+        "housekeeping_tasks",
+        "inventory_categories",
+        "inventory_consumption_events",
+        "inventory_items",
+        "inventory_stock_ledger",
+        "journal_entries",
+        "journal_entry_lines",
+        "journal_lines",
+        "location_stock",
+        "locations",
+        "loyalty_transactions",
+        "maintenance_request_logs",
+        "maintenance_requests",
+        "migrations",
+        "modifiers",
+        "module_actions",
+        "order_items",
+        "order_payments",
+        "orders",
+        "payment_installments",
+        "permission_actions",
+        "permission_audit_log",
+        "permission_groups",
+        "permission_modules",
+        "permission_templates",
+        "pos_promotions",
+        "pos_register_closures",
+        "pos_register_sessions",
+        "pos_registers",
+        "print_log",
+        "product_batches",
+        "product_recipes",
+        "products",
+        "purchase_order_items",
+        "purchase_orders",
+        "reorder_alerts",
+        "reservation_deposit_payments",
+        "restaurant_tables",
+        "rider_location_history",
+        "riders",
+        "room_booking_migrations",
+        "room_booking_payments",
+        "room_bookings",
+        "room_folios",
+        "room_types",
+        "rooms",
+        "route_waypoints",
+        "sale_items",
+        "sale_loyalty_summary",
+        "sales",
+        "scheduled_tasks",
+        "stock_adjustments",
+        "stock_movements",
+        "stock_transfers",
+        "suppliers",
+        "sync_queue",
+        "table_reservations",
+        "user_group_memberships",
+        "user_permissions",
+        "user_sessions",
+        "user_two_factor",
+        "void_reason_codes",
+        "void_settings",
+        "void_transactions",
+        "weather_data"
+    ],
+    "tables_missing_primary_key": [],
+    "tables_without_foreign_keys": [
+        "categories",
+        "customers",
+        "delivery_distance_cache",
+        "delivery_pricing_audit",
+        "delivery_pricing_rules",
+        "delivery_zones",
+        "demo_feedback",
+        "expense_categories",
+        "loyalty_programs",
+        "migrations",
+        "module_actions",
+        "permission_actions",
+        "permission_groups",
+        "permission_modules",
+        "permission_templates",
+        "restaurant_tables",
+        "riders",
+        "room_booking_migrations",
+        "room_types",
+        "scheduled_tasks",
+        "settings",
+        "suppliers",
+        "sync_queue",
+        "system_modules",
+        "void_reason_codes",
+        "void_settings",
+        "weather_data"
+    ],
+    "tables_without_secondary_indexes": [
+        "demo_feedback",
+        "expense_categories",
+        "loyalty_programs",
+        "riders",
+        "room_types",
+        "suppliers"
+    ],
+    "tables_grouped_by_module_prefix": {
+        "account": [
+            "account_reconciliations"
+        ],
+        "accounting": [
+            "accounting_periods"
+        ],
+        "accounts": [
+            "accounts"
+        ],
+        "audit": [
+            "audit_log",
+            "audit_logs"
+        ],
+        "backup": [
+            "backup_logs"
+        ],
+        "bookings": [
+            "bookings"
+        ],
+        "categories": [
+            "categories"
+        ],
+        "chart": [
+            "chart_of_accounts"
+        ],
+        "customer": [
+            "customer_addresses",
+            "customer_delivery_preferences",
+            "customer_loyalty_points"
+        ],
+        "customers": [
+            "customers"
+        ],
+        "deliveries": [
+            "deliveries"
+        ],
+        "delivery": [
+            "delivery_distance_cache",
+            "delivery_feedback",
+            "delivery_metrics",
+            "delivery_notifications",
+            "delivery_pricing_audit",
+            "delivery_pricing_rules",
+            "delivery_routes",
+            "delivery_status_history",
+            "delivery_zones"
+        ],
+        "demo": [
+            "demo_feedback"
+        ],
+        "expense": [
+            "expense_categories"
+        ],
+        "goods": [
+            "goods_received_notes"
+        ],
+        "grn": [
+            "grn",
+            "grn_items"
+        ],
+        "group": [
+            "group_permissions"
+        ],
+        "housekeeping": [
+            "housekeeping_task_items",
+            "housekeeping_task_logs",
+            "housekeeping_tasks"
+        ],
+        "inventory": [
+            "inventory_categories",
+            "inventory_consumption_events",
+            "inventory_items",
+            "inventory_stock_ledger"
+        ],
+        "journal": [
+            "journal_entries",
+            "journal_entry_lines",
+            "journal_lines"
+        ],
+        "location": [
+            "location_stock"
+        ],
+        "locations": [
+            "locations"
+        ],
+        "loyalty": [
+            "loyalty_programs",
+            "loyalty_transactions"
+        ],
+        "maintenance": [
+            "maintenance_request_logs",
+            "maintenance_requests"
+        ],
+        "migrations": [
+            "migrations"
+        ],
+        "modifiers": [
+            "modifiers"
+        ],
+        "module": [
+            "module_actions"
+        ],
+        "order": [
+            "order_items",
+            "order_payments"
+        ],
+        "orders": [
+            "orders"
+        ],
+        "payment": [
+            "payment_installments"
+        ],
+        "permission": [
+            "permission_actions",
+            "permission_audit_log",
+            "permission_groups",
+            "permission_modules",
+            "permission_templates"
+        ],
+        "pos": [
+            "pos_promotions",
+            "pos_register_closures",
+            "pos_register_sessions",
+            "pos_registers"
+        ],
+        "print": [
+            "print_log"
+        ],
+        "product": [
+            "product_batches",
+            "product_recipes"
+        ],
+        "products": [
+            "products"
+        ],
+        "purchase": [
+            "purchase_order_items",
+            "purchase_orders"
+        ],
+        "reorder": [
+            "reorder_alerts"
+        ],
+        "reservation": [
+            "reservation_deposit_payments"
+        ],
+        "restaurant": [
+            "restaurant_tables"
+        ],
+        "rider": [
+            "rider_location_history"
+        ],
+        "riders": [
+            "riders"
+        ],
+        "room": [
+            "room_booking_migrations",
+            "room_booking_payments",
+            "room_bookings",
+            "room_folios",
+            "room_types"
+        ],
+        "rooms": [
+            "rooms"
+        ],
+        "route": [
+            "route_waypoints"
+        ],
+        "sale": [
+            "sale_items",
+            "sale_loyalty_summary"
+        ],
+        "sales": [
+            "sales"
+        ],
+        "scheduled": [
+            "scheduled_tasks"
+        ],
+        "settings": [
+            "settings"
+        ],
+        "stock": [
+            "stock_adjustments",
+            "stock_movements",
+            "stock_transfers"
+        ],
+        "suppliers": [
+            "suppliers"
+        ],
+        "sync": [
+            "sync_queue"
+        ],
+        "system": [
+            "system_modules"
+        ],
+        "table": [
+            "table_reservations"
+        ],
+        "user": [
+            "user_group_memberships",
+            "user_permissions",
+            "user_sessions",
+            "user_two_factor"
+        ],
+        "users": [
+            "users"
+        ],
+        "void": [
+            "void_reason_codes",
+            "void_settings",
+            "void_transactions"
+        ],
+        "weather": [
+            "weather_data"
+        ]
+    }
+}

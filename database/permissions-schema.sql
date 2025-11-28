@@ -4,7 +4,7 @@
 -- Permission Groups (like departments or job functions)
 CREATE TABLE IF NOT EXISTS permission_groups (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(100) NOT NULL UNIQUE,
+    group_name VARCHAR(100) NOT NULL UNIQUE,
     description TEXT,
     color VARCHAR(7) DEFAULT '#007bff',
     is_active TINYINT(1) DEFAULT 1,
