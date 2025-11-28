@@ -140,6 +140,7 @@ class SettingsStore
         }
 
         $db = Database::getInstance();
+        $pdo = $db->getConnection();
         try {
             $columns = $db->fetchAll('SHOW COLUMNS FROM settings');
             self::$settingsColumns = array_column($columns ?? [], 'Field');
