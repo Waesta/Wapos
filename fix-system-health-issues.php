@@ -4,6 +4,52 @@
  * Creates missing tables and resolves system health problems
  */
 
+function tableHasColumn(PDO $pdo, string $table, string $column): bool
+{
+    try {
+        $stmt = $pdo->query("SHOW COLUMNS FROM `{$table}` LIKE " . $pdo->quote($column));
+        return (bool) $stmt->fetch(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+function addColumnIfMissing(PDO $pdo, string $table, string $column, string $definition): void
+{
+    if (!tableHasColumn($pdo, $table, $column)) {
+        $pdo->exec("ALTER TABLE `{$table}` ADD COLUMN {$definition}");
+    }
+}
+
+function ensureSupplierColumns(PDO $pdo): void
+{
+    $pdo->exec("CREATE TABLE IF NOT EXISTS suppliers (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        name VARCHAR(100) NOT NULL,
+        contact_person VARCHAR(100),
+        email VARCHAR(100),
+        phone VARCHAR(20),
+        address TEXT,
+        tax_number VARCHAR(50),
+        payment_terms VARCHAR(100),
+        notes TEXT,
+        is_active TINYINT(1) NOT NULL DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )");
+
+    addColumnIfMissing($pdo, 'suppliers', 'contact_person', "contact_person VARCHAR(100) AFTER name");
+    addColumnIfMissing($pdo, 'suppliers', 'email', "email VARCHAR(100) AFTER contact_person");
+    addColumnIfMissing($pdo, 'suppliers', 'phone', "phone VARCHAR(20) AFTER email");
+    addColumnIfMissing($pdo, 'suppliers', 'address', "address TEXT AFTER phone");
+    addColumnIfMissing($pdo, 'suppliers', 'tax_number', "tax_number VARCHAR(50) AFTER address");
+    addColumnIfMissing($pdo, 'suppliers', 'payment_terms', "payment_terms VARCHAR(100) AFTER tax_number");
+    addColumnIfMissing($pdo, 'suppliers', 'notes', "notes TEXT AFTER payment_terms");
+    addColumnIfMissing($pdo, 'suppliers', 'is_active', "is_active TINYINT(1) NOT NULL DEFAULT 1 AFTER notes");
+    addColumnIfMissing($pdo, 'suppliers', 'created_at', "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP AFTER is_active");
+    addColumnIfMissing($pdo, 'suppliers', 'updated_at', "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at");
+}
+
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
@@ -24,11 +70,14 @@ try {
         'permission_modules' => "
             CREATE TABLE IF NOT EXISTS permission_modules (
                 id INT PRIMARY KEY AUTO_INCREMENT,
-                module_key VARCHAR(50) UNIQUE NOT NULL,
-                module_name VARCHAR(100) NOT NULL,
+                name VARCHAR(100) NOT NULL,
+                display_name VARCHAR(150),
                 description TEXT,
-                is_active BOOLEAN DEFAULT TRUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                module_key VARCHAR(100) UNIQUE NOT NULL,
+                icon VARCHAR(50),
+                sort_order INT DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )",
         
         'permission_actions' => "
@@ -87,6 +136,8 @@ try {
         }
     }
     
+    ensureSupplierColumns($pdo);
+
     // 2. Create inventory tables
     echo "<h2>Step 2: Creating Inventory System Tables</h2>";
     
@@ -182,13 +233,20 @@ try {
         ['delivery', 'Delivery', 'Delivery and logistics']
     ];
     
+    $permissionModulesHasLegacyName = tableHasColumn($pdo, 'permission_modules', 'module_name');
+
     foreach ($defaultModules as $module) {
         try {
             $existing = $pdo->prepare("SELECT id FROM permission_modules WHERE module_key = ?");
             $existing->execute([$module[0]]);
             if (!$existing->fetch()) {
-                $stmt = $pdo->prepare("INSERT INTO permission_modules (module_key, module_name, description) VALUES (?, ?, ?)");
-                $stmt->execute($module);
+                if ($permissionModulesHasLegacyName) {
+                    $stmt = $pdo->prepare("INSERT INTO permission_modules (module_key, module_name, description) VALUES (?, ?, ?)");
+                    $stmt->execute([$module[0], $module[1], $module[2]]);
+                } else {
+                    $stmt = $pdo->prepare("INSERT INTO permission_modules (module_key, name, display_name, description) VALUES (?, ?, ?, ?)");
+                    $stmt->execute([$module[0], $module[1], $module[1], $module[2]]);
+                }
                 echo "<p style='color: green;'>✅ Added permission module: {$module[1]}</p>";
                 $fixes[] = "Permission module: {$module[1]}";
             } else {
@@ -211,7 +269,8 @@ try {
         'manage' => 'Full management access'
     ];
     
-    $modules = $pdo->query("SELECT id, module_key, module_name FROM permission_modules")->fetchAll();
+    $moduleNameExpr = $permissionModulesHasLegacyName ? 'module_name' : 'COALESCE(display_name, name)';
+    $modules = $pdo->query("SELECT id, module_key, {$moduleNameExpr} AS module_name FROM permission_modules")->fetchAll();
     $actionsCreated = 0;
     
     foreach ($modules as $module) {

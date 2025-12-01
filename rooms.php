@@ -114,6 +114,13 @@ $roomsStmt = $pdo->query("
 ");
 $rooms = $roomsStmt ? $roomsStmt->fetchAll(PDO::FETCH_ASSOC) : [];
 
+$roomStatusCounts = [
+    'available' => count(array_filter($rooms, fn($r) => ($r['status'] ?? '') === 'available')),
+    'occupied' => count(array_filter($rooms, fn($r) => ($r['status'] ?? '') === 'occupied')),
+    'reserved' => count(array_filter($rooms, fn($r) => ($r['status'] ?? '') === 'reserved')),
+    'maintenance' => count(array_filter($rooms, fn($r) => ($r['status'] ?? '') === 'maintenance')),
+];
+
 $currencyManager = CurrencyManager::getInstance();
 $currencySymbol = $currencyManager->getCurrencySymbol();
 $currencyCode = $currencyManager->getCurrencyCode();
@@ -151,6 +158,35 @@ if ($schemaReady) {
     $activeBookings = $activeStmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
+$activeBookingsFeed = array_map(function ($booking) {
+    $statusRaw = $booking['status'] ?? $booking['booking_status'] ?? 'pending';
+    return [
+        'id' => (int)($booking['id'] ?? 0),
+        'guest_name' => $booking['guest_name'] ?? '',
+        'room_number' => $booking['room_number'] ?? '',
+        'room_type_name' => $booking['room_type_name'] ?? '',
+        'status' => $statusRaw,
+        'check_in_date' => $booking['check_in_date'] ?? null,
+        'check_out_date' => $booking['check_out_date'] ?? null,
+        'total_nights' => (int)($booking['total_nights'] ?? 0),
+        'total_amount' => (float)($booking['total_amount'] ?? 0),
+        'payment_status' => $booking['payment_status'] ?? 'pending',
+    ];
+}, $activeBookings);
+
+$roomsLiveConfig = [
+    'summary' => [
+        'total_rooms' => count($rooms),
+        'available' => $roomStatusCounts['available'],
+        'occupied' => $roomStatusCounts['occupied'],
+        'reserved' => $roomStatusCounts['reserved'],
+        'maintenance' => $roomStatusCounts['maintenance'],
+        'active_bookings' => count($activeBookings),
+        'timestamp' => date(DATE_ATOM),
+    ],
+    'active_bookings' => array_slice($activeBookingsFeed, 0, 12),
+];
+
 $pageTitle = 'Room Booking';
 include 'includes/header.php';
 ?>
@@ -161,6 +197,10 @@ include 'includes/header.php';
         provider: '<?= addslashes($gatewayProvider) ?>',
         currency: '<?= addslashes($currencyCode) ?>'
     };
+</script>
+
+<script>
+    window.ROOMS_LIVE_CONFIG = <?= json_encode($roomsLiveConfig, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
 </script>
 
 <style>
@@ -176,6 +216,19 @@ include 'includes/header.php';
     }
     .rooms-calendar-card {
         margin-bottom: var(--spacing-lg);
+    }
+    .live-sync-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #20c997;
+    }
+    .live-sync-dot[data-state="syncing"] {
+        background: #0d6efd;
+        box-shadow: 0 0 0 4px rgba(13,110,253,.2);
+    }
+    .live-sync-dot[data-state="error"] {
+        background: #dc3545;
     }
     .rooms-main-columns {
         display: grid;
@@ -355,6 +408,61 @@ include 'includes/header.php';
             <h3 class="mb-0 fw-semibold text-info"><?= count($activeBookings) ?></h3>
         </div>
         <span class="app-status" data-color="info"><i class="bi bi-calendar-check"></i></span>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 align-items-stretch mb-4">
+    <div class="col-lg-4">
+        <div class="app-card h-100 d-flex flex-column" aria-live="polite">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <div>
+                    <p class="text-muted mb-1 small">Live Occupancy</p>
+                    <h4 class="mb-0" id="roomsLiveOccupancyCount">0 / 0</h4>
+                </div>
+                <div class="text-end">
+                    <small class="text-muted">Updated</small>
+                    <div class="fw-semibold small" id="roomsLiveOccupancyTime">—</div>
+                </div>
+            </div>
+            <div class="bg-light rounded p-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-muted">Available</span>
+                    <strong class="text-success" id="roomsLiveAvailable">0</strong>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-muted">Occupied</span>
+                    <strong class="text-danger" id="roomsLiveOccupied">0</strong>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-muted">Reserved</span>
+                    <strong class="text-warning" id="roomsLiveReserved">0</strong>
+                </div>
+                <div class="d-flex justify-content-between align-items-center">
+                    <span class="text-muted">Maintenance</span>
+                    <strong class="text-secondary" id="roomsLiveMaintenance">0</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-8">
+        <div class="app-card h-100 d-flex flex-column">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="live-sync-dot" id="roomsLiveStatusDot"></div>
+                    <span class="fw-semibold">Live Booking Feed</span>
+                </div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-sm btn-outline-secondary" id="roomsLiveToggleBtn" type="button">Pause</button>
+                    <button class="btn btn-sm btn-outline-primary" id="roomsLiveRefreshBtn" type="button">Refresh</button>
+                </div>
+            </div>
+            <div class="small text-muted mb-2" id="roomsLiveStatusLabel">Live updates on</div>
+            <div class="flex-grow-1" style="overflow-y: auto; max-height: 220px;">
+                <ul class="list-group list-group-flush" id="roomsLiveFeed">
+                    <li class="list-group-item text-muted">Waiting for updates…</li>
+                </ul>
+            </div>
         </div>
     </div>
 </div>
@@ -722,11 +830,43 @@ const currencyDecimals = Number.isInteger(currencyConfig.decimal_places)
     ? currencyConfig.decimal_places
     : 2;
 const ROOMS_GATEWAY = window.ROOMS_GATEWAY_CONFIG || { enabled: false, provider: null, currency: currencyConfig.code };
+const ROOMS_LIVE_CONFIG = window.ROOMS_LIVE_CONFIG || {
+    summary: {
+        total_rooms: 0,
+        available: 0,
+        occupied: 0,
+        reserved: 0,
+        maintenance: 0,
+        active_bookings: 0,
+        timestamp: null,
+    },
+    active_bookings: []
+};
+const ROOMS_LIVE_POLL_INTERVAL = 15000;
+const ROOMS_LIVE_FETCH_LIMIT = 12;
 let bookingGatewayReference = null;
 let bookingGatewayPollTimeout = null;
 let bookingGatewayPollAttempts = 0;
 const BOOKING_GATEWAY_POLL_INTERVAL = 4000;
 const BOOKING_GATEWAY_MAX_ATTEMPTS = 30;
+const roomsLiveElements = {
+    occupancyCount: null,
+    updatedAt: null,
+    available: null,
+    occupied: null,
+    reserved: null,
+    maintenance: null,
+    statusDot: null,
+    statusLabel: null,
+    toggleBtn: null,
+    refreshBtn: null,
+    feed: null,
+};
+const roomsLiveState = {
+    paused: false,
+    timer: null,
+    channel: null,
+};
 
 let folioModal;
 let folioModalElement;
@@ -826,6 +966,191 @@ function resetBookingForm() {
     document.getElementById('total_nights').textContent = '0';
     document.getElementById('total_amount').textContent = formatNeutralAmount(0);
     handleDepositMethodChange();
+}
+
+function initRoomsLiveWidgets() {
+    roomsLiveElements.occupancyCount = document.getElementById('roomsLiveOccupancyCount');
+    if (!roomsLiveElements.occupancyCount) {
+        return;
+    }
+    roomsLiveElements.updatedAt = document.getElementById('roomsLiveOccupancyTime');
+    roomsLiveElements.available = document.getElementById('roomsLiveAvailable');
+    roomsLiveElements.occupied = document.getElementById('roomsLiveOccupied');
+    roomsLiveElements.reserved = document.getElementById('roomsLiveReserved');
+    roomsLiveElements.maintenance = document.getElementById('roomsLiveMaintenance');
+    roomsLiveElements.statusDot = document.getElementById('roomsLiveStatusDot');
+    roomsLiveElements.statusLabel = document.getElementById('roomsLiveStatusLabel');
+    roomsLiveElements.toggleBtn = document.getElementById('roomsLiveToggleBtn');
+    roomsLiveElements.refreshBtn = document.getElementById('roomsLiveRefreshBtn');
+    roomsLiveElements.feed = document.getElementById('roomsLiveFeed');
+
+    updateRoomsLiveSummary(ROOMS_LIVE_CONFIG.summary || {}, ROOMS_LIVE_CONFIG.summary?.timestamp);
+    renderRoomsLiveFeed(ROOMS_LIVE_CONFIG.active_bookings || []);
+
+    roomsLiveElements.toggleBtn?.addEventListener('click', toggleRoomsLive);
+    roomsLiveElements.refreshBtn?.addEventListener('click', () => fetchRoomsLiveData(true));
+
+    if ('BroadcastChannel' in window) {
+        roomsLiveState.channel = new BroadcastChannel('wapos_rooms_updates');
+        roomsLiveState.channel.onmessage = event => {
+            if (event.data?.type === 'rooms_live_update') {
+                fetchRoomsLiveData(true);
+            }
+        };
+    }
+
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && !roomsLiveState.paused) {
+            fetchRoomsLiveData(true);
+        }
+    });
+
+    fetchRoomsLiveData(true);
+}
+
+function toggleRoomsLive() {
+    roomsLiveState.paused = !roomsLiveState.paused;
+    if (roomsLiveState.paused) {
+        clearTimeout(roomsLiveState.timer);
+        roomsLiveElements.toggleBtn && (roomsLiveElements.toggleBtn.textContent = 'Resume');
+        setRoomsLiveIndicator('paused', 'Updates paused');
+    } else {
+        roomsLiveElements.toggleBtn && (roomsLiveElements.toggleBtn.textContent = 'Pause');
+        fetchRoomsLiveData(true);
+    }
+}
+
+function setRoomsLiveIndicator(state, label) {
+    roomsLiveElements.statusDot?.setAttribute('data-state', state);
+    if (roomsLiveElements.statusLabel) {
+        roomsLiveElements.statusLabel.textContent = label || '';
+    }
+}
+
+async function fetchRoomsLiveData(forceImmediate = false) {
+    if (roomsLiveState.paused) {
+        return;
+    }
+    clearTimeout(roomsLiveState.timer);
+    if (!forceImmediate) {
+        setRoomsLiveIndicator('syncing', 'Syncing…');
+    }
+    try {
+        const response = await fetch('api/live-rooms-feed.php', {
+            headers: { 'Accept': 'application/json' }
+        });
+        const data = await response.json();
+        if (!data.success) {
+            throw new Error(data.message || 'Failed to load rooms data');
+        }
+        updateRoomsLiveSummary(data.summary || {}, data.summary?.timestamp);
+        renderRoomsLiveFeed(data.active_bookings || []);
+        setRoomsLiveIndicator('live', data.summary?.timestamp ? `Updated ${new Date(data.summary.timestamp).toLocaleTimeString()}` : 'Live updates on');
+    } catch (error) {
+        console.error('Rooms live fetch error:', error);
+        setRoomsLiveIndicator('error', 'Sync failed – retrying');
+    } finally {
+        scheduleRoomsLivePoll();
+    }
+}
+
+function scheduleRoomsLivePoll() {
+    clearTimeout(roomsLiveState.timer);
+    roomsLiveState.timer = setTimeout(() => fetchRoomsLiveData(false), ROOMS_LIVE_POLL_INTERVAL);
+}
+
+function updateRoomsLiveSummary(summary, timestamp) {
+    const totalRooms = Number(summary.total_rooms || 0);
+    const occupied = Number(summary.occupied || 0);
+    roomsLiveElements.occupancyCount.textContent = `${occupied} / ${totalRooms}`;
+    roomsLiveElements.available.textContent = Number(summary.available || 0).toString();
+    roomsLiveElements.occupied.textContent = occupied.toString();
+    roomsLiveElements.reserved.textContent = Number(summary.reserved || 0).toString();
+    roomsLiveElements.maintenance.textContent = Number(summary.maintenance || 0).toString();
+    if (roomsLiveElements.updatedAt) {
+        roomsLiveElements.updatedAt.textContent = timestamp ? formatRelativeTime(timestamp) : '—';
+    }
+}
+
+function renderRoomsLiveFeed(bookings) {
+    if (!roomsLiveElements.feed) {
+        return;
+    }
+    roomsLiveElements.feed.innerHTML = '';
+    if (!Array.isArray(bookings) || bookings.length === 0) {
+        const placeholder = document.createElement('li');
+        placeholder.className = 'list-group-item text-muted text-center';
+        placeholder.textContent = 'No live bookings to display.';
+        roomsLiveElements.feed.appendChild(placeholder);
+        return;
+    }
+
+    bookings.slice(0, ROOMS_LIVE_FETCH_LIMIT).forEach(booking => {
+        const listItem = document.createElement('li');
+        listItem.className = 'list-group-item d-flex justify-content-between align-items-start gap-3';
+
+        const info = document.createElement('div');
+        info.className = 'flex-grow-1';
+        const guest = document.createElement('div');
+        guest.className = 'fw-semibold';
+        guest.textContent = booking.guest_name || 'Guest';
+        const roomMeta = document.createElement('div');
+        roomMeta.className = 'text-muted small';
+        roomMeta.textContent = `${booking.room_number || 'Room'} · ${booking.room_type_name || ''}`;
+        const stayMeta = document.createElement('div');
+        stayMeta.className = 'small';
+        stayMeta.textContent = formatBookingRange(booking);
+        info.appendChild(guest);
+        info.appendChild(roomMeta);
+        info.appendChild(stayMeta);
+
+        const actions = document.createElement('div');
+        actions.className = 'text-end';
+        const statusBadge = document.createElement('span');
+        const badge = getRoomStatusBadge(booking.status);
+        statusBadge.className = `badge bg-${badge.class}`;
+        statusBadge.textContent = badge.label;
+        actions.appendChild(statusBadge);
+        const amount = document.createElement('div');
+        amount.className = 'text-muted small mt-2';
+        amount.textContent = `${formatNeutralAmount(Number(booking.total_amount || 0))}`;
+        actions.appendChild(amount);
+
+        listItem.appendChild(info);
+        listItem.appendChild(actions);
+        roomsLiveElements.feed.appendChild(listItem);
+    });
+}
+
+function formatBookingRange(booking) {
+    const checkIn = booking.check_in_date ? new Date(booking.check_in_date) : null;
+    const checkOut = booking.check_out_date ? new Date(booking.check_out_date) : null;
+    const nights = booking.total_nights || 0;
+    if (!checkIn || Number.isNaN(checkIn.getTime()) || !checkOut || Number.isNaN(checkOut.getTime())) {
+        return 'Schedule TBA';
+    }
+    const options = { month: 'short', day: 'numeric' };
+    return `${checkIn.toLocaleDateString(undefined, options)} → ${checkOut.toLocaleDateString(undefined, options)} (${nights} night${nights === 1 ? '' : 's'})`;
+}
+
+function getRoomStatusBadge(status) {
+    const normalized = (status || '').toLowerCase();
+    switch (normalized) {
+        case 'checked_in':
+        case 'checked-in':
+            return { class: 'success', label: 'Checked In' };
+        case 'checked_out':
+        case 'checked-out':
+            return { class: 'secondary', label: 'Checked Out' };
+        case 'confirmed':
+            return { class: 'info', label: 'Confirmed' };
+        case 'cancelled':
+            return { class: 'danger', label: 'Cancelled' };
+        case 'pending':
+            return { class: 'warning', label: 'Pending' };
+        default:
+            return { class: 'primary', label: normalized ? normalized.replace(/_/g, ' ') : 'Status' };
+    }
 }
 
 function checkIn(bookingId) {

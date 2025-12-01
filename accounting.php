@@ -172,10 +172,60 @@ $recentExpenses = $ledgerDataService->getRecentExpenseEntries($startDate, $endDa
 // Get categories and locations for form
 $categories = $db->fetchAll("SELECT * FROM expense_categories WHERE is_active = 1 ORDER BY name");
 $locations = $db->fetchAll("SELECT id, name FROM locations WHERE is_active = 1 ORDER BY name");
+$currencyConfig = CurrencyManager::getInstance()->getJavaScriptConfig();
+$accountingLiveConfig = [
+    'summary' => $ledgerDataService->getLiveFinancialSnapshot(),
+    'recent_entries' => $ledgerDataService->getRecentLedgerEntries(12),
+    'filters' => [
+        'start_date' => $startDate,
+        'end_date' => $endDate,
+    ],
+];
 
 $pageTitle = 'Accounting & Expenses';
 include 'includes/header.php';
 ?>
+
+<script>
+    window.ACCOUNTING_LIVE_CONFIG = <?= json_encode($accountingLiveConfig, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+    window.ACCOUNTING_LIVE_ENDPOINT = 'api/live-accounting-feed.php';
+    window.CURRENCY_CONFIG = <?= json_encode($currencyConfig, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+</script>
+
+<style>
+    #accountingLiveWidgets .live-metric-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 0.75rem;
+    }
+    #accountingLiveWidgets .live-metric {
+        padding: 0.75rem;
+        border: 1px solid var(--color-border, #eef2f7);
+        border-radius: 0.75rem;
+        background: #f8fafc;
+    }
+    #accountingLiveWidgets .live-metric h5 {
+        margin: 0;
+        font-weight: 600;
+    }
+    .live-sync-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #20c997;
+    }
+    .live-sync-dot[data-state="syncing"] {
+        background: #0d6efd;
+        box-shadow: 0 0 0 4px rgba(13,110,253,.2);
+    }
+    .live-sync-dot[data-state="error"] {
+        background: #dc3545;
+    }
+    #accountingLiveFeed {
+        max-height: 260px;
+        overflow-y: auto;
+    }
+</style>
 
 <?php if (isset($_SESSION['success_message'])): ?>
     <div class="alert alert-success"><?= $_SESSION['success_message']; unset($_SESSION['success_message']); ?></div>
@@ -207,6 +257,75 @@ include 'includes/header.php';
                 <a href="<?= $_SERVER['PHP_SELF'] ?>" class="btn btn-outline-secondary">Reset</a>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- Live Financial Pulse -->
+<div class="row g-3 mb-4" id="accountingLiveWidgets">
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body d-flex flex-column gap-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <p class="text-muted mb-1 small">Live Financial Pulse</p>
+                        <h3 class="mb-0" id="accountingLiveTodayNet">—</h3>
+                    </div>
+                    <div class="text-end">
+                        <small class="text-muted">Updated</small>
+                        <div class="fw-semibold small" id="accountingLiveUpdated">—</div>
+                    </div>
+                </div>
+                <div class="live-metric-grid">
+                    <div class="live-metric">
+                        <p class="text-muted small mb-1">Today Revenue</p>
+                        <h5 id="accountingLiveTodayRevenue">—</h5>
+                    </div>
+                    <div class="live-metric">
+                        <p class="text-muted small mb-1">Today Expenses</p>
+                        <h5 id="accountingLiveTodayExpense">—</h5>
+                    </div>
+                    <div class="live-metric">
+                        <p class="text-muted small mb-1">Receivables</p>
+                        <h5 id="accountingLiveReceivablesTotal">—</h5>
+                        <small class="text-muted" id="accountingLiveReceivablesCount">0 open</small>
+                    </div>
+                </div>
+                <div class="live-metric-grid">
+                    <div class="live-metric">
+                        <p class="text-muted small mb-1">Monthly Revenue</p>
+                        <h5 id="accountingLiveMonthRevenue">—</h5>
+                    </div>
+                    <div class="live-metric">
+                        <p class="text-muted small mb-1">Monthly Expenses</p>
+                        <h5 id="accountingLiveMonthExpense">—</h5>
+                    </div>
+                    <div class="live-metric">
+                        <p class="text-muted small mb-1">Profit Margin</p>
+                        <h5 id="accountingLiveMargin">—</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body d-flex flex-column">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="live-sync-dot" id="accountingLiveDot"></div>
+                        <span class="fw-semibold">Live Ledger Feed</span>
+                    </div>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-secondary" id="accountingLiveToggle">Pause</button>
+                        <button class="btn btn-outline-primary" id="accountingLiveRefresh">Refresh</button>
+                    </div>
+                </div>
+                <div class="small text-muted mb-2" id="accountingLiveLabel">Live updates on</div>
+                <ul class="list-group list-group-flush flex-grow-1" id="accountingLiveFeed">
+                    <li class="list-group-item text-muted text-center">Waiting for ledger activity…</li>
+                </ul>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -434,6 +553,237 @@ new Chart(ctx, {
         }
     }
 });
+</script>
+
+<script>
+(function() {
+    const ACCOUNTING_LIVE_ENDPOINT = window.ACCOUNTING_LIVE_ENDPOINT || 'api/live-accounting-feed.php';
+    const ACCOUNTING_LIVE_CONFIG = window.ACCOUNTING_LIVE_CONFIG || { summary: {}, recent_entries: [] };
+    const currencyConfig = window.CURRENCY_CONFIG || { symbol: '', position: 'before', decimal_places: 2 };
+    const ACCOUNTING_LIVE_POLL_INTERVAL = 15000;
+
+    const accountingLiveElements = {};
+    const accountingLiveState = {
+        paused: false,
+        timer: null,
+        channel: null,
+    };
+
+    function initAccountingLiveWidgets() {
+        accountingLiveElements.todayRevenue = document.getElementById('accountingLiveTodayRevenue');
+        accountingLiveElements.todayExpense = document.getElementById('accountingLiveTodayExpense');
+        accountingLiveElements.todayNet = document.getElementById('accountingLiveTodayNet');
+        accountingLiveElements.monthRevenue = document.getElementById('accountingLiveMonthRevenue');
+        accountingLiveElements.monthExpense = document.getElementById('accountingLiveMonthExpense');
+        accountingLiveElements.margin = document.getElementById('accountingLiveMargin');
+        accountingLiveElements.receivablesTotal = document.getElementById('accountingLiveReceivablesTotal');
+        accountingLiveElements.receivablesCount = document.getElementById('accountingLiveReceivablesCount');
+        accountingLiveElements.updated = document.getElementById('accountingLiveUpdated');
+        accountingLiveElements.feed = document.getElementById('accountingLiveFeed');
+        accountingLiveElements.dot = document.getElementById('accountingLiveDot');
+        accountingLiveElements.label = document.getElementById('accountingLiveLabel');
+        accountingLiveElements.toggleBtn = document.getElementById('accountingLiveToggle');
+        accountingLiveElements.refreshBtn = document.getElementById('accountingLiveRefresh');
+
+        renderAccountingLiveSummary(ACCOUNTING_LIVE_CONFIG.summary || {});
+        renderAccountingLiveFeed(Array.isArray(ACCOUNTING_LIVE_CONFIG.recent_entries) ? ACCOUNTING_LIVE_CONFIG.recent_entries : []);
+
+        accountingLiveElements.toggleBtn?.addEventListener('click', () => {
+            accountingLiveState.paused = !accountingLiveState.paused;
+            accountingLiveElements.toggleBtn.textContent = accountingLiveState.paused ? 'Resume' : 'Pause';
+            accountingLiveElements.label.textContent = accountingLiveState.paused ? 'Live updates paused' : 'Live updates on';
+            if (accountingLiveState.paused) {
+                setDotState('idle');
+                clearTimeout(accountingLiveState.timer);
+            } else {
+                fetchAccountingLiveData(true);
+            }
+        });
+
+        accountingLiveElements.refreshBtn?.addEventListener('click', () => fetchAccountingLiveData(true));
+
+        if ('BroadcastChannel' in window) {
+            accountingLiveState.channel = new BroadcastChannel('accounting-live-feed');
+            accountingLiveState.channel.onmessage = event => {
+                if (event?.data?.type === 'accounting-live-sync' && !accountingLiveState.paused) {
+                    const payload = event.data.payload || {};
+                    if (payload.summary) {
+                        renderAccountingLiveSummary(payload.summary);
+                    }
+                    if (Array.isArray(payload.entries)) {
+                        renderAccountingLiveFeed(payload.entries);
+                    }
+                }
+            };
+        }
+
+        fetchAccountingLiveData();
+    }
+
+    function setDotState(state) {
+        if (!accountingLiveElements.dot) return;
+        const validStates = ['live', 'syncing', 'error', 'idle'];
+        if (!validStates.includes(state)) {
+            state = 'idle';
+        }
+        accountingLiveElements.dot.setAttribute('data-state', state === 'live' ? 'live' : state);
+    }
+
+    function scheduleNextTick() {
+        clearTimeout(accountingLiveState.timer);
+        accountingLiveState.timer = setTimeout(fetchAccountingLiveData, ACCOUNTING_LIVE_POLL_INTERVAL);
+    }
+
+    function fetchAccountingLiveData(force = false) {
+        if (accountingLiveState.paused && !force) {
+            return;
+        }
+
+        setDotState('syncing');
+        accountingLiveElements.label.textContent = 'Syncing latest ledger data…';
+
+        fetch(`${ACCOUNTING_LIVE_ENDPOINT}?_=${Date.now()}`, {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Failed to load live feed');
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (!data?.success) {
+                    throw new Error(data?.message || 'Live feed unavailable');
+                }
+
+                const summary = data.summary || {};
+                const entries = Array.isArray(data.recent_entries) ? data.recent_entries : [];
+                renderAccountingLiveSummary(summary);
+                renderAccountingLiveFeed(entries);
+                accountingLiveElements.label.textContent = 'Live updates on';
+                setDotState('live');
+
+                if (accountingLiveState.channel) {
+                    accountingLiveState.channel.postMessage({
+                        type: 'accounting-live-sync',
+                        payload: { summary, entries }
+                    });
+                }
+
+                scheduleNextTick();
+            })
+            .catch(error => {
+                console.error(error);
+                accountingLiveElements.label.textContent = 'Unable to refresh live feed';
+                setDotState('error');
+                scheduleNextTick();
+            });
+    }
+
+    function renderAccountingLiveSummary(summary) {
+        accountingLiveElements.todayRevenue && (accountingLiveElements.todayRevenue.textContent = formatCurrencyValue(summary.today_revenue));
+        accountingLiveElements.todayExpense && (accountingLiveElements.todayExpense.textContent = formatCurrencyValue(summary.today_expense));
+        accountingLiveElements.todayNet && (accountingLiveElements.todayNet.textContent = formatCurrencyValue(summary.today_net));
+        accountingLiveElements.monthRevenue && (accountingLiveElements.monthRevenue.textContent = formatCurrencyValue(summary.month_revenue));
+        accountingLiveElements.monthExpense && (accountingLiveElements.monthExpense.textContent = formatCurrencyValue(summary.month_expense));
+        accountingLiveElements.margin && (accountingLiveElements.margin.textContent = typeof summary.profit_margin === 'number'
+            ? `${summary.profit_margin.toFixed(1)}%`
+            : '—');
+        accountingLiveElements.receivablesTotal && (accountingLiveElements.receivablesTotal.textContent = formatCurrencyValue(summary.pending_receivables_total));
+        accountingLiveElements.receivablesCount && (accountingLiveElements.receivablesCount.textContent = `${summary.pending_receivables_count ?? 0} open`);
+        accountingLiveElements.updated && (accountingLiveElements.updated.textContent = formatTimestamp(summary.timestamp));
+    }
+
+    function renderAccountingLiveFeed(entries) {
+        if (!accountingLiveElements.feed) {
+            return;
+        }
+
+        if (!entries.length) {
+            accountingLiveElements.feed.innerHTML = '<li class="list-group-item text-center text-muted">No recent ledger entries</li>';
+            return;
+        }
+
+        accountingLiveElements.feed.innerHTML = entries.map(entry => {
+            const label = escapeHtml(entry.entry_number || `JE-${entry.id}`);
+            const description = escapeHtml(entry.description || 'No description');
+            const timestamp = formatTimestamp(entry.created_at || entry.entry_date);
+            const lines = Array.isArray(entry.lines) ? entry.lines : [];
+            const lineHtml = lines.map(line => {
+                const accountLabel = escapeHtml(`${line.account_code || ''} ${line.account_name || ''}`.trim());
+                const debit = Number(line.debit || 0);
+                const credit = Number(line.credit || 0);
+                const amountLabel = debit > 0
+                    ? `<span class="text-danger">D ${formatCurrencyValue(debit)}</span>`
+                    : `<span class="text-success">C ${formatCurrencyValue(credit)}</span>`;
+                return `<div class="d-flex justify-content-between small text-muted"><span>${accountLabel}</span>${amountLabel}</div>`;
+            }).join('');
+
+            return `
+                <li class="list-group-item">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <strong>${label}</strong>
+                            <div class="text-muted small">${description}</div>
+                        </div>
+                        <div class="text-end small text-muted">${timestamp}</div>
+                    </div>
+                    <div class="mt-2">
+                        ${lineHtml || '<div class="text-muted small">No lines available</div>'}
+                    </div>
+                </li>
+            `;
+        }).join('');
+    }
+
+    function formatTimestamp(value) {
+        if (!value) {
+            return '—';
+        }
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) {
+            return value;
+        }
+        return date.toLocaleString(undefined, {
+            hour: '2-digit',
+            minute: '2-digit',
+            month: 'short',
+            day: 'numeric'
+        });
+    }
+
+    function formatCurrencyValue(amount) {
+        const value = Number(amount || 0);
+        const decimals = Number(currencyConfig.decimal_places ?? 2);
+        const formatted = value.toLocaleString(undefined, {
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals
+        });
+        if (!currencyConfig.symbol) {
+            return formatted;
+        }
+        return currencyConfig.position === 'after'
+            ? `${formatted} ${currencyConfig.symbol}`
+            : `${currencyConfig.symbol} ${formatted}`;
+    }
+
+    function escapeHtml(str) {
+        if (typeof str !== 'string') {
+            return '';
+        }
+        return str.replace(/[&<>'"]/g, char => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        })[char]);
+    }
+
+    document.addEventListener('DOMContentLoaded', initAccountingLiveWidgets);
+})();
 </script>
 
 <?php include 'includes/footer.php'; ?>

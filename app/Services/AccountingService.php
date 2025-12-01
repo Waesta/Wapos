@@ -15,7 +15,9 @@ class AccountingService
     private PDO $db;
     private ?bool $expenseCategoriesHaveAccountCode = null;
     private array $journalEntriesColumnPresence = [];
+    private array $journalEntryLinesColumnPresence = [];
     private bool $journalEntriesSchemaEnsured = false;
+    private bool $journalEntryLinesSchemaEnsured = false;
 
     // Standard account codes
     private const ACCOUNT_CASH = '1000';
@@ -33,6 +35,7 @@ class AccountingService
     {
         $this->db = $db;
         $this->ensureJournalEntriesSchema();
+        $this->ensureJournalEntryLinesSchema();
     }
 
     /**
@@ -388,6 +391,26 @@ class AccountingService
         return $this->journalEntriesColumnPresence[$column];
     }
 
+    private function hasJournalEntryLinesColumn(string $column): bool
+    {
+        if (array_key_exists($column, $this->journalEntryLinesColumnPresence)) {
+            return $this->journalEntryLinesColumnPresence[$column];
+        }
+
+        $stmt = $this->db->prepare(
+            "SELECT COUNT(*) AS column_exists
+             FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'journal_entry_lines'
+               AND COLUMN_NAME = ?"
+        );
+        $stmt->execute([$column]);
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        $this->journalEntryLinesColumnPresence[$column] = !empty($result['column_exists']);
+
+        return $this->journalEntryLinesColumnPresence[$column];
+    }
+
     private function ensureJournalEntriesSchema(): void
     {
         if ($this->journalEntriesSchemaEnsured) {
@@ -443,6 +466,50 @@ class AccountingService
         }
 
         $this->journalEntriesSchemaEnsured = true;
+    }
+
+    private function ensureJournalEntryLinesSchema(): void
+    {
+        if ($this->journalEntryLinesSchemaEnsured) {
+            return;
+        }
+
+        try {
+            $this->db->exec(
+                "CREATE TABLE IF NOT EXISTS journal_entry_lines (
+                    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                    journal_entry_id INT UNSIGNED NOT NULL,
+                    account_id INT UNSIGNED NULL,
+                    debit_amount DECIMAL(15,2) DEFAULT 0.00,
+                    credit_amount DECIMAL(15,2) DEFAULT 0.00,
+                    description VARCHAR(255) NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_journal_entry (journal_entry_id),
+                    INDEX idx_account (account_id)
+                ) ENGINE=InnoDB"
+            );
+        } catch (PDOException $e) {
+            error_log('Failed to ensure journal_entry_lines base table: ' . $e->getMessage());
+        }
+
+        $columnsToEnsure = [
+            'account_id' => "ALTER TABLE journal_entry_lines ADD COLUMN account_id INT UNSIGNED NULL AFTER journal_entry_id",
+            'debit_amount' => "ALTER TABLE journal_entry_lines ADD COLUMN debit_amount DECIMAL(15,2) DEFAULT 0.00 AFTER account_id",
+            'credit_amount' => "ALTER TABLE journal_entry_lines ADD COLUMN credit_amount DECIMAL(15,2) DEFAULT 0.00 AFTER debit_amount",
+        ];
+
+        foreach ($columnsToEnsure as $column => $ddl) {
+            if (!$this->hasJournalEntryLinesColumn($column)) {
+                try {
+                    $this->db->exec($ddl);
+                    $this->journalEntryLinesColumnPresence[$column] = true;
+                } catch (PDOException $e) {
+                    error_log('Failed to add journal_entry_lines column ' . $column . ': ' . $e->getMessage());
+                }
+            }
+        }
+
+        $this->journalEntryLinesSchemaEnsured = true;
     }
 
     /**

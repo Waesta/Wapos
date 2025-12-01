@@ -12,7 +12,7 @@ VALUES
     ('company_name', 'Waesta International Hospitality', 'Primary brand name displayed across the platform', NOW()),
     ('company_phone', '+254700000000', 'Main support line', NOW()),
     ('company_email', 'support@waesta.com', 'Official support email', NOW()),
-    ('default_currency', 'KES', 'Default currency code', NOW()),
+    ('default_currency', '', 'Default currency code', NOW()),
     ('timezone', 'Africa/Nairobi', 'Server/application timezone', NOW())
 ON DUPLICATE KEY UPDATE
     setting_value = VALUES(setting_value),

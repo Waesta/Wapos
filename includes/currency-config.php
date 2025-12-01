@@ -25,17 +25,26 @@ class CurrencyManager {
                 SettingsStore::persistMany($this->currency_settings);
                 return;
             }
-            $this->currency_settings = $settings;
+
+            if ($this->shouldNeutralizeLegacyDefaults($settings)) {
+                $this->setDefaultCurrencySettings();
+                SettingsStore::persistMany(array_merge($this->currency_settings, [
+                    'currency_neutralized_at' => date('c'),
+                ]));
+                return;
+            }
+
+            $this->currency_settings = array_merge($this->defaultCurrencySettings(), $settings);
         } catch (Exception $e) {
             $this->setDefaultCurrencySettings();
         }
     }
-    
-    private function setDefaultCurrencySettings() {
-        $this->currency_settings = [
-            'currency_code' => 'USD',
-            'currency_symbol' => '$',
-            'currency_name' => 'US Dollar',
+
+    private function defaultCurrencySettings(): array {
+        return [
+            'currency_code' => '',
+            'currency_symbol' => '',
+            'currency_name' => 'Default Currency',
             'currency_position' => 'before', // before or after
             'decimal_places' => 2,
             'decimal_separator' => '.',
@@ -44,16 +53,43 @@ class CurrencyManager {
         ];
     }
     
+    private function setDefaultCurrencySettings() {
+        $this->currency_settings = $this->defaultCurrencySettings();
+    }
+
+    private function shouldNeutralizeLegacyDefaults(array $settings): bool {
+        if (!empty($settings['currency_neutralized_at'])) {
+            return false;
+        }
+
+        $code = strtoupper(trim($settings['currency_code'] ?? ''));
+        $symbol = trim($settings['currency_symbol'] ?? '');
+        $name = trim($settings['currency_name'] ?? '');
+
+        $legacyCombos = [
+            ['code' => 'KES', 'symbol' => 'KSh', 'name' => 'Kenyan Shilling'],
+            ['code' => 'USD', 'symbol' => '$', 'name' => 'US Dollar'],
+        ];
+
+        foreach ($legacyCombos as $legacy) {
+            if ($code === $legacy['code'] && $symbol === $legacy['symbol'] && $name === $legacy['name']) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+    
     public function getCurrencyCode() {
-        return $this->currency_settings['currency_code'] ?? 'USD';
+        return trim($this->currency_settings['currency_code'] ?? '');
     }
     
     public function getCurrencySymbol() {
-        return $this->currency_settings['currency_symbol'] ?? '$';
+        return trim($this->currency_settings['currency_symbol'] ?? '');
     }
     
     public function getCurrencyName() {
-        return $this->currency_settings['currency_name'] ?? 'US Dollar';
+        return $this->currency_settings['currency_name'] ?? 'Default Currency';
     }
     
     public function formatMoney($amount, $showSymbol = false) {
@@ -69,6 +105,9 @@ class CurrencyManager {
         }
         
         $symbol = $this->getCurrencySymbol();
+        if ($symbol === '') {
+            return $formattedAmount;
+        }
         $position = $this->currency_settings['currency_position'] ?? 'before';
         
         if ($position === 'after') {
@@ -97,6 +136,7 @@ class CurrencyManager {
                 $this->currency_settings[$key] = $value;
             }
         }
+        SettingsStore::persist('currency_neutralized_at', date('c'));
     }
 }
 
@@ -108,9 +148,9 @@ function formatCurrency($amount, $showSymbol = false) {
 // Initialize default currency settings in database if they don't exist
 function initializeCurrencySettings() {
     $defaultSettings = [
-        'currency_code' => 'USD',
-        'currency_symbol' => '$',
-        'currency_name' => 'US Dollar',
+        'currency_code' => '',
+        'currency_symbol' => '',
+        'currency_name' => 'Default Currency',
         'currency_position' => 'before',
         'decimal_places' => '2',
         'decimal_separator' => '.',

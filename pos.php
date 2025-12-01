@@ -60,11 +60,110 @@ $gatewayProvider = strtolower((string)(settings('payments_gateway_provider') ?? 
 $isGatewayEnabled = in_array($gatewayProvider, ['relworx', 'pesapal'], true);
 $currencyCode = settings('currency_code') ?? 'KES';
 
+$latestSaleSnapshot = $db->fetchOne("SELECT id, sale_number, total_amount, payment_method, created_at FROM sales ORDER BY id DESC LIMIT 1");
+$latestSaleSnapshot = $latestSaleSnapshot ? [
+    'id' => (int)($latestSaleSnapshot['id'] ?? 0),
+    'sale_number' => $latestSaleSnapshot['sale_number'] ?? null,
+    'total_amount' => isset($latestSaleSnapshot['total_amount']) ? (float)$latestSaleSnapshot['total_amount'] : null,
+    'payment_method' => $latestSaleSnapshot['payment_method'] ?? null,
+    'created_at' => $latestSaleSnapshot['created_at'] ?? null,
+] : [
+    'id' => 0,
+    'sale_number' => null,
+    'total_amount' => null,
+    'payment_method' => null,
+    'created_at' => null,
+];
+
+$todaySalesStats = $db->fetchOne("SELECT COUNT(*) AS sale_count, COALESCE(SUM(total_amount), 0) AS total_amount FROM sales WHERE DATE(created_at) = CURDATE()");
+$liveSalesConfig = [
+    'latest_id' => $latestSaleSnapshot['id'],
+    'latest_sale_number' => $latestSaleSnapshot['sale_number'],
+    'latest_total' => $latestSaleSnapshot['total_amount'],
+    'latest_payment_method' => $latestSaleSnapshot['payment_method'],
+    'latest_created_at' => $latestSaleSnapshot['created_at'],
+    'today_count' => (int)($todaySalesStats['sale_count'] ?? 0),
+    'today_total' => (float)($todaySalesStats['total_amount'] ?? 0),
+];
+
 $pageTitle = 'Point of Sale';
 include 'includes/header.php';
 ?>
 
 <style>
+    .live-sales-card {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+        height: 100%;
+    }
+    .live-sales-metric {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+    }
+    .live-sales-feed {
+        max-height: 140px;
+        overflow: hidden;
+        padding-left: 1.25rem;
+        margin-bottom: 0;
+    }
+    .live-sales-feed li {
+        list-style: none;
+        padding: 0.35rem 0;
+        border-bottom: 1px dashed rgba(0,0,0,0.06);
+        display: flex;
+        justify-content: space-between;
+        gap: 0.75rem;
+        font-size: 0.92rem;
+    }
+    .live-sales-feed li:last-child {
+        border-bottom: none;
+    }
+    .live-sales-pill {
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+    .live-sales-pill[data-method="cash"] {
+        color: #0f5132;
+        background: rgba(25,135,84,.15);
+        border: 1px solid rgba(25,135,84,.2);
+        border-radius: 999px;
+        padding: 0.15rem 0.6rem;
+    }
+    .live-sales-pill[data-method="card"],
+    .live-sales-pill[data-method="mobile_money"],
+    .live-sales-pill[data-method="bank_transfer"] {
+        color: #084298;
+        background: rgba(13,110,253,.12);
+        border: 1px solid rgba(13,110,253,.15);
+        border-radius: 999px;
+        padding: 0.15rem 0.6rem;
+    }
+    .live-sales-pill[data-method="room_charge"] {
+        color: #664d03;
+        background: rgba(255,193,7,.15);
+        border: 1px solid rgba(255,193,7,.25);
+        border-radius: 999px;
+        padding: 0.15rem 0.6rem;
+    }
+    .live-sales-controls {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+    }
+    .live-sales-status-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #20c997;
+        display: inline-block;
+    }
+    .live-sales-status-dot[data-state="paused"] {
+        background: #dc3545;
+    }
     .pos-shell {
         display: flex;
         flex-direction: column;
@@ -236,7 +335,6 @@ include 'includes/header.php';
     <i class="bi bi-upc-scan"></i>
     <span id="scanFeedbackText"></span>
 </div>
-
 <div class="container-fluid py-4 pos-shell">
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
         <div class="stack-sm">
@@ -250,6 +348,55 @@ include 'includes/header.php';
             <button class="btn btn-outline-danger btn-icon" onclick="clearCart()">
                 <i class="bi bi-trash"></i><span>Clear Cart</span>
             </button>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-lg-4">
+            <div class="app-card live-sales-card" aria-live="polite">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <p class="text-muted mb-1 small">Today's Sales</p>
+                        <div class="live-sales-metric">
+                            <span class="fs-4 fw-semibold" id="liveSalesCount">0</span>
+                            <span class="text-muted small">transactions</span>
+                        </div>
+                    </div>
+                    <div class="text-end">
+                        <p class="text-muted mb-1 small">Value</p>
+                        <div class="fs-5 fw-semibold" id="liveSalesValue">0.00</div>
+                    </div>
+                </div>
+                <div class="bg-light p-3 rounded">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <small class="text-muted">Last ticket</small>
+                            <div class="fw-semibold" id="liveSalesLastRef">—</div>
+                        </div>
+                        <div class="text-end">
+                            <small class="text-muted">Time</small>
+                            <div class="fw-semibold small" id="liveSalesLastTime">—</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-8">
+            <div class="app-card h-100">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="live-sales-status-dot" id="liveSalesStatusDot"></div>
+                        <span class="fw-semibold">Live Activity</span>
+                    </div>
+                    <div class="live-sales-controls">
+                        <button class="btn btn-sm btn-outline-secondary" id="liveSalesToggleBtn" type="button">Pause</button>
+                        <button class="btn btn-sm btn-outline-primary" id="liveSalesRefreshBtn" type="button">Refresh</button>
+                    </div>
+                </div>
+                <ul class="live-sales-feed" id="liveSalesList">
+                    <li class="text-muted justify-content-center">Waiting for updates…</li>
+                </ul>
+            </div>
         </div>
     </div>
 
@@ -683,6 +830,10 @@ include 'includes/header.php';
 </div>
 
 <script>
+window.LIVE_SALES_CONFIG = <?= json_encode($liveSalesConfig, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+</script>
+
+<script>
 const CSRF_TOKEN = '<?= generateCSRFToken(); ?>';
 let cart = [];
 const TAX_RATE = 16; // Default tax rate percentage
@@ -700,6 +851,24 @@ const MOBILE_MONEY_POLL_MAX_ATTEMPTS = 30;
 const FINALIZE_BUTTON_DEFAULT_HTML = '<i class="bi bi-check-circle me-2"></i>Complete Transaction';
 const MOBILE_MONEY_SUCCESS_STATUSES = ['success', 'completed', 'paid', 'approved'];
 const MOBILE_MONEY_FAILURE_STATUSES = ['failed', 'declined', 'cancelled', 'expired', 'error'];
+const LIVE_SALES_CONFIG = window.LIVE_SALES_CONFIG || { latest_id: 0, today_count: 0, today_total: 0 };
+const liveSalesElements = {
+    count: null,
+    value: null,
+    lastRef: null,
+    lastTime: null,
+    list: null,
+    statusDot: null,
+    toggleBtn: null,
+};
+const liveSalesState = {
+    latestId: LIVE_SALES_CONFIG.latest_id || 0,
+    todayCount: LIVE_SALES_CONFIG.today_count || 0,
+    todayTotal: LIVE_SALES_CONFIG.today_total || 0,
+    paused: false,
+    timer: null,
+    channel: null,
+};
 
 const loyaltyState = {
     linked: false,

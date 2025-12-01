@@ -739,6 +739,8 @@ let deliveryPricingState = {
     auditRequestId: null,
     durationMinutes: null
 };
+const DELIVERY_FEE_RECALC_DELAY = 900;
+let deliveryFeeRecalcTimer = null;
 let deliveryMap = null;
 let deliveryMarker = null;
 let googleMapsLoadingPromise = null;
@@ -962,6 +964,7 @@ function updateDeliveryCoordinates(lat, lng, updateInputs = false) {
     }
     deliveryPricingState.lat = lat;
     deliveryPricingState.lng = lng;
+    scheduleDeliveryFeeRecalc();
 }
 
 function loadGoogleMaps() {
@@ -1030,7 +1033,6 @@ function applyManualDeliveryFee() {
     if (orderType === 'dine-in') {
         return;
     }
-
     const input = document.getElementById('deliveryFeeInput');
     if (!input) {
         return;
@@ -1049,6 +1051,7 @@ function applyManualDeliveryFee() {
         refreshDeliveryFeeMeta('Manual fee cleared. Using calculated fee.');
         toggleDeliveryFeeEdit(false);
         updateCart();
+        scheduleDeliveryFeeRecalc();
         return;
     }
 
@@ -1066,6 +1069,19 @@ function applyManualDeliveryFee() {
     refreshDeliveryFeeMeta();
     toggleDeliveryFeeEdit(false);
     updateCart();
+}
+
+function scheduleDeliveryFeeRecalc() {
+    if (orderType === 'dine-in') {
+        return;
+    }
+    if (deliveryFeeRecalcTimer) {
+        clearTimeout(deliveryFeeRecalcTimer);
+    }
+    deliveryFeeRecalcTimer = setTimeout(() => {
+        deliveryFeeRecalcTimer = null;
+        calculateDeliveryFee();
+    }, DELIVERY_FEE_RECALC_DELAY);
 }
 
 async function calculateDeliveryFee() {
@@ -1128,6 +1144,11 @@ async function calculateDeliveryFee() {
         deliveryPricingState.calculatedFee = typeof data.calculated_fee === 'number' ? Math.max(0, data.calculated_fee) : null;
         deliveryPricingState.fee = deliveryPricingState.calculatedFee !== null ? deliveryPricingState.calculatedFee : 0;
         deliveryPricingState.zone = data.zone || null;
+        deliveryPricingState.provider = data.provider || null;
+        deliveryPricingState.cacheHit = Boolean(data.cache_hit);
+        deliveryPricingState.fallbackUsed = Boolean(data.fallback_used);
+        deliveryPricingState.durationMinutes = typeof data.duration_minutes === 'number' ? data.duration_minutes : null;
+        deliveryPricingState.auditRequestId = data.audit_request_id || null;
         deliveryPricingState.lastCalculatedAt = new Date();
 
         refreshDeliveryFeeMeta();
@@ -1430,6 +1451,7 @@ async function submitOrder() {
         delivery_address: getInputValue('deliveryAddress') || null,
         delivery_latitude: getCoordinateValue('deliveryLatitude'),
         delivery_longitude: getCoordinateValue('deliveryLongitude'),
+        delivery_pricing_request_id: deliveryPricingState.auditRequestId || null,
         items: cart
     };
     if (paymentMethod === 'cash') {
@@ -2142,11 +2164,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     refreshDeliveryDetailsUI();
 
-    const roomBookingSelect = document.getElementById('roomBookingSelect');
-    if (roomBookingSelect) {
-        roomBookingSelect.addEventListener('change', () => {
-            updateButtonStates();
-        });
+    const roomSelect = document.getElementById('roomBookingSelect');
+    if (roomSelect) {
+        roomSelect.addEventListener('change', refreshPaymentUIState);
+    }
+
+    if (orderType !== 'dine-in') {
+        const latField = document.getElementById('deliveryLatitude');
+        const lngField = document.getElementById('deliveryLongitude');
+        const addressField = document.getElementById('deliveryAddress');
+        latField?.addEventListener('input', scheduleDeliveryFeeRecalc);
+        lngField?.addEventListener('input', scheduleDeliveryFeeRecalc);
+        addressField?.addEventListener('blur', scheduleDeliveryFeeRecalc);
     }
 
     if (!hydrated) {

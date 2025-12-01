@@ -148,6 +148,29 @@ $deliveryOrders = $db->fetchAll("
     ORDER BY o.created_at DESC
 ");
 
+$deliveryLiveConfig = [
+    'summary' => [
+        'pending' => count(array_filter($deliveryOrders, fn($o) => ($o['delivery_status'] ?? 'pending') === 'pending')),
+        'assigned' => count(array_filter($deliveryOrders, fn($o) => ($o['delivery_status'] ?? '') === 'assigned')),
+        'in_transit' => count(array_filter($deliveryOrders, fn($o) => in_array($o['delivery_status'] ?? '', ['picked-up','in-transit'], true))),
+        'active_riders' => $availableRiderCount,
+        'delivered_today' => (int)($todayDelivered['count'] ?? 0),
+        'timestamp' => date(DATE_ATOM),
+    ],
+    'deliveries' => array_map(function ($order) {
+        return [
+            'order_id' => (int)($order['id'] ?? 0),
+            'order_number' => $order['order_number'] ?? null,
+            'customer_name' => $order['customer_name'] ?? null,
+            'customer_phone' => $order['customer_phone'] ?? null,
+            'status' => $order['delivery_status'] ?? 'pending',
+            'total_amount' => isset($order['total_amount']) ? (float)$order['total_amount'] : null,
+            'created_at' => $order['created_at'] ?? null,
+            'rider_name' => $order['rider_name'] ?? null,
+        ];
+    }, array_slice($deliveryOrders, 0, 10)),
+];
+
 // Get pending deliveries
 $pendingDeliveries = $db->fetchAll("
     SELECT 
@@ -179,6 +202,65 @@ include 'includes/header.php';
         </ul>
     </div>
 <?php endif; ?>
+
+<div class="row g-3 mb-4" id="liveDeliveryWidgets">
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <p class="text-muted mb-1 small">Live Delivery Status</p>
+                        <h3 class="mb-0" id="liveDeliveryTotals">0 active</h3>
+                    </div>
+                    <div class="text-end">
+                        <small class="text-muted">Updated</small>
+                        <div class="fw-semibold small" id="liveDeliveryUpdated">—</div>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <div class="d-flex justify-content-between small mb-2">
+                        <span class="text-muted">Pending</span>
+                        <strong id="liveDeliveryPending">0</strong>
+                    </div>
+                    <div class="d-flex justify-content-between small mb-2">
+                        <span class="text-muted">Assigned</span>
+                        <strong id="liveDeliveryAssigned">0</strong>
+                    </div>
+                    <div class="d-flex justify-content-between small mb-2">
+                        <span class="text-muted">In Transit</span>
+                        <strong id="liveDeliveryTransit">0</strong>
+                    </div>
+                    <div class="d-flex justify-content-between small">
+                        <span class="text-muted">Delivered Today</span>
+                        <strong id="liveDeliveryToday">0</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body d-flex flex-column">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="live-sync-dot" id="liveDeliveryDot"></div>
+                        <span class="fw-semibold">Live Delivery Feed</span>
+                    </div>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-secondary" id="liveDeliveryToggle">Pause</button>
+                        <button class="btn btn-outline-primary" id="liveDeliveryRefresh">Refresh</button>
+                    </div>
+                </div>
+                <div class="small text-muted mb-2" id="liveDeliveryLabel">Live updates on</div>
+                <div class="flex-grow-1" style="overflow-y:auto; max-height:220px;">
+                    <ul class="list-group list-group-flush" id="liveDeliveryList">
+                        <li class="list-group-item text-muted text-center">Waiting for updates…</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 
 <?php if (isset($_SESSION['success_message'])): ?>
     <div class="alert alert-success"><?php echo $_SESSION['success_message']; unset($_SESSION['success_message']); ?></div>
@@ -627,6 +709,7 @@ include 'includes/header.php';
 const initialRiders = <?= json_encode($riders) ?>;
 const initialOrders = <?= json_encode($deliveryOrders) ?>;
 const deliveryConfig = <?= json_encode($deliveryConfig) ?>;
+const DELIVERY_LIVE_CONFIG = <?= json_encode($deliveryLiveConfig, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
 
 let currentOrderId = null;
 let latestRiders = Array.isArray(initialRiders) ? initialRiders : [];
@@ -652,6 +735,25 @@ let orderFilters = {
 };
 
 let lastSlaRiskIds = new Set();
+const DELIVERY_LIVE_POLL_INTERVAL = 15000;
+const deliveryLiveElements = {
+    totals: null,
+    updatedAt: null,
+    pending: null,
+    assigned: null,
+    transit: null,
+    today: null,
+    dot: null,
+    label: null,
+    list: null,
+    toggleBtn: null,
+    refreshBtn: null,
+};
+const deliveryLiveState = {
+    paused: false,
+    timer: null,
+    channel: null,
+};
 
 function isRiderAssignable(rider) {
     const status = (rider.status || '').toLowerCase();

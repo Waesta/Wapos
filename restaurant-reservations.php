@@ -51,7 +51,11 @@ include 'includes/header.php';
             <h1 class="mb-0"><i class="bi bi-calendar-week me-2"></i>Restaurant Reservations</h1>
             <p class="text-muted mb-0">Manage table bookings, track statuses, and coordinate seatings.</p>
         </div>
-        <div>
+        <div class="d-flex flex-column align-items-end gap-2">
+            <div class="d-flex align-items-center gap-2 small text-muted">
+                <div class="live-sync-dot" id="reservationSyncDot"></div>
+                <span id="reservationSyncLabel">Live updates on</span>
+            </div>
             <button class="btn btn-primary" id="newReservationBtn">
                 <i class="bi bi-plus-circle me-2"></i>Create Reservation
             </button>
@@ -415,6 +419,22 @@ include 'includes/header.php';
     </div>
 </div>
 
+<style>
+    .live-sync-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #20c997;
+    }
+    .live-sync-dot[data-state="syncing"] {
+        background: #0d6efd;
+        box-shadow: 0 0 0 4px rgba(13,110,253,.2);
+    }
+    .live-sync-dot[data-state="error"] {
+        background: #dc3545;
+    }
+</style>
+
 <script>
 const tables = <?= json_encode($tables, JSON_THROW_ON_ERROR); ?>;
 const STATUS_LABELS = {
@@ -529,6 +549,10 @@ function showAlert(type, message) {
 }
 
 const RESERVATION_GATEWAY = window.RESERVATION_GATEWAY_CONFIG || { enabled: false, provider: null, currency: (window.CURRENCY_CONFIG?.code || 'KES') };
+const AUTO_REFRESH_INTERVAL_MS = 15000;
+let reservationsAutoRefreshTimer = null;
+let reservationsLastSyncedAt = null;
+
 let depositGatewayReference = null;
 let depositGatewayPollTimeout = null;
 let depositGatewayPollAttempts = 0;
@@ -551,6 +575,7 @@ async function loadSummary() {
         }
     } catch (error) {
         console.error('Summary load failed', error);
+        throw error;
     }
 }
 
@@ -598,7 +623,48 @@ async function loadReservations() {
                     <i class="bi bi-exclamation-triangle me-2"></i>${error.message}
                 </td>
             </tr>`;
+        throw error;
     }
+}
+
+function updateLiveSyncIndicator(state, label) {
+    const dot = document.getElementById('reservationSyncDot');
+    const text = document.getElementById('reservationSyncLabel');
+    if (dot) {
+        dot.setAttribute('data-state', state);
+    }
+    if (text) {
+        text.textContent = label;
+    }
+}
+
+async function refreshReservations(triggeredByUser = false) {
+    if (reservationsAutoRefreshTimer) {
+        clearTimeout(reservationsAutoRefreshTimer);
+        reservationsAutoRefreshTimer = null;
+    }
+
+    updateLiveSyncIndicator('syncing', triggeredByUser ? 'Syncing…' : 'Auto-syncing…');
+
+    try {
+        await Promise.all([loadSummary(), loadReservations()]);
+        reservationsLastSyncedAt = new Date();
+        const label = reservationsLastSyncedAt
+            ? `Updated ${reservationsLastSyncedAt.toLocaleTimeString()}`
+            : 'Live updates on';
+        updateLiveSyncIndicator('live', label);
+    } catch (error) {
+        updateLiveSyncIndicator('error', 'Sync failed – retrying');
+    } finally {
+        scheduleReservationsAutoRefresh();
+    }
+}
+
+function scheduleReservationsAutoRefresh() {
+    if (document.hidden) {
+        return;
+    }
+    reservationsAutoRefreshTimer = setTimeout(() => refreshReservations(false), AUTO_REFRESH_INTERVAL_MS);
 }
 
 function renderReservationRow(reservation) {
@@ -910,8 +976,12 @@ const bootstrapInit = () => {
     });
     depositPaymentMethodField.addEventListener('change', handleDepositPaymentMethodChange);
     recordDepositPaymentBtn.addEventListener('click', recordDepositPayment);
-    loadSummary();
-    loadReservations();
+    refreshReservations(true);
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+            refreshReservations(false);
+        }
+    });
 };
 
 if (typeof bootstrap === 'undefined') {

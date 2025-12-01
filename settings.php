@@ -19,6 +19,7 @@ if (!$activeLoyaltyProgram) {
     $activeLoyaltyProgram = $loyaltyService->ensureDefaultProgram();
 }
 $loyaltyStats = $activeLoyaltyProgram ? $loyaltyService->getProgramStats((int)$activeLoyaltyProgram['id']) : null;
+$currencyManager = CurrencyManager::getInstance();
 $backupConfig = $backupService->getConfig();
 $backupLogs = $backupService->listBackups(25);
 $dataPortEntities = $dataPortService->getEntities();
@@ -320,8 +321,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Get current settings
+// Get current settings (after currency manager neutralization)
 $settings = settings();
+$settings['currency_code'] = $currencyManager->getCurrencyCode();
+$settings['currency_symbol'] = $currencyManager->getCurrencySymbol();
+$settings['currency_name'] = $currencyManager->getCurrencyName();
 
 $pageTitle = 'System Settings';
 include 'includes/header.php';
