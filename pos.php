@@ -3,6 +3,7 @@ require_once 'includes/bootstrap.php';
 $auth->requireLogin();
 
 $db = Database::getInstance();
+$currencyManager = CurrencyManager::getInstance();
 
 // Get active categories and products
 $categories = $db->fetchAll("SELECT * FROM categories WHERE is_active = 1 ORDER BY name");
@@ -58,7 +59,7 @@ try {
 
 $gatewayProvider = strtolower((string)(settings('payments_gateway_provider') ?? ''));
 $isGatewayEnabled = in_array($gatewayProvider, ['relworx', 'pesapal'], true);
-$currencyCode = settings('currency_code') ?? 'KES';
+$currencyCode = $currencyManager->getCurrencyCode();
 
 $latestSaleSnapshot = $db->fetchOne("SELECT id, sale_number, total_amount, payment_method, created_at FROM sales ORDER BY id DESC LIMIT 1");
 $latestSaleSnapshot = $latestSaleSnapshot ? [

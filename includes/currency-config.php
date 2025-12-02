@@ -105,8 +105,17 @@ class CurrencyManager {
         }
         
         $symbol = $this->getCurrencySymbol();
+        $position = $this->currency_settings['currency_position'] ?? 'before';
+
         if ($symbol === '') {
-            return $formattedAmount;
+            $code = strtoupper($this->getCurrencyCode());
+            if ($code === '') {
+                return $formattedAmount;
+            }
+
+            return $position === 'after'
+                ? $formattedAmount . ' ' . $code
+                : $code . ' ' . $formattedAmount;
         }
         $position = $this->currency_settings['currency_position'] ?? 'before';
         

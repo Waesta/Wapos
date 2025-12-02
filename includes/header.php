@@ -801,7 +801,15 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'module' => 'settings'
                             ],
                             [
-                                'roles' => ['admin'],
+                                'roles' => ['super_admin'],
+                                'href' => '/wapos/module-manager.php',
+                                'page' => 'module-manager.php',
+                                'icon' => 'bi-toggle2-on',
+                                'label' => 'Module Manager',
+                                'module' => 'settings'
+                            ],
+                            [
+                                'roles' => ['admin', 'developer'],
                                 'href' => '/wapos/settings.php',
                                 'page' => 'settings.php',
                                 'icon' => 'bi-gear',
@@ -815,14 +823,6 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'icon' => 'bi-currency-exchange',
                                 'label' => 'Currency',
                                 'module' => 'settings'
-                            ],
-                            [
-                                'roles' => ['admin','manager','super_admin'],
-                                'href' => '/wapos/settings.php#loyalty_rewards',
-                                'page' => 'settings.php',
-                                'icon' => 'bi-stars',
-                                'label' => 'Loyalty Settings',
-                                'module' => 'customers'
                             ]
                         ]
                     ]
