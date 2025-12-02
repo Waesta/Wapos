@@ -1,10 +1,14 @@
 <?php
 require_once 'includes/bootstrap.php';
+require_once __DIR__ . '/includes/promotion-spotlight.php';
 $auth->requireLogin();
 
 $db = Database::getInstance();
 $formErrors = [];
 $formData = [];
+$pdo = $db->getConnection();
+$activePromotions = loadActivePromotions($pdo);
+$canManagePromotions = $auth->hasRole(['admin','manager']);
 
 // Handle rider actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -202,6 +206,24 @@ include 'includes/header.php';
         </ul>
     </div>
 <?php endif; ?>
+
+<div class="row g-3 mb-3">
+    <div class="col-12">
+        <?php
+        renderPromotionSpotlight(
+            $activePromotions,
+            [
+                'title' => 'Delivery Promotions',
+                'description' => 'Upsell combos, free delivery thresholds, and rider incentives currently active.',
+                'icon' => 'bi-truck',
+                'context' => 'delivery',
+                'max_items' => 4,
+                'show_manage_link' => $canManagePromotions,
+            ]
+        );
+        ?>
+    </div>
+</div>
 
 <div class="row g-3 mb-4" id="liveDeliveryWidgets">
     <div class="col-lg-4">

@@ -67,6 +67,7 @@ if (!$data) {
 
 $db = Database::getInstance();
 ensureOrdersCompletedAtColumn($db);
+ensureOrderMetaTable($db);
 $action = $data['action'] ?? '';
 
 try {
@@ -126,9 +127,18 @@ function placeOrder($db, $data, $auth) {
             ? (float)$data['delivery_longitude']
             : null;
 
-        $subtotal = (float)$data['subtotal'];
-        $taxAmount = (float)$data['tax_amount'];
-        $discountAmount = (float)($data['discount_amount'] ?? 0);
+        $subtotal = (float)($data['subtotal'] ?? ($data['totals']['subtotal'] ?? 0));
+        $taxAmount = (float)($data['tax_amount'] ?? ($data['totals']['tax_amount'] ?? 0));
+        $promotionDiscount = isset($data['promotion_discount'])
+            ? (float)$data['promotion_discount']
+            : (float)($data['totals']['promotion_discount'] ?? 0);
+        $loyaltyDiscount = isset($data['loyalty_discount'])
+            ? (float)$data['loyalty_discount']
+            : (float)($data['totals']['loyalty_discount'] ?? 0);
+        if ($loyaltyDiscount < 0) {
+            $loyaltyDiscount = 0;
+        }
+        $discountAmount = max(0.0, $promotionDiscount + $loyaltyDiscount);
         $manualDeliveryFee = array_key_exists('delivery_fee', $data) && $data['delivery_fee'] !== ''
             ? (float)$data['delivery_fee']
             : null;
@@ -156,6 +166,16 @@ function placeOrder($db, $data, $auth) {
 
         $totalAmount = max(0, round($subtotal + $taxAmount + $deliveryFee - $discountAmount, 2));
 
+        $promotionSummary = [];
+        if (!empty($data['promotion_summary']) && is_array($data['promotion_summary'])) {
+            $promotionSummary = $data['promotion_summary'];
+        }
+
+        $loyaltyPayload = null;
+        if (!empty($data['loyalty_payload']) && is_array($data['loyalty_payload'])) {
+            $loyaltyPayload = $data['loyalty_payload'];
+        }
+
         // Generate order number
         $orderNumber = generateOrderNumber();
         
@@ -179,11 +199,27 @@ function placeOrder($db, $data, $auth) {
             'notes' => $data['notes'] ?? null,
             'status' => 'pending'
         ]);
-        
+
         if (!$orderId) {
             throw new Exception('Failed to create order record');
         }
-        
+
+        if (!empty($promotionSummary)) {
+            $db->insert('order_meta', [
+                'order_id' => $orderId,
+                'meta_key' => 'promotion_summary',
+                'meta_value' => json_encode($promotionSummary),
+            ]);
+        }
+
+        if ($loyaltyPayload !== null) {
+            $db->insert('order_meta', [
+                'order_id' => $orderId,
+                'meta_key' => 'loyalty_payload',
+                'meta_value' => json_encode($loyaltyPayload),
+            ]);
+        }
+
         // Insert order items
         foreach ($data['items'] as $item) {
             $db->insert('order_items', [
@@ -317,6 +353,7 @@ function processPayment($db, $data, $auth) {
     }
 
     $pdo = $db->getConnection();
+    ensureOrdersPaymentTrackingColumns($db);
     $billingService = new \App\Services\RestaurantBillingService($pdo);
     $billingService->ensureSchema();
 

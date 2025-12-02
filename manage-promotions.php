@@ -10,6 +10,24 @@ $service = new PromotionService($pdo);
 $service->ensureSchema();
 
 $products = $db->fetchAll("SELECT id, name FROM products WHERE is_active = 1 ORDER BY name") ?: [];
+$promotionModules = [
+    'pos' => [
+        'label' => 'Retail (POS)',
+        'description' => 'Front counter, walk-in, or shop sales',
+    ],
+    'restaurant' => [
+        'label' => 'Restaurant',
+        'description' => 'Dine-in, takeout, or bar orders',
+    ],
+    'rooms' => [
+        'label' => 'Rooms',
+        'description' => 'Room service / guest folios',
+    ],
+    'delivery' => [
+        'label' => 'Delivery',
+        'description' => 'Courier & dispatch flows',
+    ],
+];
 
 // Handle POST actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -99,13 +117,24 @@ $csrfToken = generateCSRFToken();
         color: var(--color-text-muted);
         font-weight: 600;
     }
+    .module-option {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        padding: 0.75rem 1rem;
+        min-width: 220px;
+        flex: 1;
+        background: var(--color-surface-subtle);
+    }
+    .module-option strong {
+        font-size: 0.95rem;
+    }
 </style>
 
 <div class="container-fluid py-4 promo-shell">
     <section class="d-flex flex-wrap justify-content-between align-items-center gap-3">
         <div>
             <h1 class="mb-1"><i class="bi bi-stars text-primary me-2"></i>Promotions</h1>
-            <p class="text-muted mb-0">Create scheduled offers for specific products, quantities, and days of the week.</p>
+            <p class="text-muted mb-0">Create scheduled offers for specific products, quantities, and days of the week. Scope each promotion to Retail, Restaurant, Rooms, or Delivery so teams only see relevant deals.</p>
         </div>
         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#promotionModal" onclick="startCreatePromotion()">
             <i class="bi bi-plus-circle me-2"></i>New Promotion
@@ -207,6 +236,22 @@ $csrfToken = generateCSRFToken();
                                             <?= $start ?> → <?= $end ?>
                                         </div>
                                     </div>
+                                    <div class="flex-grow-1">
+                                        <span class="promo-label">Modules</span>
+                                        <div class="d-flex flex-wrap gap-2 mt-1">
+                                            <?php
+                                            $modules = $promotion['applicable_modules'] ?? [];
+                                            if (empty($modules)) {
+                                                echo '<span class="badge bg-primary-subtle text-primary">All modules</span>';
+                                            } else {
+                                                foreach ($modules as $moduleKey) {
+                                                    $label = $promotionModules[$moduleKey]['label'] ?? ucfirst($moduleKey);
+                                                    echo '<span class="badge bg-light text-dark">' . htmlspecialchars($label) . '</span>';
+                                                }
+                                            }
+                                            ?>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
@@ -286,6 +331,24 @@ $csrfToken = generateCSRFToken();
                         <div class="col-12">
                             <label class="form-label">Description</label>
                             <textarea name="description" id="promoDescription" class="form-control" rows="2" placeholder="Optional details shown to staff"></textarea>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Applies to modules <span class="text-danger">*</span></label>
+                            <div class="d-flex flex-wrap gap-3">
+                                <?php foreach ($promotionModules as $key => $module): ?>
+                                <label class="module-option form-check mb-0">
+                                    <div class="d-flex align-items-start gap-2">
+                                        <input class="form-check-input module-checkbox mt-1" type="checkbox" name="applicable_modules[]" value="<?= htmlspecialchars($key) ?>" checked>
+                                        <div>
+                                            <strong><?= htmlspecialchars($module['label']) ?></strong>
+                                            <div class="text-muted small"><?= htmlspecialchars($module['description']) ?></div>
+                                        </div>
+                                    </div>
+                                </label>
+                                <?php endforeach; ?>
+                            </div>
+                            <small class="text-muted d-block mt-1">Select the sales flows that should see/apply this promotion.</small>
+                            <div class="text-danger small d-none" id="moduleError">Select at least one module.</div>
                         </div>
                     </div>
 
@@ -389,6 +452,8 @@ $csrfToken = generateCSRFToken();
     const discountFields = document.getElementById('discountFields');
     const minQuantity = document.getElementById('minQuantity');
     const minQuantityAlt = document.getElementById('minQuantityAlt');
+    const moduleCheckboxes = Array.from(document.querySelectorAll('.module-checkbox'));
+    const moduleError = document.getElementById('moduleError');
 
     function showBundleFields() {
         bundleFields.style.display = '';
@@ -404,6 +469,27 @@ $csrfToken = generateCSRFToken();
         minQuantityAlt.setAttribute('name', 'min_quantity');
     }
 
+    function setModuleCheckboxes(values) {
+        const normalized = Array.isArray(values) && values.length
+            ? values.map((value) => String(value).toLowerCase())
+            : null;
+
+        moduleCheckboxes.forEach((checkbox) => {
+            checkbox.checked = normalized ? normalized.includes(checkbox.value.toLowerCase()) : true;
+        });
+        moduleError.classList.add('d-none');
+    }
+
+    function validateModules() {
+        const hasSelection = moduleCheckboxes.some((checkbox) => checkbox.checked);
+        if (!hasSelection) {
+            moduleError.classList.remove('d-none');
+        } else {
+            moduleError.classList.add('d-none');
+        }
+        return hasSelection;
+    }
+
     promotionForm.addEventListener('change', (event) => {
         if (event.target.name === 'promotion_type') {
             if (event.target.value === 'bundle_price') {
@@ -411,6 +497,14 @@ $csrfToken = generateCSRFToken();
             } else {
                 showDiscountFields();
             }
+        } else if (event.target.classList.contains('module-checkbox')) {
+            validateModules();
+        }
+    });
+
+    promotionForm.addEventListener('submit', (event) => {
+        if (!validateModules()) {
+            event.preventDefault();
         }
     });
 
@@ -420,6 +514,7 @@ $csrfToken = generateCSRFToken();
         promotionId.value = '';
         promotionModalTitle.textContent = 'Create Promotion';
         showBundleFields();
+        setModuleCheckboxes(null);
         bootstrap.Modal.getOrCreateInstance(promotionModal).show();
     };
 
@@ -456,6 +551,7 @@ $csrfToken = generateCSRFToken();
         document.getElementById('startTime').value = promotion.start_time ? promotion.start_time.substring(0,5) : '';
         document.getElementById('endTime').value = promotion.end_time ? promotion.end_time.substring(0,5) : '';
         document.getElementById('isActive').checked = promotion.is_active === 1;
+        setModuleCheckboxes(Array.isArray(promotion.applicable_modules) ? promotion.applicable_modules : []);
 
         bootstrap.Modal.getOrCreateInstance(promotionModal).show();
     };

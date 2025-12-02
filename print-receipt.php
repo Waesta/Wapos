@@ -23,6 +23,16 @@ $items = $db->fetchAll("
     SELECT * FROM sale_items WHERE sale_id = ? ORDER BY id
 ", [$saleId]);
 
+$promotions = $db->fetchAll("
+    SELECT promotion_name, product_name, discount_amount, details
+    FROM sale_promotions
+    WHERE sale_id = ?
+    ORDER BY id
+", [$saleId]) ?: [];
+$promotionSavings = array_reduce($promotions, static function ($carry, $promo) {
+    return $carry + (float)($promo['discount_amount'] ?? 0);
+}, 0.0);
+
 $loyaltySummary = $db->fetchOne("SELECT * FROM sale_loyalty_summary WHERE sale_id = ?", [$saleId]);
 
 // Get settings
@@ -152,6 +162,32 @@ foreach ($settingsRaw as $setting) {
             font-size: 9px;
             font-weight: bold;
         }
+        .promo-breakdown {
+            border: 1px dashed #000;
+            padding: 6px;
+            margin: 8px 0;
+            font-size: 9px;
+        }
+        .promo-breakdown-header {
+            font-weight: bold;
+            text-transform: uppercase;
+            text-align: center;
+            margin-bottom: 4px;
+        }
+        .promo-breakdown ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .promo-breakdown li {
+            display: flex;
+            justify-content: space-between;
+            gap: 6px;
+            margin-bottom: 3px;
+        }
+        .promo-breakdown li span:last-child {
+            font-weight: 600;
+        }
         @media print {
             body {
                 width: 79.5mm;
@@ -253,6 +289,32 @@ foreach ($settingsRaw as $setting) {
         </div>
         <?php endforeach; ?>
     </div>
+
+    <?php if (!empty($promotions)): ?>
+    <div class="promo-breakdown">
+        <div class="promo-breakdown-header">Promotions Applied</div>
+        <ul>
+            <?php foreach ($promotions as $promotion): ?>
+            <li>
+                <span>
+                    <?= htmlspecialchars($promotion['promotion_name'] ?? 'Promo') ?>
+                    <?php if (!empty($promotion['product_name'])): ?>
+                        <small>(<?= htmlspecialchars($promotion['product_name']) ?>)</small>
+                    <?php endif; ?>
+                    <?php if (!empty($promotion['details'])): ?>
+                        <div style="font-size:8px; color:#666;"><?= htmlspecialchars($promotion['details']) ?></div>
+                    <?php endif; ?>
+                </span>
+                <span>-<?= formatMoney($promotion['discount_amount'] ?? 0) ?></span>
+            </li>
+            <?php endforeach; ?>
+        </ul>
+        <div style="display:flex; justify-content:space-between; border-top:1px dotted #000; padding-top:4px; margin-top:4px; font-weight:bold;">
+            <span>Total Savings</span>
+            <span>-<?= formatMoney($promotionSavings) ?></span>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <div class="totals">
         <div class="total-line">

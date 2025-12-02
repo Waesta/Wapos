@@ -18,13 +18,19 @@ class RestaurantBillingService
 
     public function ensureSchema(): void
     {
-        if ($this->schemaEnsured || $this->db->inTransaction()) {
+        if ($this->db->inTransaction()) {
+            return;
+        }
+
+        if ($this->schemaEnsured) {
+            $this->ensureOrderPaymentsColumns();
+            $this->ensureOrdersPaymentColumns();
             return;
         }
 
         $this->createOrderPaymentsTable();
-        $this->addColumnIfMissing('orders', 'tip_amount', "DECIMAL(15,2) NOT NULL DEFAULT 0 AFTER total_amount");
-        $this->addColumnIfMissing('orders', 'amount_paid', "DECIMAL(15,2) NOT NULL DEFAULT 0 AFTER tip_amount");
+        $this->ensureOrderPaymentsColumns();
+        $this->ensureOrdersPaymentColumns();
         $this->ensureIndex('order_payments', 'idx_order_payments_order', 'ADD INDEX idx_order_payments_order (order_id)');
         $this->ensureIndex('order_payments', 'idx_order_payments_method', 'ADD INDEX idx_order_payments_method (payment_method)');
 
@@ -159,16 +165,66 @@ class RestaurantBillingService
         }
     }
 
-    private function addColumnIfMissing(string $table, string $column, string $definition): void
+    private function columnExists(string $table, string $column): bool
     {
         $stmt = $this->db->prepare(
             'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = DATABASE() AND table_name = :table AND column_name = :column'
         );
         $stmt->execute([':table' => $table, ':column' => $column]);
-        $exists = (int)$stmt->fetchColumn() > 0;
+        return (int)$stmt->fetchColumn() > 0;
+    }
 
-        if (!$exists) {
+    private function ensureOrderPaymentsColumns(): void
+    {
+        // Metadata column (rename fallback if needed)
+        if (!$this->columnExists('order_payments', 'metadata')) {
+            if ($this->columnExists('order_payments', 'metadata_fallback')) {
+                $this->db->exec('ALTER TABLE order_payments CHANGE COLUMN metadata_fallback metadata LONGTEXT NULL');
+            } else {
+                $this->addJsonColumnIfMissing('order_payments', 'metadata', "metadata JSON NULL AFTER tip_amount", "metadata LONGTEXT NULL AFTER tip_amount");
+            }
+        }
+
+        // Tip amount column after amount
+        $this->addColumnIfMissing('order_payments', 'tip_amount', "tip_amount DECIMAL(15,2) NOT NULL DEFAULT 0 AFTER amount");
+
+        // recorded_by_user_id (rename legacy recorded_by)
+        if (!$this->columnExists('order_payments', 'recorded_by_user_id')) {
+            if ($this->columnExists('order_payments', 'recorded_by')) {
+                $this->db->exec('ALTER TABLE order_payments CHANGE COLUMN recorded_by recorded_by_user_id INT UNSIGNED NULL');
+            } else {
+                $this->addColumnIfMissing('order_payments', 'recorded_by_user_id', "recorded_by_user_id INT UNSIGNED NULL AFTER metadata");
+            }
+        }
+    }
+
+    private function ensureOrdersPaymentColumns(): void
+    {
+        $this->addColumnIfMissing('orders', 'tip_amount', "tip_amount DECIMAL(15,2) NOT NULL DEFAULT 0 AFTER total_amount");
+        $this->addColumnIfMissing('orders', 'amount_paid', "amount_paid DECIMAL(15,2) NOT NULL DEFAULT 0 AFTER tip_amount");
+    }
+
+    private function addColumnIfMissing(string $table, string $column, string $definition): void
+    {
+        if (!$this->columnExists($table, $column)) {
             $this->db->exec("ALTER TABLE {$table} ADD COLUMN {$definition}");
+        }
+    }
+
+    private function addJsonColumnIfMissing(string $table, string $column, string $definition, string $fallbackDefinition): void
+    {
+        if ($this->columnExists($table, $column)) {
+            return;
+        }
+
+        try {
+            $this->db->exec("ALTER TABLE {$table} ADD COLUMN {$definition}");
+        } catch (PDOException $e) {
+            if (stripos($e->getMessage(), 'Unknown data type') !== false) {
+                $this->db->exec("ALTER TABLE {$table} ADD COLUMN {$fallbackDefinition}");
+            } else {
+                throw $e;
+            }
         }
     }
 

@@ -44,6 +44,50 @@ class SystemBackupService
         ) ENGINE=InnoDB";
 
         $this->db->exec($sql);
+
+        $this->ensureColumnDefinition('backup_logs', 'status', "ENUM('success','failed','running') NOT NULL DEFAULT 'running'");
+        $this->ensureColumnExists('backup_logs', 'message', "TEXT NULL AFTER status");
+        $this->ensureColumnExists('backup_logs', 'storage_path', "VARCHAR(255) NOT NULL DEFAULT '' AFTER message");
+        $this->ensureColumnExists('backup_logs', 'initiated_by', "INT UNSIGNED NULL AFTER storage_path");
+        $this->ensureColumnExists('backup_logs', 'retention_days', "INT DEFAULT 30 AFTER initiated_by");
+    }
+
+    private function ensureColumnExists(string $table, string $column, string $definition): void
+    {
+        $query = "SELECT COUNT(*) AS cnt
+                  FROM information_schema.COLUMNS
+                  WHERE TABLE_SCHEMA = DATABASE()
+                    AND TABLE_NAME = :table
+                    AND COLUMN_NAME = :column";
+        $stmt = $this->db->prepare($query);
+        $stmt->execute([
+            ':table' => $table,
+            ':column' => $column,
+        ]);
+        $count = (int)($stmt->fetchColumn() ?: 0);
+        if ($count === 0) {
+            $this->db->exec(sprintf('ALTER TABLE %s ADD COLUMN %s %s', $table, $column, $definition));
+        }
+    }
+
+    private function ensureColumnDefinition(string $table, string $column, string $definition): void
+    {
+        $table = preg_replace('/[^a-zA-Z0-9_]/', '', $table);
+        $column = preg_replace('/[^a-zA-Z0-9_]/', '', $column);
+        $stmt = $this->db->query(sprintf("SHOW COLUMNS FROM `%s` LIKE '%s'", $table, $column));
+        $columnInfo = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$columnInfo) {
+            return;
+        }
+
+        $currentDefinition = strtolower($columnInfo['Type'] ?? '');
+        $expectedDefinition = strtolower($definition);
+
+        if ($currentDefinition === $expectedDefinition) {
+            return;
+        }
+
+        $this->db->exec(sprintf('ALTER TABLE %s MODIFY COLUMN %s %s', $table, $column, $definition));
     }
 
     /**

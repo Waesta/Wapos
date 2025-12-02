@@ -17,6 +17,7 @@ class SalesService
     private AccountingService $accountingService;
     private InventoryService $inventoryService;
     private bool $roomChargePaymentEnsured = false;
+    private bool $salePromotionsTableEnsured = false;
     private ?RoomBookingService $roomBookingService = null;
 
     public function __construct(PDO $db, AccountingService $accountingService, ?InventoryService $inventoryService = null)
@@ -182,6 +183,8 @@ class SalesService
                 $this->addSaleItem($saleId, $item);
             }
 
+            $this->saveSalePromotions($saleId, $data['promotions'] ?? []);
+
             // Update inventory via unified inventory service
             $this->updateInventory(
                 $data['items'],
@@ -279,6 +282,73 @@ class SalesService
             }
 
             throw $e;
+        }
+    }
+
+    private function ensureSalePromotionsTable(): void
+    {
+        if ($this->salePromotionsTableEnsured) {
+            return;
+        }
+
+        $this->db->exec(<<<SQL
+            CREATE TABLE IF NOT EXISTS sale_promotions (
+                id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                sale_id INT UNSIGNED NOT NULL,
+                promotion_id INT UNSIGNED NULL,
+                promotion_name VARCHAR(150) NULL,
+                product_id INT UNSIGNED NULL,
+                product_name VARCHAR(150) NULL,
+                discount_amount DECIMAL(15,2) NOT NULL DEFAULT 0,
+                details VARCHAR(255) NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_sale_promotions_sale (sale_id),
+                INDEX idx_sale_promotions_promo (promotion_id),
+                CONSTRAINT fk_sale_promotions_sale FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB
+        SQL);
+
+        $this->salePromotionsTableEnsured = true;
+    }
+
+    private function saveSalePromotions(int $saleId, array $promotions): void
+    {
+        if ($saleId <= 0) {
+            return;
+        }
+
+        $this->ensureSalePromotionsTable();
+
+        $this->db->prepare('DELETE FROM sale_promotions WHERE sale_id = ?')->execute([$saleId]);
+
+        if (empty($promotions)) {
+            return;
+        }
+
+        $insert = $this->db->prepare(
+            'INSERT INTO sale_promotions (sale_id, promotion_id, promotion_name, product_id, product_name, discount_amount, details)
+             VALUES (:sale_id, :promotion_id, :promotion_name, :product_id, :product_name, :discount_amount, :details)'
+        );
+
+        foreach ($promotions as $promotion) {
+            if (!is_array($promotion)) {
+                continue;
+            }
+
+            $discount = isset($promotion['discount']) ? (float)$promotion['discount'] : 0.0;
+            if ($discount <= 0) {
+                continue;
+            }
+
+            $insert->execute([
+                ':sale_id' => $saleId,
+                ':promotion_id' => isset($promotion['promotion_id']) ? (int)$promotion['promotion_id'] ?: null : null,
+                ':promotion_name' => isset($promotion['promotion_name']) ? (string)$promotion['promotion_name'] : null,
+                ':product_id' => isset($promotion['product_id']) ? (int)$promotion['product_id'] ?: null : null,
+                ':product_name' => isset($promotion['product_name']) ? (string)$promotion['product_name'] : null,
+                ':discount_amount' => $discount,
+                ':details' => isset($promotion['details']) ? (string)$promotion['details'] : null,
+            ]);
         }
     }
 

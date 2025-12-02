@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use DateInterval;
 use DateTimeImmutable;
 use DateTimeInterface;
 use Exception;
@@ -13,6 +12,8 @@ class PromotionService
 {
     private PDO $db;
     private bool $schemaEnsured = false;
+    /** @var array<int, string>|null */
+    private ?array $tableColumns = null;
 
     public function __construct(PDO $db)
     {
@@ -61,7 +62,131 @@ SQL;
             }
         }
 
+        $this->ensureAdditionalColumns();
+
         $this->schemaEnsured = true;
+    }
+
+    private function ensureAdditionalColumns(): void
+    {
+        $columns = $this->getPromotionColumns();
+
+        if (!in_array('name', $columns, true)) {
+            if (in_array('promotion_name', $columns, true)) {
+                $this->db->exec('ALTER TABLE pos_promotions CHANGE COLUMN promotion_name name VARCHAR(150) NOT NULL');
+            } else {
+                $this->db->exec('ALTER TABLE pos_promotions ADD COLUMN name VARCHAR(150) NOT NULL AFTER id');
+            }
+            $columns = $this->refreshPromotionColumns();
+        }
+
+        if (!in_array('promotion_type', $columns, true)) {
+            $this->db->exec("ALTER TABLE pos_promotions ADD COLUMN promotion_type ENUM('bundle_price','percent','fixed') NOT NULL DEFAULT 'bundle_price' AFTER name");
+            $columns = $this->refreshPromotionColumns();
+
+            if (in_array('discount_type', $columns, true)) {
+                $this->db->exec("UPDATE pos_promotions SET promotion_type = CASE WHEN discount_type = 'percent' THEN 'percent' ELSE 'fixed' END");
+            }
+        }
+
+        if (!in_array('min_quantity', $columns, true)) {
+            $this->db->exec('ALTER TABLE pos_promotions ADD COLUMN min_quantity INT UNSIGNED NOT NULL DEFAULT 1 AFTER promotion_type');
+            $columns = $this->refreshPromotionColumns();
+        }
+
+        if (!in_array('bundle_price', $columns, true)) {
+            $this->db->exec('ALTER TABLE pos_promotions ADD COLUMN bundle_price DECIMAL(15,2) NULL AFTER min_quantity');
+            $columns = $this->refreshPromotionColumns();
+        }
+
+        if (!in_array('discount_value', $columns, true)) {
+            $this->db->exec('ALTER TABLE pos_promotions ADD COLUMN discount_value DECIMAL(15,2) NULL AFTER bundle_price');
+        } else {
+            $this->db->exec('ALTER TABLE pos_promotions MODIFY COLUMN discount_value DECIMAL(15,2) NULL');
+        }
+
+        if (!in_array('applicable_modules', $columns, true)) {
+            $this->addColumnFallback(
+                "ALTER TABLE pos_promotions ADD COLUMN applicable_modules JSON NULL AFTER product_id",
+                "ALTER TABLE pos_promotions ADD COLUMN applicable_modules TEXT NULL AFTER product_id"
+            );
+            $columns = $this->refreshPromotionColumns();
+        }
+
+        if (!in_array('days_of_week', $columns, true)) {
+            $this->addColumnFallback(
+                "ALTER TABLE pos_promotions ADD COLUMN days_of_week JSON NULL AFTER applicable_modules",
+                "ALTER TABLE pos_promotions ADD COLUMN days_of_week TEXT NULL AFTER applicable_modules"
+            );
+            $columns = $this->refreshPromotionColumns();
+        }
+
+        if (!in_array('start_time', $columns, true)) {
+            $this->db->exec('ALTER TABLE pos_promotions ADD COLUMN start_time TIME NULL AFTER days_of_week');
+            $columns = $this->refreshPromotionColumns();
+        }
+
+        if (!in_array('end_time', $columns, true)) {
+            $this->db->exec('ALTER TABLE pos_promotions ADD COLUMN end_time TIME NULL AFTER start_time');
+            $columns = $this->refreshPromotionColumns();
+        }
+
+        if (in_array('start_date', $columns, true)) {
+            $this->db->exec('ALTER TABLE pos_promotions MODIFY COLUMN start_date DATE NULL');
+        } else {
+            $this->db->exec('ALTER TABLE pos_promotions ADD COLUMN start_date DATE NULL AFTER end_time');
+            $columns = $this->refreshPromotionColumns();
+        }
+
+        if (in_array('end_date', $columns, true)) {
+            $this->db->exec('ALTER TABLE pos_promotions MODIFY COLUMN end_date DATE NULL');
+        } else {
+            $this->db->exec('ALTER TABLE pos_promotions ADD COLUMN end_date DATE NULL AFTER start_date');
+            $columns = $this->refreshPromotionColumns();
+        }
+
+        if (!in_array('priority', $columns, true)) {
+            $this->db->exec('ALTER TABLE pos_promotions ADD COLUMN priority INT NOT NULL DEFAULT 100 AFTER is_active');
+            $columns = $this->refreshPromotionColumns();
+        }
+
+        if (!in_array('created_by', $columns, true)) {
+            $this->db->exec('ALTER TABLE pos_promotions ADD COLUMN created_by INT UNSIGNED NULL AFTER is_active');
+            $columns = $this->refreshPromotionColumns();
+        }
+    }
+
+    private function refreshPromotionColumns(): array
+    {
+        $this->tableColumns = null;
+        return $this->getPromotionColumns();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function getPromotionColumns(): array
+    {
+        if ($this->tableColumns !== null) {
+            return $this->tableColumns;
+        }
+
+        $stmt = $this->db->query("SHOW COLUMNS FROM pos_promotions");
+        $this->tableColumns = $stmt ? array_map(static fn($row) => $row['Field'], $stmt->fetchAll(PDO::FETCH_ASSOC)) : [];
+        return $this->tableColumns;
+    }
+
+    private function addColumnFallback(string $primarySql, string $fallbackSql): void
+    {
+        try {
+            $this->db->exec($primarySql);
+        } catch (PDOException $e) {
+            if (stripos($e->getMessage(), 'Unknown data type') !== false) {
+                $this->db->exec($fallbackSql);
+            } else {
+                throw $e;
+            }
+        }
     }
 
     /**
@@ -150,6 +275,7 @@ SQL;
             'min_quantity' => max(1, (int)($data['min_quantity'] ?? 1)),
             'bundle_price' => isset($data['bundle_price']) ? (float)$data['bundle_price'] : null,
             'discount_value' => isset($data['discount_value']) ? (float)$data['discount_value'] : null,
+            'applicable_modules' => $this->encodeModules($data['applicable_modules'] ?? null),
             'days_of_week' => $this->encodeDaysOfWeek($data['days_of_week'] ?? null),
             'start_time' => $this->normalizeTime($data['start_time'] ?? null),
             'end_time' => $this->normalizeTime($data['end_time'] ?? null),
@@ -290,6 +416,20 @@ SQL;
         if (isset($row['is_active'])) {
             $row['is_active'] = (int)$row['is_active'];
         }
+        if (isset($row['priority'])) {
+            $row['priority'] = (int)$row['priority'];
+        }
+
+        if (isset($row['applicable_modules']) && $row['applicable_modules'] !== null && $row['applicable_modules'] !== '') {
+            $decoded = json_decode($row['applicable_modules'], true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                $row['applicable_modules'] = array_values(array_filter(array_map('strval', (array)$decoded)));
+            } else {
+                $row['applicable_modules'] = [];
+            }
+        } else {
+            $row['applicable_modules'] = [];
+        }
 
         return $row;
     }
@@ -354,5 +494,236 @@ SQL;
 
         $timestamp = strtotime($value);
         return $timestamp ? date('Y-m-d', $timestamp) : null;
+    }
+
+    private function encodeModules($value): ?string
+    {
+        if ($value === null || $value === '' || $value === []) {
+            return null;
+        }
+
+        $modules = [];
+        if (is_string($value)) {
+            $parts = array_filter(array_map('trim', explode(',', $value)), 'strlen');
+            foreach ($parts as $part) {
+                $modules[] = strtolower($part);
+            }
+        } elseif (is_array($value)) {
+            foreach ($value as $part) {
+                if ($part === null) {
+                    continue;
+                }
+                $modules[] = strtolower(trim((string)$part));
+            }
+        }
+
+        $modules = array_values(array_unique(array_filter($modules, 'strlen')));
+
+        return !empty($modules) ? json_encode($modules) : null;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $items
+     * @return array{items: array<int, array<string, mixed>>, total_discount: float, applied: array<int, array<string, mixed>>}
+     */
+    public function applyPromotionsToItems(array $items, string $moduleScope = 'pos'): array
+    {
+        $moduleScope = strtolower(trim($moduleScope)) ?: 'pos';
+        $promotions = $this->getActivePromotionsForModule($moduleScope);
+        if (empty($promotions) || empty($items)) {
+            return [
+                'items' => $items,
+                'total_discount' => 0.0,
+                'applied' => [],
+            ];
+        }
+
+        $byProduct = [];
+        foreach ($promotions as $promotion) {
+            $byProduct[$promotion['product_id']][] = $promotion;
+        }
+
+        $quantities = [];
+        $unitPrices = [];
+        foreach ($items as $item) {
+            if (!isset($item['product_id'], $item['qty'], $item['price'])) {
+                continue;
+            }
+            $productId = (int)$item['product_id'];
+            $qty = (float)$item['qty'];
+            if ($qty <= 0) {
+                continue;
+            }
+            $quantities[$productId] = ($quantities[$productId] ?? 0.0) + $qty;
+            // prefer latest unit price
+            $unitPrices[$productId] = (float)$item['price'];
+        }
+
+        $allocations = [];
+        $applied = [];
+
+        foreach ($quantities as $productId => $quantity) {
+            if (empty($byProduct[$productId])) {
+                continue;
+            }
+            $unitPrice = $unitPrices[$productId] ?? 0.0;
+            $best = null;
+            foreach ($byProduct[$productId] as $promotion) {
+                $calc = $this->calculatePromotionDiscount($promotion, $unitPrice, $quantity);
+                if ($calc === null) {
+                    continue;
+                }
+                if ($best === null || $calc['discount'] > $best['discount']) {
+                    $best = $calc;
+                }
+            }
+
+            if ($best === null || $best['discount'] <= 0) {
+                continue;
+            }
+
+            $allocations[$productId] = [
+                'remaining_units' => $best['discount_units'],
+                'per_unit_discount' => $best['per_unit_discount'],
+                'discount' => $best['discount'],
+            ];
+            $applied[] = [
+                'promotion_id' => $best['promotion']['id'],
+                'product_id' => $productId,
+                'discount' => $best['discount'],
+                'details' => $best['details'],
+            ];
+        }
+
+        if (empty($allocations)) {
+            return [
+                'items' => $items,
+                'total_discount' => 0.0,
+                'applied' => [],
+            ];
+        }
+
+        $totalDiscount = 0.0;
+        foreach ($items as $index => $item) {
+            $productId = isset($item['product_id']) ? (int)$item['product_id'] : null;
+            if ($productId === null || empty($allocations[$productId])) {
+                continue;
+            }
+            $lineQty = (float)($item['qty'] ?? 0);
+            if ($lineQty <= 0) {
+                continue;
+            }
+
+            $allocation = &$allocations[$productId];
+            if ($allocation['remaining_units'] <= 0) {
+                continue;
+            }
+
+            $discountableQty = min($lineQty, $allocation['remaining_units']);
+            if ($discountableQty <= 0) {
+                continue;
+            }
+
+            $lineDiscount = $discountableQty * $allocation['per_unit_discount'];
+            $allocation['remaining_units'] -= $discountableQty;
+            $allocation['discount'] -= $lineDiscount;
+
+            $items[$index]['discount'] = round((isset($item['discount']) ? (float)$item['discount'] : 0.0) + $lineDiscount, 2);
+            $totalDiscount += $lineDiscount;
+
+            if ($allocation['remaining_units'] <= 0 || $allocation['discount'] <= 0.0001) {
+                unset($allocations[$productId]);
+            }
+        }
+
+        return [
+            'items' => $items,
+            'total_discount' => round($totalDiscount, 2),
+            'applied' => $applied,
+        ];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function getActivePromotionsForModule(?string $module = null): array
+    {
+        $moduleKey = $module ? strtolower(trim($module)) : null;
+        $promotions = $this->getActivePromotions();
+        if ($moduleKey === null) {
+            return $promotions;
+        }
+
+        return array_values(array_filter($promotions, static function ($promotion) use ($moduleKey) {
+            $modules = $promotion['applicable_modules'] ?? [];
+            if (empty($modules)) {
+                return true;
+            }
+            return in_array($moduleKey, $modules, true);
+        }));
+    }
+
+    private function calculatePromotionDiscount(array $promotion, float $unitPrice, float $quantity): ?array
+    {
+        $minQty = max(1, (int)($promotion['min_quantity'] ?? 1));
+        if ($quantity < $minQty || $unitPrice <= 0) {
+            return null;
+        }
+
+        $type = $promotion['promotion_type'];
+        $discount = 0.0;
+        $discountUnits = 0.0;
+        $perUnitDiscount = 0.0;
+        $details = '';
+
+        if ($type === 'bundle_price') {
+            if (!isset($promotion['bundle_price'])) {
+                return null;
+            }
+            $bundlePrice = (float)$promotion['bundle_price'];
+            $groups = (int) floor($quantity / $minQty);
+            if ($groups <= 0) {
+                return null;
+            }
+            $regular = $unitPrice * $minQty;
+            $savingsPerBundle = max(0.0, $regular - $bundlePrice);
+            if ($savingsPerBundle <= 0) {
+                return null;
+            }
+            $discount = $savingsPerBundle * $groups;
+            $discountUnits = $groups * $minQty;
+            $perUnitDiscount = $savingsPerBundle / $minQty;
+            $details = sprintf('%d bundle(s) applied', $groups);
+        } elseif ($type === 'percent') {
+            $percent = max(0.0, min(100.0, (float)($promotion['discount_value'] ?? 0)));
+            if ($percent <= 0) {
+                return null;
+            }
+            $discountUnits = $quantity;
+            $perUnitDiscount = $unitPrice * ($percent / 100);
+            $discount = $perUnitDiscount * $discountUnits;
+            $details = sprintf('%.1f%% off', $percent);
+        } else { // fixed
+            $value = max(0.0, (float)($promotion['discount_value'] ?? 0));
+            if ($value <= 0) {
+                return null;
+            }
+            $perUnitDiscount = min($value, $unitPrice);
+            $discountUnits = $quantity;
+            $discount = $perUnitDiscount * $discountUnits;
+            $details = sprintf('%s off per unit', number_format($perUnitDiscount, 2));
+        }
+
+        if ($discount <= 0 || $discountUnits <= 0 || $perUnitDiscount <= 0) {
+            return null;
+        }
+
+        return [
+            'discount' => $discount,
+            'discount_units' => $discountUnits,
+            'per_unit_discount' => $perUnitDiscount,
+            'promotion' => $promotion,
+            'details' => $details,
+        ];
     }
 }

@@ -1,5 +1,7 @@
 <?php
 require_once 'includes/bootstrap.php';
+require_once __DIR__ . '/includes/promotion-spotlight.php';
+use App\Services\PromotionService;
 $auth->requireLogin();
 
 $db = Database::getInstance();
@@ -10,6 +12,14 @@ $categories = $db->fetchAll("SELECT * FROM categories WHERE is_active = 1 ORDER 
 $products = $db->fetchAll("SELECT * FROM products WHERE is_active = 1 ORDER BY name");
 
 $pdo = $db->getConnection();
+$activePromotions = loadActivePromotions($pdo);
+$canManagePromotions = $auth->hasRole(['admin','manager']);
+$promotionService = new PromotionService($pdo);
+try {
+    $posAppliedPromotions = $promotionService->getActivePromotionsForModule('pos');
+} catch (Throwable $e) {
+    $posAppliedPromotions = [];
+}
 $checkedInRooms = [];
 
 try {
@@ -353,6 +363,24 @@ include 'includes/header.php';
     </div>
 
     <div class="row g-3">
+        <div class="col-12">
+            <?php
+            renderPromotionSpotlight(
+                $activePromotions,
+                [
+                    'title' => 'Retail Promotions',
+                    'description' => 'Active bundle and discount offers apply automatically at checkout.',
+                    'icon' => 'bi-stars',
+                    'context' => 'pos',
+                    'max_items' => 3,
+                    'show_manage_link' => $canManagePromotions,
+                ]
+            );
+            ?>
+        </div>
+    </div>
+
+    <div class="row g-3">
         <div class="col-lg-4">
             <div class="app-card live-sales-card" aria-live="polite">
                 <div class="d-flex justify-content-between align-items-center">
@@ -555,13 +583,17 @@ include 'includes/header.php';
                         <span class="text-muted">Subtotal</span>
                         <strong id="subtotal">0.00</strong>
                     </div>
+                    <div class="d-flex justify-content-between mb-2 text-success d-none" id="promotionDiscountRow">
+                        <span class="text-muted">Promotion Savings</span>
+                        <strong id="promotionDiscountValue">-0.00</strong>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2 text-success d-none" id="loyaltyDiscountRow">
+                        <span class="text-muted">Loyalty Savings</span>
+                        <strong id="loyaltyDiscountValue">-0.00</strong>
+                    </div>
                     <div class="d-flex justify-content-between mb-2">
                         <span class="text-muted">Tax (<span id="taxRate">0</span>%)</span>
                         <strong id="taxAmount">0.00</strong>
-                    </div>
-                    <div class="d-flex justify-content-between mb-2 d-none" id="loyaltyDiscountRow">
-                        <span class="text-muted">Loyalty Discount</span>
-                        <strong class="text-success" id="loyaltyDiscountAmount">-0.00</strong>
                     </div>
                     <div class="d-flex justify-content-between align-items-center py-2 border-top border-bottom my-2">
                         <span class="fw-semibold">Total Due</span>
@@ -701,6 +733,10 @@ include 'includes/header.php';
                                     <span class="text-muted">Tax</span>
                                     <span id="confirmTax">0.00</span>
                                 </div>
+                                <div class="d-flex justify-content-between text-success d-none" id="confirmPromotionDiscountRow">
+                                    <span class="text-muted">Promotion Savings</span>
+                                    <span id="confirmPromotionDiscount">-0.00</span>
+                                </div>
                                 <div class="d-flex justify-content-between align-items-center py-2 border-top">
                                     <strong>Total</strong>
                                     <strong id="confirmTotal" class="text-primary">0.00</strong>
@@ -709,9 +745,9 @@ include 'includes/header.php';
                                     <span class="text-muted">Payment Method</span>
                                     <span id="confirmPaymentMethod">Cash</span>
                                 </div>
-                                <div class="d-flex justify-content-between d-none" id="confirmLoyaltyDiscountRow">
-                                    <span class="text-muted">Loyalty Discount</span>
-                                    <span id="confirmLoyaltyDiscount" class="text-success">-0.00</span>
+                                <div class="d-flex justify-content-between text-success d-none" id="confirmLoyaltyDiscountRow">
+                                    <span class="text-muted">Loyalty Savings</span>
+                                    <span id="confirmLoyaltyDiscount">-0.00</span>
                                 </div>
                                 <div class="d-flex justify-content-between d-none" id="confirmRoomChargeRow">
                                     <span class="text-muted">Charged To</span>
@@ -831,7 +867,9 @@ include 'includes/header.php';
 </div>
 
 <script>
-window.LIVE_SALES_CONFIG = <?= json_encode($liveSalesConfig, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+window.EXISTING_ORDER_META = <?= json_encode($existingOrderMeta, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+window.EXISTING_ORDER_ITEMS = <?= json_encode($existingItemsPayload, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+window.ACTIVE_POS_PROMOTIONS = <?= json_encode($posAppliedPromotions, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
 </script>
 
 <script>
@@ -839,9 +877,190 @@ const CSRF_TOKEN = '<?= generateCSRFToken(); ?>';
 let cart = [];
 const TAX_RATE = 16; // Default tax rate percentage
 
-// Currency configuration from PHP
-const CURRENCY_CONFIG = <?= json_encode(CurrencyManager::getInstance()->getJavaScriptConfig()) ?>;
-const CURRENCY_CODE = '<?= addslashes($currencyCode) ?>';
+const POS_PROMOTIONS = Array.isArray(window.ACTIVE_POS_PROMOTIONS)
+    ? window.ACTIVE_POS_PROMOTIONS.map((promotion) => ({
+        ...promotion,
+        id: Number(promotion.id),
+        product_id: Number(promotion.product_id),
+        min_quantity: Math.max(1, Number(promotion.min_quantity ?? 1)),
+        bundle_price: promotion.bundle_price !== null ? parseFloat(promotion.bundle_price) : null,
+        discount_value: promotion.discount_value !== null ? parseFloat(promotion.discount_value) : null,
+        promotion_type: (promotion.promotion_type || 'bundle_price').toLowerCase()
+    }))
+    : [];
+let currentPromotionSummary = { totalDiscount: 0, applied: [] };
+let currentCartTotals = {
+    grossSubtotal: 0,
+    promotionDiscount: 0,
+    netSubtotal: 0,
+    taxAmount: 0,
+    loyaltyDiscount: 0,
+    totalDueBeforeLoyalty: 0,
+    totalDue: 0
+};
+const CURRENCY_DECIMALS = Number(CURRENCY_CONFIG.decimal_places ?? 2);
+
+function roundCurrency(value) {
+    const factor = Math.pow(10, CURRENCY_DECIMALS);
+    return Math.round((Number(value) || 0) * factor) / factor;
+}
+
+function evaluatePromotionOption(promotion, unitPrice, quantity) {
+    const minQty = Math.max(1, Number(promotion.min_quantity ?? 1));
+    if (quantity < minQty || unitPrice <= 0) {
+        return null;
+    }
+
+    let discount = 0;
+    let discountUnits = 0;
+    let perUnitDiscount = 0;
+    let details = '';
+    const type = promotion.promotion_type;
+
+    if (type === 'bundle_price') {
+        const bundlePrice = promotion.bundle_price !== null ? Number(promotion.bundle_price) : null;
+        if (bundlePrice === null) {
+            return null;
+        }
+        const groups = Math.floor(quantity / minQty);
+        if (groups <= 0) {
+            return null;
+        }
+        const regular = unitPrice * minQty;
+        const savingsPerBundle = Math.max(0, regular - bundlePrice);
+        if (savingsPerBundle <= 0) {
+            return null;
+        }
+        discount = savingsPerBundle * groups;
+        discountUnits = groups * minQty;
+        perUnitDiscount = savingsPerBundle / minQty;
+        details = `${groups} bundle${groups > 1 ? 's' : ''}`;
+    } else if (type === 'percent') {
+        const percent = Math.max(0, Math.min(100, Number(promotion.discount_value ?? 0)));
+        if (percent <= 0) {
+            return null;
+        }
+        perUnitDiscount = unitPrice * (percent / 100);
+        discountUnits = quantity;
+        discount = perUnitDiscount * discountUnits;
+        details = `${percent.toFixed(1).replace(/\.0$/, '')}% off`;
+    } else {
+        const value = Math.max(0, Number(promotion.discount_value ?? 0));
+        if (value <= 0) {
+            return null;
+        }
+        perUnitDiscount = Math.min(value, unitPrice);
+        discountUnits = quantity;
+        discount = perUnitDiscount * discountUnits;
+        details = `${formatCurrency(perUnitDiscount)} off each`;
+    }
+
+    perUnitDiscount = Math.min(perUnitDiscount, unitPrice);
+    discount = roundCurrency(discount);
+    if (discount <= 0 || discountUnits <= 0 || perUnitDiscount <= 0) {
+        return null;
+    }
+
+    return {
+        discount,
+        discount_units: discountUnits,
+        per_unit_discount: perUnitDiscount,
+        promotion,
+        details
+    };
+}
+
+function calculateCartPromotions(cartItems) {
+    if (!POS_PROMOTIONS.length || cartItems.length === 0) {
+        return {
+            perLineDiscounts: new Array(cartItems.length).fill(0),
+            totalDiscount: 0,
+            applied: []
+        };
+    }
+
+    const productMap = new Map();
+    cartItems.forEach((item, index) => {
+        const productId = Number(item.id);
+        if (!productId) {
+            return;
+        }
+        if (!productMap.has(productId)) {
+            productMap.set(productId, {
+                quantity: 0,
+                unitPrice: Number(item.price),
+                name: item.name ?? null,
+                lines: []
+            });
+        }
+        const entry = productMap.get(productId);
+        entry.quantity += Number(item.quantity);
+        entry.unitPrice = Number(item.price);
+        if (!entry.name && item.name) {
+            entry.name = item.name;
+        }
+        entry.lines.push({ index, quantity: Number(item.quantity) });
+    });
+
+    const perLineDiscounts = new Array(cartItems.length).fill(0);
+    const applied = [];
+    let totalDiscount = 0;
+
+    productMap.forEach((entry, productId) => {
+        const promotions = POS_PROMOTIONS.filter(promo => promo.product_id === productId);
+        if (!promotions.length) {
+            return;
+        }
+
+        let bestOption = null;
+        promotions.forEach(promo => {
+            const result = evaluatePromotionOption(promo, entry.unitPrice, entry.quantity);
+            if (result && (!bestOption || result.discount > bestOption.discount)) {
+                bestOption = result;
+            }
+        });
+
+        if (!bestOption) {
+            return;
+        }
+
+        let remainingUnits = bestOption.discount_units;
+        let allocatedDiscount = 0;
+
+        entry.lines.forEach(line => {
+            if (remainingUnits <= 0) {
+                return;
+            }
+            const qty = Math.min(line.quantity, remainingUnits);
+            if (qty <= 0) {
+                return;
+            }
+            const lineDiscount = roundCurrency(qty * bestOption.per_unit_discount);
+            perLineDiscounts[line.index] += lineDiscount;
+            remainingUnits -= qty;
+            allocatedDiscount += lineDiscount;
+            totalDiscount += lineDiscount;
+        });
+
+        if (allocatedDiscount > 0) {
+            applied.push({
+                promotion_id: bestOption.promotion.id,
+                promotion_name: bestOption.promotion.name ?? null,
+                product_id: productId,
+                product_name: entry.name ?? null,
+                discount: roundCurrency(allocatedDiscount),
+                details: bestOption.details
+            });
+        }
+    });
+
+    return {
+        perLineDiscounts,
+        totalDiscount: roundCurrency(totalDiscount),
+        applied
+    };
+}
+
 const MOBILE_MONEY_GATEWAY_ENABLED = <?= $isGatewayEnabled ? 'true' : 'false' ?>;
 const MOBILE_MONEY_GATEWAY_PROVIDER = '<?= addslashes($gatewayProvider) ?>';
 let mobileMoneyPollTimeout = null;
@@ -1293,10 +1512,12 @@ function updateCart() {
     const cartDiv = document.getElementById('cartItems');
     const cartCountEl = document.getElementById('cartItemCount');
     const cartStatusEl = document.getElementById('cartStatus');
-
     if (!cartDiv) {
         return;
     }
+
+    const promotionSummary = calculateCartPromotions(cart);
+    currentPromotionSummary = promotionSummary;
 
     if (cart.length === 0) {
         cartDiv.innerHTML = `
@@ -1313,12 +1534,19 @@ function updateCart() {
     } else {
         let html = '<div class="d-flex flex-column gap-2">';
         cart.forEach((item, index) => {
+            const lineSubtotal = Number(item.price) * Number(item.quantity);
+            const lineDiscount = promotionSummary.perLineDiscounts[index] ?? 0;
+            item.discount = roundCurrency(lineDiscount);
+            item.total = roundCurrency(lineSubtotal - item.discount);
+            const hasDiscount = item.discount > 0;
+
             html += `
                 <div class="cart-line">
                     <div class="d-flex justify-content-between align-items-start gap-2">
                         <div>
                             <div class="fw-semibold">${item.name}</div>
                             <div class="text-muted small">${formatCurrency(item.price)} × ${item.quantity}</div>
+                            ${hasDiscount ? `<div class="text-success small">-${formatCurrency(item.discount)} promo</div>` : ''}
                         </div>
                         <button class="btn btn-sm btn-outline-danger" onclick="removeFromCart(${index})" aria-label="Remove ${item.name}">
                             <i class="bi bi-x"></i>
@@ -1348,14 +1576,52 @@ function updateCart() {
         cartCountEl.textContent = totalItems;
     }
 
-    const subtotal = cart.reduce((sum, item) => sum + item.total, 0);
-    const taxAmount = subtotal * (TAX_RATE / 100);
-    const total = subtotal + taxAmount;
+    const grossSubtotal = cart.reduce((sum, item, index) => sum + (Number(item.price) * Number(item.quantity)), 0);
+    const promotionDiscount = Math.min(grossSubtotal, promotionSummary.totalDiscount || 0);
+    const netSubtotal = Math.max(0, grossSubtotal - promotionDiscount);
+    const taxAmount = roundCurrency(netSubtotal * (TAX_RATE / 100));
+    const loyaltyDiscount = roundCurrency(getLoyaltyDiscountValue(netSubtotal, taxAmount));
+    const totalDueBeforeLoyalty = roundCurrency(netSubtotal + taxAmount);
+    const totalDue = Math.max(0, roundCurrency(totalDueBeforeLoyalty - loyaltyDiscount));
 
-    document.getElementById('subtotal').textContent = formatCurrency(subtotal);
+    currentCartTotals = {
+        grossSubtotal: roundCurrency(grossSubtotal),
+        promotionDiscount,
+        netSubtotal: roundCurrency(netSubtotal),
+        taxAmount,
+        loyaltyDiscount,
+        totalDueBeforeLoyalty,
+        totalDue
+    };
+
+    document.getElementById('subtotal').textContent = formatCurrency(netSubtotal);
     document.getElementById('taxRate').textContent = TAX_RATE;
     document.getElementById('taxAmount').textContent = formatCurrency(taxAmount);
-    document.getElementById('total').textContent = formatCurrency(total);
+    document.getElementById('total').textContent = formatCurrency(totalDue);
+
+    const promoRow = document.getElementById('promotionDiscountRow');
+    const promoValue = document.getElementById('promotionDiscountValue');
+    if (promoRow && promoValue) {
+        if (promotionDiscount > 0) {
+            promoRow.classList.remove('d-none');
+            promoValue.textContent = '-' + formatCurrency(promotionDiscount);
+        } else {
+            promoRow.classList.add('d-none');
+            promoValue.textContent = '-0.00';
+        }
+    }
+
+    const loyaltyRow = document.getElementById('loyaltyDiscountRow');
+    const loyaltyValue = document.getElementById('loyaltyDiscountValue');
+    if (loyaltyRow && loyaltyValue) {
+        if (loyaltyDiscount > 0) {
+            loyaltyRow.classList.remove('d-none');
+            loyaltyValue.textContent = '-' + formatCurrency(loyaltyDiscount);
+        } else {
+            loyaltyRow.classList.add('d-none');
+            loyaltyValue.textContent = '-0.00';
+        }
+    }
 
     refreshPaymentUIState();
     updateHoldOrderButton();
@@ -1656,7 +1922,7 @@ function calculateChange() {
         return;
     }
 
-    const total = cart.reduce((sum, item) => sum + item.total, 0) * (1 + TAX_RATE / 100);
+    const total = currentCartTotals.totalDue || 0;
     const tendered = parseFloat(amountField.value) || 0;
     const change = tendered - total;
 
@@ -1733,15 +1999,19 @@ function processPayment() {
         return;
     }
     
+    updateCart();
+    const totals = { ...currentCartTotals };
+    const subtotal = totals.netSubtotal;
+    const taxAmount = totals.taxAmount;
+    const totalDue = totals.totalDue;
+
     const paymentMethod = document.getElementById('paymentMethod').value;
     const customerNameInput = document.getElementById('customerName');
     const customerNameValue = customerNameInput ? customerNameInput.value.trim() : '';
     const contactPhoneInput = document.getElementById('customerPhone');
     const contactPhoneValue = contactPhoneInput ? contactPhoneInput.value.trim() : '';
-    const subtotal = cart.reduce((sum, item) => sum + item.total, 0);
-    const taxAmount = subtotal * (TAX_RATE / 100);
-    const total = subtotal + taxAmount;
-    
+    const total = totalDue;
+
     let amountPaid = total;
     let changeAmount = 0;
     let roomBookingId = null;
@@ -1792,6 +2062,8 @@ function processPayment() {
     const extras = {
         customerName: customerNameValue || null,
         customerContactPhone: contactPhoneValue || null,
+        cartTotals: totals,
+        promotionSummary: currentPromotionSummary,
     };
     if (paymentMethod === 'room_charge') {
         extras.roomBookingId = roomBookingId;
@@ -1813,17 +2085,53 @@ function processPayment() {
         }
     }
 
-    showPaymentConfirmation(subtotal, taxAmount, total, paymentMethod, amountPaid, changeAmount, extras);
+    const loyaltyPayload = getLoyaltyPayload();
+    if (loyaltyPayload) {
+        extras.loyaltyPayload = loyaltyPayload;
+    }
+
+    showPaymentConfirmation(paymentMethod, amountPaid, changeAmount, extras);
 }
 
 // Show payment confirmation modal
-function showPaymentConfirmation(subtotal, taxAmount, total, paymentMethod, amountPaid, changeAmount, extras = {}) {
+function showPaymentConfirmation(paymentMethod, amountPaid, changeAmount, extras = {}) {
+    const totals = extras.cartTotals || currentCartTotals;
+    const subtotal = totals.netSubtotal || 0;
+    const taxAmount = totals.taxAmount || 0;
+    const total = totals.totalDue || 0;
+    const promotionDiscount = totals.promotionDiscount || 0;
+    const loyaltyDiscount = totals.loyaltyDiscount || 0;
+
     // Update modal content
     document.getElementById('confirmSubtotal').textContent = formatCurrency(subtotal);
     document.getElementById('confirmTax').textContent = formatCurrency(taxAmount);
     document.getElementById('confirmTotal').textContent = formatCurrency(total);
     document.getElementById('confirmPaymentMethod').textContent = formatPaymentMethodLabel(paymentMethod);
     document.getElementById('confirmAmountPaid').textContent = formatCurrency(amountPaid);
+
+    const promoRow = document.getElementById('confirmPromotionDiscountRow');
+    const promoValue = document.getElementById('confirmPromotionDiscount');
+    if (promoRow && promoValue) {
+        if (promotionDiscount > 0) {
+            promoRow.classList.remove('d-none');
+            promoValue.textContent = '-' + formatCurrency(promotionDiscount);
+        } else {
+            promoRow.classList.add('d-none');
+            promoValue.textContent = '-0.00';
+        }
+    }
+
+    const loyaltyRow = document.getElementById('confirmLoyaltyDiscountRow');
+    const loyaltyValue = document.getElementById('confirmLoyaltyDiscount');
+    if (loyaltyRow && loyaltyValue) {
+        if (loyaltyDiscount > 0) {
+            loyaltyRow.classList.remove('d-none');
+            loyaltyValue.textContent = '-' + formatCurrency(loyaltyDiscount);
+        } else {
+            loyaltyRow.classList.add('d-none');
+            loyaltyValue.textContent = '-0.00';
+        }
+    }
 
     // Handle change display
     const changeRow = document.getElementById('confirmChangeRow');
@@ -1892,12 +2200,12 @@ function showPaymentConfirmation(subtotal, taxAmount, total, paymentMethod, amou
     }
 
     window.pendingPayment = {
-        subtotal,
-        taxAmount,
-        total,
         paymentMethod,
         amountPaid,
         changeAmount,
+        cartTotals: totals,
+        promotionSummary: extras.promotionSummary || currentPromotionSummary,
+        loyaltyPayload: extras.loyaltyPayload || getLoyaltyPayload(),
         ...extras
     };
 
@@ -1944,15 +2252,21 @@ async function finalizePayment() {
         return;
     }
     
+    const totals = payment.cartTotals || currentCartTotals;
+    const promotionSummary = payment.promotionSummary || currentPromotionSummary;
+    const loyaltyPayload = payment.loyaltyPayload || null;
     const customerName = document.getElementById('customerName').value || null;
-    
+
     const saleData = {
         csrf_token: CSRF_TOKEN,
         customer_name: customerName,
         payment_method: payment.paymentMethod,
-        subtotal: payment.subtotal,
-        tax_amount: payment.taxAmount,
-        total_amount: payment.total,
+        subtotal: totals.grossSubtotal,
+        net_subtotal: totals.netSubtotal,
+        tax_amount: totals.taxAmount,
+        total_amount: totals.totalDue,
+        promotion_discount: totals.promotionDiscount,
+        loyalty_discount: totals.loyaltyDiscount,
         amount_paid: payment.amountPaid,
         change_amount: payment.changeAmount,
         items: cart.map(item => ({
@@ -1963,12 +2277,19 @@ async function finalizePayment() {
             discount: item.discount ?? 0
         })),
         totals: {
-            subtotal: payment.subtotal,
-            tax: payment.taxAmount,
-            discount: 0,
-            grand: payment.total
+            subtotal: totals.grossSubtotal,
+            net_subtotal: totals.netSubtotal,
+            tax: totals.taxAmount,
+            promotion_discount: totals.promotionDiscount,
+            loyalty_discount: totals.loyaltyDiscount,
+            discount: roundCurrency(totals.promotionDiscount + totals.loyaltyDiscount),
+            grand: totals.totalDue
         }
     };
+
+    if (promotionSummary?.applied?.length) {
+        saleData.promotions = promotionSummary.applied;
+    }
 
     if (payment.paymentMethod === 'room_charge') {
         saleData.room_booking_id = payment.roomBookingId;
@@ -1979,7 +2300,10 @@ async function finalizePayment() {
     if (payment.paymentMethod === 'mobile_money' && payment.gatewayReference) {
         saleData.gateway_reference = payment.gatewayReference;
     }
-    
+    if (loyaltyPayload) {
+        saleData.loyalty = loyaltyPayload;
+    }
+
     // Disable button to prevent double-clicking
     const finalizeBtn = getFinalizeButton();
     const originalText = finalizeBtn ? finalizeBtn.innerHTML : FINALIZE_BUTTON_DEFAULT_HTML;

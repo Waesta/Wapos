@@ -1,8 +1,23 @@
 <?php
 require_once 'includes/bootstrap.php';
+require_once __DIR__ . '/includes/promotion-spotlight.php';
+
+use App\Services\PromotionService;
+
 $auth->requireLogin();
 
 $db = Database::getInstance();
+
+$pdo = $db->getConnection();
+$activePromotions = loadActivePromotions($pdo);
+$canManagePromotions = $auth->hasRole(['admin','manager']);
+
+$promotionService = new PromotionService($pdo);
+try {
+    $restaurantAppliedPromotions = $promotionService->getActivePromotionsForModule('restaurant');
+} catch (Throwable $e) {
+    $restaurantAppliedPromotions = [];
+}
 
 // Get order type and table
 $orderType = $_GET['type'] ?? 'dine-in';
@@ -16,7 +31,6 @@ $categories = $db->fetchAll("SELECT * FROM categories WHERE is_active = 1 ORDER 
 // Fetch checked-in rooms for room charge payments
 $checkedInRooms = [];
 try {
-    $pdo = $db->getConnection();
     $tablesStmt = $pdo->query("SHOW TABLES LIKE 'room_bookings'");
     if ($tablesStmt && $tablesStmt->fetchColumn()) {
         $roomsStmt = $pdo->prepare(
@@ -110,6 +124,27 @@ if ($orderId) {
         ORDER BY oi.id", [$orderId]);
 }
 
+$existingPromotionSummary = null;
+$existingLoyaltyPayload = null;
+if ($orderId) {
+    $metaRows = $db->fetchAll("SELECT meta_key, meta_value FROM order_meta WHERE order_id = ?", [$orderId]);
+    foreach ($metaRows as $metaRow) {
+        $value = null;
+        if (!empty($metaRow['meta_value'])) {
+            $decoded = json_decode($metaRow['meta_value'], true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $value = $decoded;
+            }
+        }
+
+        if ($metaRow['meta_key'] === 'promotion_summary') {
+            $existingPromotionSummary = $value;
+        } elseif ($metaRow['meta_key'] === 'loyalty_payload') {
+            $existingLoyaltyPayload = $value;
+        }
+    }
+}
+
 $existingOrderMeta = null;
 $existingItemsPayload = [];
 
@@ -126,6 +161,8 @@ if ($existingOrder) {
         'customer_name' => $existingOrder['customer_name'] ?? null,
         'created_at' => $existingOrder['created_at'] ?? null,
         'total_amount' => (float)$existingOrder['total_amount'],
+        'promotion_summary' => $existingPromotionSummary,
+        'loyalty_payload' => $existingLoyaltyPayload,
     ];
 }
 
@@ -174,6 +211,9 @@ include 'includes/header.php';
 <script>
 window.EXISTING_ORDER_META = <?= json_encode($existingOrderMeta, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
 window.EXISTING_ORDER_ITEMS = <?= json_encode($existingItemsPayload, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+window.ACTIVE_RESTAURANT_PROMOTIONS = <?= json_encode($restaurantAppliedPromotions, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+window.EXISTING_PROMOTION_SUMMARY = <?= json_encode($existingPromotionSummary, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+window.EXISTING_LOYALTY_PAYLOAD = <?= json_encode($existingLoyaltyPayload, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
 </script>
 
 <style>
@@ -352,6 +392,24 @@ window.EXISTING_ORDER_ITEMS = <?= json_encode($existingItemsPayload, JSON_HEX_TA
         </div>
     </div>
 
+    <div class="row g-3 mb-3">
+        <div class="col-12">
+            <?php
+            renderPromotionSpotlight(
+                $activePromotions,
+                [
+                    'title' => 'Restaurant Promotions',
+                    'description' => 'Live offers on combos, happy-hour bundles, and chef specials.',
+                    'icon' => 'bi-egg-fried',
+                    'context' => 'restaurant',
+                    'max_items' => 4,
+                    'show_manage_link' => $canManagePromotions,
+                ]
+            );
+            ?>
+        </div>
+    </div>
+
     <div class="order-grid">
         <section class="order-products app-card h-100">
             <div class="section-heading">
@@ -521,6 +579,10 @@ window.EXISTING_ORDER_ITEMS = <?= json_encode($existingItemsPayload, JSON_HEX_TA
                     <div class="cart-total-row">
                         <span>Subtotal</span>
                         <span id="subtotal"><?= formatMoney(0, false) ?></span>
+                    </div>
+                    <div class="cart-total-row text-success d-none" id="promotionDiscountRow">
+                        <span>Promotion Savings</span>
+                        <span id="promotionDiscountValue">-<?= formatMoney(0, false) ?></span>
                     </div>
                     <div class="cart-total-row">
                         <span>Tax (16%)</span>
@@ -704,6 +766,9 @@ window.EXISTING_ORDER_ITEMS = <?= json_encode($existingItemsPayload, JSON_HEX_TA
 let cart = [];
 let currentItem = null;
 let orderFinancials = {
+    grossSubtotal: 0,
+    promotionDiscount: 0,
+    netSubtotal: 0,
     subtotal: 0,
     tax: 0,
     deliveryFee: 0,
@@ -745,6 +810,218 @@ let deliveryMap = null;
 let deliveryMarker = null;
 let googleMapsLoadingPromise = null;
 let deliveryMapInitialized = false;
+
+const RESTAURANT_PROMOTIONS = Array.isArray(window.ACTIVE_RESTAURANT_PROMOTIONS)
+    ? window.ACTIVE_RESTAURANT_PROMOTIONS.map((promotion) => ({
+        ...promotion,
+        id: Number(promotion.id),
+        product_id: Number(promotion.product_id),
+        min_quantity: Math.max(1, Number(promotion.min_quantity ?? 1)),
+        bundle_price: promotion.bundle_price !== null ? parseFloat(promotion.bundle_price) : null,
+        discount_value: promotion.discount_value !== null ? parseFloat(promotion.discount_value) : null,
+        promotion_type: (promotion.promotion_type || 'bundle_price').toLowerCase(),
+    }))
+    : [];
+const CURRENCY_DECIMALS = 2;
+let currentPromotionSummary = { perLineDiscounts: [], totalDiscount: 0, applied: [] };
+
+function roundCurrency(value) {
+    const factor = Math.pow(10, CURRENCY_DECIMALS);
+    return Math.round((Number(value) || 0) * factor) / factor;
+}
+
+function formatAmount(value) {
+    return roundCurrency(value).toFixed(CURRENCY_DECIMALS);
+}
+
+function evaluatePromotionOption(promotion, unitPrice, quantity) {
+    const minQty = Math.max(1, Number(promotion.min_quantity ?? 1));
+    if (quantity < minQty || unitPrice <= 0) {
+        return null;
+    }
+
+    let discount = 0;
+    let discountUnits = 0;
+    let perUnitDiscount = 0;
+    let details = '';
+    const type = promotion.promotion_type;
+
+    if (type === 'bundle_price') {
+        const bundlePrice = promotion.bundle_price !== null ? Number(promotion.bundle_price) : null;
+        if (bundlePrice === null) {
+            return null;
+        }
+        const groups = Math.floor(quantity / minQty);
+        if (groups <= 0) {
+            return null;
+        }
+        const regular = unitPrice * minQty;
+        const savingsPerBundle = Math.max(0, regular - bundlePrice);
+        if (savingsPerBundle <= 0) {
+            return null;
+        }
+        discount = savingsPerBundle * groups;
+        discountUnits = groups * minQty;
+        perUnitDiscount = savingsPerBundle / minQty;
+        details = `${groups} bundle${groups > 1 ? 's' : ''}`;
+    } else if (type === 'percent') {
+        const percent = Math.max(0, Math.min(100, Number(promotion.discount_value ?? 0)));
+        if (percent <= 0) {
+            return null;
+        }
+        perUnitDiscount = unitPrice * (percent / 100);
+        discountUnits = quantity;
+        discount = perUnitDiscount * discountUnits;
+        details = `${percent.toFixed(1).replace(/\.0$/, '')}% off`;
+    } else {
+        const value = Math.max(0, Number(promotion.discount_value ?? 0));
+        if (value <= 0) {
+            return null;
+        }
+        perUnitDiscount = Math.min(value, unitPrice);
+        discountUnits = quantity;
+        discount = perUnitDiscount * discountUnits;
+        details = `${perUnitDiscount.toFixed(2)} off each`;
+    }
+
+    perUnitDiscount = Math.min(perUnitDiscount, unitPrice);
+    discount = roundCurrency(discount);
+
+    if (discount <= 0 || discountUnits <= 0 || perUnitDiscount <= 0) {
+        return null;
+    }
+
+    return {
+        discount,
+        discount_units: discountUnits,
+        per_unit_discount: perUnitDiscount,
+        promotion,
+        details,
+    };
+}
+
+function calculateCartPromotions(cartItems) {
+    if (!Array.isArray(cartItems) || cartItems.length === 0 || RESTAURANT_PROMOTIONS.length === 0) {
+        return {
+            perLineDiscounts: new Array(cartItems.length).fill(0),
+            totalDiscount: 0,
+            applied: [],
+        };
+    }
+
+    const promotionsByProduct = {};
+    RESTAURANT_PROMOTIONS.forEach((promotion) => {
+        const productId = Number(promotion.product_id);
+        if (!productId) {
+            return;
+        }
+        if (!promotionsByProduct[productId]) {
+            promotionsByProduct[productId] = [];
+        }
+        promotionsByProduct[productId].push(promotion);
+    });
+
+    const productMap = new Map();
+    cartItems.forEach((item, index) => {
+        const productId = Number(item.id);
+        const qty = Number(item.quantity);
+        if (!productId || qty <= 0) {
+            return;
+        }
+        if (!productMap.has(productId)) {
+            productMap.set(productId, {
+                quantity: 0,
+                unitPrice: Number(item.price) || 0,
+                name: item.name || null,
+                lines: [],
+            });
+        }
+        const entry = productMap.get(productId);
+        entry.quantity += qty;
+        entry.unitPrice = Number(item.price) || entry.unitPrice;
+        if (!entry.name && item.name) {
+            entry.name = item.name;
+        }
+        entry.lines.push({ index, quantity: qty });
+    });
+
+    const perLineDiscounts = new Array(cartItems.length).fill(0);
+    const applied = [];
+    let totalDiscount = 0;
+
+    productMap.forEach((entry, productId) => {
+        const promotionList = promotionsByProduct[productId];
+        if (!promotionList || promotionList.length === 0) {
+            return;
+        }
+
+        let bestOption = null;
+        promotionList.forEach((promotion) => {
+            const result = evaluatePromotionOption(promotion, entry.unitPrice, entry.quantity);
+            if (result && (!bestOption || result.discount > bestOption.discount)) {
+                bestOption = result;
+            }
+        });
+
+        if (!bestOption) {
+            return;
+        }
+
+        let remainingUnits = bestOption.discount_units;
+        let allocatedDiscount = 0;
+
+        entry.lines.forEach((line) => {
+            if (remainingUnits <= 0) {
+                return;
+            }
+            const qty = Math.min(line.quantity, remainingUnits);
+            if (qty <= 0) {
+                return;
+            }
+            const lineDiscount = roundCurrency(qty * bestOption.per_unit_discount);
+            perLineDiscounts[line.index] += lineDiscount;
+            remainingUnits -= qty;
+            allocatedDiscount += lineDiscount;
+            totalDiscount += lineDiscount;
+        });
+
+        if (allocatedDiscount > 0) {
+            applied.push({
+                promotion_id: bestOption.promotion.id,
+                promotion_name: bestOption.promotion.name ?? null,
+                product_id: productId,
+                product_name: entry.name ?? null,
+                discount: roundCurrency(allocatedDiscount),
+                details: bestOption.details,
+            });
+        }
+    });
+
+    return {
+        perLineDiscounts,
+        totalDiscount: roundCurrency(totalDiscount),
+        applied,
+    };
+}
+
+function getPromotionSummaryPayload() {
+    const summary = currentPromotionSummary || {};
+    const applied = Array.isArray(summary.applied)
+        ? summary.applied.map((entry) => ({
+            promotion_id: entry.promotion_id ?? null,
+            promotion_name: entry.promotion_name ?? null,
+            product_id: entry.product_id ?? null,
+            product_name: entry.product_name ?? null,
+            discount: roundCurrency(entry.discount ?? 0),
+            details: entry.details ?? null,
+        }))
+        : [];
+
+    return {
+        total_discount: roundCurrency(summary.totalDiscount ?? 0),
+        applied,
+    };
+}
 
 function getDeliveryFeeValue() {
     if (orderType === 'dine-in') {
@@ -1266,6 +1543,8 @@ function updateCart() {
     const cartDiv = document.getElementById('cartItems');
     
     const submitBtn = document.getElementById('submitBtn');
+    const promotionSummaryResult = calculateCartPromotions(cart);
+    currentPromotionSummary = promotionSummaryResult;
 
     if (cart.length === 0) {
         cartDiv.innerHTML = `
@@ -1280,6 +1559,14 @@ function updateCart() {
     } else {
         let html = '<div class="list-group">';
         cart.forEach((item, index) => {
+            const lineSubtotal = roundCurrency(Number(item.price) * Number(item.quantity));
+            const lineDiscount = Math.min(lineSubtotal, promotionSummaryResult.perLineDiscounts[index] ?? 0);
+            const netTotal = roundCurrency(lineSubtotal - lineDiscount);
+
+            cart[index].line_subtotal = lineSubtotal;
+            cart[index].promotion_discount = roundCurrency(lineDiscount);
+            cart[index].total = netTotal;
+
             html += `
                 <div class="list-group-item">
                     <div class="d-flex justify-content-between align-items-start mb-2">
@@ -1287,6 +1574,7 @@ function updateCart() {
                             <h6 class="mb-0">${item.name}</h6>
                             ${item.modifiers.map(m => `<small class="text-muted d-block">+ ${m.name}</small>`).join('')}
                             ${item.instructions ? `<small class="text-muted fst-italic d-block">${item.instructions}</small>` : ''}
+                            ${cart[index].promotion_discount > 0 ? `<small class="text-success d-block">-${formatAmount(cart[index].promotion_discount)} promo</small>` : ''}
                         </div>
                         <button class="btn btn-sm btn-outline-danger" onclick="removeFromCart(${index})">
                             <i class="bi bi-x"></i>
@@ -1298,7 +1586,7 @@ function updateCart() {
                             <button class="btn btn-outline-secondary" disabled>${item.quantity}</button>
                             <button class="btn btn-outline-secondary" onclick="updateQuantity(${index}, 1)">+</button>
                         </div>
-                        <strong>${item.total.toFixed(2)}</strong>
+                        <strong>${formatAmount(cart[index].total)}</strong>
                     </div>
                 </div>
             `;
@@ -1311,15 +1599,20 @@ function updateCart() {
     }
     
     // Calculate totals
-    const subtotal = cart.reduce((sum, item) => sum + item.total, 0);
-    const taxAmount = subtotal * (TAX_RATE / 100);
+    const grossSubtotal = cart.reduce((sum, item) => sum + (item.line_subtotal ?? (item.price * item.quantity)), 0);
+    const promotionDiscount = Math.min(grossSubtotal, promotionSummaryResult.totalDiscount || 0);
+    const netSubtotal = Math.max(0, grossSubtotal - promotionDiscount);
+    const taxAmount = roundCurrency(netSubtotal * (TAX_RATE / 100));
     const deliveryFee = getDeliveryFeeValue();
-    const total = subtotal + taxAmount + deliveryFee;
+    const total = roundCurrency(netSubtotal + taxAmount + deliveryFee);
     const tipAmount = getTipAmount();
-    const grandTotal = total + tipAmount;
+    const grandTotal = roundCurrency(total + tipAmount);
 
     orderFinancials = {
-        subtotal,
+        grossSubtotal: roundCurrency(grossSubtotal),
+        promotionDiscount: roundCurrency(promotionDiscount),
+        netSubtotal: roundCurrency(netSubtotal),
+        subtotal: roundCurrency(netSubtotal),
         tax: taxAmount,
         deliveryFee,
         total,
@@ -1335,13 +1628,25 @@ function updateCart() {
     const tipDisplay = document.getElementById('tipAmountDisplay');
     const grandTotalEl = document.getElementById('grandTotalAmount');
 
-    if (subtotalEl) subtotalEl.textContent = subtotal.toFixed(2);
-    if (taxEl) taxEl.textContent = taxAmount.toFixed(2);
-    if (deliveryFeeEl) deliveryFeeEl.textContent = deliveryFee.toFixed(2);
-    if (totalEl) totalEl.textContent = total.toFixed(2);
+    if (subtotalEl) subtotalEl.textContent = formatAmount(netSubtotal);
+    if (taxEl) taxEl.textContent = formatAmount(taxAmount);
+    if (deliveryFeeEl) deliveryFeeEl.textContent = formatAmount(deliveryFee);
+    if (totalEl) totalEl.textContent = formatAmount(total);
     if (tipRow) tipRow.classList.toggle('d-none', tipAmount <= 0);
-    if (tipDisplay) tipDisplay.textContent = tipAmount.toFixed(2);
-    if (grandTotalEl) grandTotalEl.textContent = grandTotal.toFixed(2);
+    if (tipDisplay) tipDisplay.textContent = formatAmount(tipAmount);
+    if (grandTotalEl) grandTotalEl.textContent = formatAmount(grandTotal);
+
+    const promoRow = document.getElementById('promotionDiscountRow');
+    const promoValue = document.getElementById('promotionDiscountValue');
+    if (promoRow && promoValue) {
+        if (promotionDiscount > 0) {
+            promoRow.classList.remove('d-none');
+            promoValue.textContent = '-' + formatAmount(promotionDiscount);
+        } else {
+            promoRow.classList.add('d-none');
+            promoValue.textContent = '-' + formatAmount(0);
+        }
+    }
 
     // Update button states
     updateButtonStates();
@@ -1452,7 +1757,19 @@ async function submitOrder() {
         delivery_latitude: getCoordinateValue('deliveryLatitude'),
         delivery_longitude: getCoordinateValue('deliveryLongitude'),
         delivery_pricing_request_id: deliveryPricingState.auditRequestId || null,
-        items: cart
+        items: cart,
+        promotion_discount: currentPromotionSummary?.totalDiscount || 0,
+        promotion_summary: getPromotionSummaryPayload(),
+        totals: {
+            subtotal: orderFinancials.grossSubtotal,
+            promotion_discount: currentPromotionSummary?.totalDiscount || 0,
+            net_subtotal: orderFinancials.netSubtotal,
+            tax_amount: taxAmount,
+            delivery_fee: deliveryFee,
+            tip_amount: tipAmount,
+            total_amount: total,
+            grand_total: grandTotal,
+        }
     };
     if (paymentMethod === 'cash') {
         const cashPayload = getCashTenderPayload();

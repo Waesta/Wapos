@@ -1,11 +1,14 @@
 <?php
 require_once 'includes/bootstrap.php';
+require_once __DIR__ . '/includes/promotion-spotlight.php';
 $auth->requireLogin();
 
 use App\Services\RoomBookingService;
 
 $db = Database::getInstance();
 $pdo = $db->getConnection();
+$activePromotions = loadActivePromotions($pdo);
+$canManagePromotions = $auth->hasRole(['admin','manager']);
 
 $bookingService = new RoomBookingService($pdo);
 $migrationSummary = null;
@@ -374,6 +377,24 @@ include 'includes/header.php';
         </div>
     </div>
 <?php endif; ?>
+
+<div class="row g-3 mb-3">
+    <div class="col-12">
+        <?php
+        renderPromotionSpotlight(
+            $activePromotions,
+            [
+                'title' => 'Room & Stay Promotions',
+                'description' => 'Long-stay bundles, off-peak rates, and guest perks applied automatically.',
+                'icon' => 'bi-door-open',
+                'context' => 'rooms',
+                'max_items' => 4,
+                'show_manage_link' => $canManagePromotions,
+            ]
+        );
+        ?>
+    </div>
+</div>
 
 <!-- Stats Cards -->
 <div class="room-summary-grid">

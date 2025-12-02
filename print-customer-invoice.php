@@ -27,6 +27,38 @@ $items = $db->fetchAll("
     ORDER BY oi.id
 ", [$orderId]);
 
+$promotionSummary = null;
+$loyaltyPayload = null;
+$metaRows = $db->fetchAll('SELECT meta_key, meta_value FROM order_meta WHERE order_id = ?', [$orderId]);
+foreach ($metaRows as $metaRow) {
+    if (!isset($metaRow['meta_key'])) {
+        continue;
+    }
+    $decoded = null;
+    if (!empty($metaRow['meta_value'])) {
+        $decoded = json_decode($metaRow['meta_value'], true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            $decoded = null;
+        }
+    }
+
+    if ($metaRow['meta_key'] === 'promotion_summary') {
+        $promotionSummary = is_array($decoded) ? $decoded : null;
+    } elseif ($metaRow['meta_key'] === 'loyalty_payload') {
+        $loyaltyPayload = is_array($decoded) ? $decoded : null;
+    }
+}
+
+$promotionDiscount = isset($promotionSummary['total_discount']) ? (float)$promotionSummary['total_discount'] : 0.0;
+$appliedPromotions = isset($promotionSummary['applied']) && is_array($promotionSummary['applied'])
+    ? array_filter($promotionSummary['applied'], static fn($entry) => !empty($entry['discount']))
+    : [];
+$loyaltyDiscount = 0.0;
+if ($loyaltyPayload) {
+    $loyaltyDiscount = isset($loyaltyPayload['discount_amount']) ? (float)$loyaltyPayload['discount_amount'] : 0.0;
+}
+$otherDiscount = max(0.0, (float)$order['discount_amount'] - $promotionDiscount - $loyaltyDiscount);
+
 // Get settings from cache
 $settings = function_exists('settings_many')
     ? settings_many([
@@ -116,6 +148,25 @@ $settings = function_exists('settings_many')
         .totals-section {
             margin: 8px 0;
             font-size: 11px;
+        }
+        .promo-summary {
+            border: 1px solid #198754;
+            padding: 6px;
+            margin: 8px 0;
+            background: #f1fff6;
+        }
+        .promo-summary h3 {
+            margin: 0 0 4px;
+            font-size: 11px;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .promo-line {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            margin: 2px 0;
         }
         .total-line {
             display: flex;
@@ -270,17 +321,48 @@ $settings = function_exists('settings_many')
         <?php endforeach; ?>
     </div>
 
+    <?php if (!empty($appliedPromotions)): ?>
+    <div class="promo-summary">
+        <h3>Promotion Savings</h3>
+        <?php foreach ($appliedPromotions as $promo): ?>
+            <div class="promo-line">
+                <span>
+                    <?= htmlspecialchars($promo['promotion_name'] ?? ($promo['details'] ?? 'Promotion')) ?>
+                    <?php if (!empty($promo['product_name'])): ?>
+                        <small>(<?= htmlspecialchars($promo['product_name']) ?>)</small>
+                    <?php endif; ?>
+                </span>
+                <span>-<?= formatMoney($promo['discount'] ?? 0) ?></span>
+            </div>
+        <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
+
     <!-- Totals Section -->
     <div class="totals-section">
         <div class="total-line">
             <span>Subtotal:</span>
             <span><?= formatMoney($order['subtotal']) ?></span>
         </div>
-        
-        <?php if ($order['discount_amount'] > 0): ?>
+
+        <?php if ($promotionDiscount > 0): ?>
         <div class="total-line">
-            <span>Discount:</span>
-            <span>-<?= formatMoney($order['discount_amount']) ?></span>
+            <span>Promotion Savings:</span>
+            <span>-<?= formatMoney($promotionDiscount) ?></span>
+        </div>
+        <?php endif; ?>
+
+        <?php if ($loyaltyDiscount > 0): ?>
+        <div class="total-line">
+            <span>Loyalty Redemption:</span>
+            <span>-<?= formatMoney($loyaltyDiscount) ?></span>
+        </div>
+        <?php endif; ?>
+
+        <?php if ($otherDiscount > 0): ?>
+        <div class="total-line">
+            <span>Other Discounts:</span>
+            <span>-<?= formatMoney($otherDiscount) ?></span>
         </div>
         <?php endif; ?>
         

@@ -121,6 +121,7 @@ if (empty($items)) {
 $totals = $data['totals'] ?? [];
 $paymentMethod = $data['payment_method'] ?? 'cash';
 $roomBookingId = isset($data['room_booking_id']) ? (int)$data['room_booking_id'] : null;
+$moduleScope = isset($data['module_scope']) ? trim((string)$data['module_scope']) : 'retail';
 
 $loyaltyPayload = $data['loyalty'] ?? null;
 $loyaltyDiscount = 0.0;
@@ -132,22 +133,66 @@ if ($loyaltyPayload !== null) {
     $loyaltyDiscount = max(0.0, (float)($loyaltyPayload['discount_amount'] ?? 0.0));
 }
 
+$promotions = [];
+if (!empty($data['promotions']) && is_array($data['promotions'])) {
+    foreach ($data['promotions'] as $promo) {
+        if (!is_array($promo)) {
+            continue;
+        }
+        $discount = isset($promo['discount']) ? (float)$promo['discount'] : 0.0;
+        if ($discount <= 0) {
+            continue;
+        }
+        $promotions[] = [
+            'promotion_id' => isset($promo['promotion_id']) && (int)$promo['promotion_id'] > 0 ? (int)$promo['promotion_id'] : null,
+            'product_id' => isset($promo['product_id']) && (int)$promo['product_id'] > 0 ? (int)$promo['product_id'] : null,
+            'discount' => $discount,
+            'details' => isset($promo['details']) ? trim((string)$promo['details']) : null,
+        ];
+    }
+}
+
 if ($paymentMethod === 'room_charge' && (!$roomBookingId || $roomBookingId <= 0)) {
     respondJson(422, ['success' => false, 'message' => 'room_booking_id is required when payment method is room_charge'], ob_get_clean());
 }
 
-$subtotal = isset($data['subtotal']) ? (float) $data['subtotal'] : ($totals['subtotal'] ?? 0.0);
-if ($subtotal <= 0) {
-    $subtotal = 0.0;
+$grossSubtotal = isset($data['subtotal']) ? (float) $data['subtotal'] : (float)($totals['subtotal'] ?? 0.0);
+if ($grossSubtotal <= 0) {
+    $grossSubtotal = 0.0;
     foreach ($items as $item) {
-        $subtotal += $item['qty'] * $item['price'];
+        $grossSubtotal += $item['qty'] * $item['price'];
     }
 }
 
-$taxAmount = isset($data['tax_amount']) ? (float) $data['tax_amount'] : ($totals['tax'] ?? 0.0);
-$discountAmount = isset($data['discount_amount']) ? (float) $data['discount_amount'] : ($totals['discount'] ?? 0.0);
-$discountAmount += $loyaltyDiscount;
-$grandTotal = max(0.0, $subtotal + $taxAmount - $discountAmount);
+$promotionDiscount = isset($data['promotion_discount'])
+    ? (float) $data['promotion_discount']
+    : (float) ($totals['promotion_discount'] ?? 0.0);
+$promotionDiscount = max(0.0, min($promotionDiscount, $grossSubtotal));
+
+$netSubtotal = isset($data['net_subtotal'])
+    ? (float) $data['net_subtotal']
+    : max(0.0, $grossSubtotal - $promotionDiscount);
+
+$taxAmount = isset($data['tax_amount']) ? (float) $data['tax_amount'] : (float) ($totals['tax'] ?? 0.0);
+$loyaltyDiscountField = isset($data['loyalty_discount'])
+    ? (float) $data['loyalty_discount']
+    : (float) ($totals['loyalty_discount'] ?? 0.0);
+if ($loyaltyPayload !== null && $loyaltyDiscount <= 0 && $loyaltyDiscountField > 0) {
+    $loyaltyDiscount = max(0.0, $loyaltyDiscountField);
+} elseif ($loyaltyPayload === null) {
+    $loyaltyDiscount = max(0.0, $loyaltyDiscountField);
+}
+
+$discountAmount = max(0.0, $promotionDiscount + $loyaltyDiscount);
+if ($discountAmount <= 0) {
+    $discountAmount = isset($data['discount_amount'])
+        ? (float) $data['discount_amount']
+        : (float) ($totals['discount'] ?? 0.0);
+}
+
+$computedGrand = max(0.0, $netSubtotal + $taxAmount - $loyaltyDiscount);
+$providedGrand = isset($data['total_amount']) ? (float) $data['total_amount'] : (float) ($totals['grand'] ?? 0.0);
+$grandTotal = $providedGrand > 0 ? $providedGrand : $computedGrand;
 
 $amountPaid = isset($data['amount_paid']) ? (float) $data['amount_paid'] : $grandTotal;
 $changeAmount = isset($data['change_amount']) ? (float) $data['change_amount'] : max(0, $amountPaid - $grandTotal);
@@ -172,6 +217,8 @@ try {
         'customer_name' => $data['customer_name'] ?? null,
         'customer_phone' => $data['customer_phone'] ?? null,
         'items' => $items,
+        'promotions' => $promotions,
+        'module_scope' => $moduleScope,
         'totals' => [
             'subtotal' => $subtotal,
             'tax' => $taxAmount,
