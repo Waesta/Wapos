@@ -535,18 +535,18 @@ $visibleSections = array_filter($sections, function ($section) use ($userRole) {
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label">Currency Code</label>
-                                <input type="text" class="form-control" name="currency_code" value="<?= htmlspecialchars($settings['currency_code'] ?? ($settings['currency_code'] ?? CurrencyManager::getInstance()->getCurrencyCode())) ?>" placeholder="KES" maxlength="6">
+                                <input type="text" class="form-control" name="currency_code" value="<?= htmlspecialchars($settings['currency_code'] ?? '') ?>" placeholder="e.g., USD" maxlength="6">
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label">Currency Symbol</label>
-                                <input type="text" class="form-control" name="currency_symbol" value="<?= htmlspecialchars($settings['currency_symbol'] ?? CurrencyManager::getInstance()->getCurrencySymbol()) ?>" placeholder="KES">
+                                <input type="text" class="form-control" name="currency_symbol" value="<?= htmlspecialchars($settings['currency_symbol'] ?? '') ?>" placeholder="e.g., $">
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label">Symbol Position</label>
                                 <?php $currencyPosition = $settings['currency_position'] ?? 'before'; ?>
                                 <select class="form-select" name="currency_position">
-                                    <option value="before" <?= $currencyPosition === 'before' ? 'selected' : '' ?>>Before amount (KES 1,000)</option>
-                                    <option value="after" <?= $currencyPosition === 'after' ? 'selected' : '' ?>>After amount (1,000 KES)</option>
+                                    <option value="before" <?= $currencyPosition === 'before' ? 'selected' : '' ?>>Symbol before amount (¤ 1,000.00)</option>
+                                    <option value="after" <?= $currencyPosition === 'after' ? 'selected' : '' ?>>Symbol after amount (1,000.00 ¤)</option>
                                 </select>
                             </div>
                             <div class="col-md-3">
