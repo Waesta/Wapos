@@ -42,5 +42,8 @@ define('LOG_PATH', ROOT_PATH . '/logs');
 date_default_timezone_set(TIMEZONE);
 
 // Error Reporting (set to 0 for production)
+// PRODUCTION: error_reporting(0); ini_set('display_errors', 0);
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
+ini_set('log_errors', 1);
+ini_set('error_log', LOG_PATH . '/php_errors.log');

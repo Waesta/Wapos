@@ -5,6 +5,7 @@ header("Pragma: no-cache");
 header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
 
 require_once 'includes/bootstrap.php';
+require_once 'includes/RateLimiter.php';
 
 // If already logged in, redirect to dashboard
 if ($auth->isLoggedIn()) {
@@ -12,10 +13,22 @@ if ($auth->isLoggedIn()) {
 }
 
 $error = '';
+$rateLimited = false;
+
+// Rate limiting: 5 attempts per 15 minutes per IP
+$rateLimiter = new RateLimiter(5, 15);
+$clientIP = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+$rateLimitKey = 'login:' . $clientIP;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Check rate limit before processing
+    if ($rateLimiter->tooManyAttempts($rateLimitKey)) {
+        $waitTime = $rateLimiter->availableIn($rateLimitKey);
+        $error = "Too many login attempts. Please try again in " . ceil($waitTime / 60) . " minutes.";
+        $rateLimited = true;
+    }
     // CSRF validation
-    if (!validateCSRFToken($_POST['csrf_token'] ?? '')) {
+    elseif (!validateCSRFToken($_POST['csrf_token'] ?? '')) {
         $error = 'Invalid request. Please try again.';
     } else {
         $username = sanitizeInput($_POST['username'] ?? '');
@@ -25,9 +38,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Please enter both username and password';
         } else {
             if ($auth->login($username, $password)) {
+                // Clear rate limit on successful login
+                $rateLimiter->clear($rateLimitKey);
                 redirect(APP_URL . '/index.php');
             } else {
+                // Increment rate limit counter on failed attempt
+                $rateLimiter->hit($rateLimitKey);
+                $remaining = $rateLimiter->remainingAttempts($rateLimitKey);
                 $error = 'Invalid username or password';
+                if ($remaining > 0 && $remaining <= 3) {
+                    $error .= " ($remaining attempts remaining)";
+                }
             }
         }
     }
