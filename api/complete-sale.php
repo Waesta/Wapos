@@ -50,6 +50,7 @@ $fatalHandler = function () use (&$completeSaleResponded) {
 register_shutdown_function($fatalHandler);
 
 require_once '../includes/bootstrap.php';
+require_once __DIR__ . '/api-middleware.php';
 
 use App\Services\AccountingService;
 use App\Services\LoyaltyService;

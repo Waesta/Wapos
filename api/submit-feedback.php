@@ -1,5 +1,6 @@
 <?php
 require_once '../includes/bootstrap.php';
+require_once __DIR__ . '/api-middleware.php';
 
 header('Content-Type: application/json');
 

@@ -31,6 +31,8 @@ require_once __DIR__ . "/Auth.php";
 require_once __DIR__ . "/currency-config.php";
 require_once __DIR__ . "/accounting-helpers.php";
 require_once __DIR__ . "/SystemManager.php";
+require_once __DIR__ . "/RateLimiter.php";
+require_once __DIR__ . "/ApiRateLimiter.php";
 
 // Autoload application namespaces if vendor autoloader exists
 $composerAutoload = ROOT_PATH . '/vendor/autoload.php';
