@@ -85,7 +85,7 @@ class PermissionManager {
                 sa.action_key,
                 gp.is_granted,
                 gp.conditions,
-                pg.name as group_name
+                pg.group_name
             FROM user_group_memberships ugm
             JOIN permission_groups pg ON ugm.group_id = pg.id
             JOIN group_permissions gp ON pg.id = gp.group_id
@@ -317,7 +317,7 @@ class PermissionManager {
                 assigned_at = NOW()
         ", $data);
         
-        $groupName = $this->db->fetchOne("SELECT name FROM permission_groups WHERE id = ?", [$groupId])['name'];
+        $groupName = $this->db->fetchOne("SELECT group_name FROM permission_groups WHERE id = ?", [$groupId])['group_name'] ?? 'Unknown';
         $this->logAudit('permission_changed', null, null, "User {$targetUserId} added to group: {$groupName}");
         
         $this->clearUserPermissionCache($targetUserId);
@@ -333,7 +333,7 @@ class PermissionManager {
             WHERE user_id = ? AND group_id = ?
         ", [$targetUserId, $groupId]);
         
-        $groupName = $this->db->fetchOne("SELECT name FROM permission_groups WHERE id = ?", [$groupId])['name'];
+        $groupName = $this->db->fetchOne("SELECT group_name FROM permission_groups WHERE id = ?", [$groupId])['group_name'] ?? 'Unknown';
         $this->logAudit('permission_changed', null, null, "User {$targetUserId} removed from group: {$groupName}. Reason: {$reason}");
         
         $this->clearUserPermissionCache($targetUserId);

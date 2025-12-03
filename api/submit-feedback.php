@@ -20,8 +20,13 @@ if (empty($payload) && stripos($_SERVER['CONTENT_TYPE'] ?? '', 'application/json
 $rating = isset($payload['rating']) && $payload['rating'] !== '' ? (int)$payload['rating'] : null;
 $comments = trim((string)($payload['comments'] ?? ''));
 $contact = trim((string)($payload['contact'] ?? ''));
+$category = trim((string)($payload['category'] ?? ''));
 $contextPage = trim((string)($payload['context_page'] ?? ($_SERVER['HTTP_REFERER'] ?? 'unknown')));
-$metadata = isset($payload['metadata']) && is_array($payload['metadata']) ? $payload['metadata'] : null;
+$metadata = [
+    'category' => $category !== '' ? $category : null,
+    'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
+    'submitted_at' => date('Y-m-d H:i:s')
+];
 
 if ($comments === '') {
     echo json_encode(['success' => false, 'message' => 'Comments are required']);
@@ -36,7 +41,7 @@ try {
         'rating' => $rating,
         'contact' => $contact !== '' ? $contact : null,
         'comments' => $comments,
-        'metadata' => $metadata ? json_encode($metadata) : null,
+        'metadata' => json_encode($metadata),
     ];
 
     $db->insert('demo_feedback', $insertData);

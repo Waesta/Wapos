@@ -7,6 +7,34 @@ $permissionManager = new PermissionManager($auth->getUserId());
 
 $db = Database::getInstance();
 
+require_once __DIR__ . '/includes/HospitalityPermissionSeeder.php';
+HospitalityPermissionSeeder::sync($db);
+
+if (!function_exists('buildPermissionsLink')) {
+    function buildPermissionsLink(array $overrides = []): string
+    {
+        $query = $_GET;
+        unset($query['action'], $query['csrf_token']);
+        foreach ($overrides as $key => $value) {
+            if ($value === null) {
+                unset($query[$key]);
+            } else {
+                $query[$key] = $value;
+            }
+        }
+
+        $basePath = $_SERVER['PHP_SELF'] ?? '/permissions.php';
+        $queryString = http_build_query($query);
+        return $queryString ? $basePath . '?' . $queryString : $basePath;
+    }
+}
+
+$validTabs = ['matrix', 'groups', 'individual', 'templates'];
+$activeTab = $_GET['tab'] ?? 'matrix';
+if (!in_array($activeTab, $validTabs, true)) {
+    $activeTab = 'matrix';
+}
+
 // Handle actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // CSRF validation for all POST actions on this page
@@ -78,7 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         elseif ($action === 'create_group') {
             $data = [
-                'name' => sanitizeInput($_POST['name']),
+                'group_name' => sanitizeInput($_POST['name']),
                 'description' => sanitizeInput($_POST['description']),
                 'color' => $_POST['color'] ?? '#007bff',
                 'created_by' => $auth->getUserId()
@@ -105,6 +133,89 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             $_SESSION['success_message'] = 'Permission group created successfully';
         }
+
+        elseif ($action === 'update_group_permissions') {
+            $groupId = (int)($_POST['group_id'] ?? 0);
+            $selectedPermissions = $_POST['permissions'] ?? [];
+            if ($groupId <= 0) {
+                throw new Exception('Invalid group selected');
+            }
+
+            $moduleIdCache = [];
+            $actionIdCache = [];
+
+            $db->beginTransaction();
+            try {
+                $db->query('DELETE FROM group_permissions WHERE group_id = ?', [$groupId]);
+
+                foreach ($selectedPermissions as $permission) {
+                    if (strpos($permission, ':') === false) {
+                        continue;
+                    }
+
+                    [$moduleKey, $actionKey] = array_map('trim', explode(':', $permission, 2));
+                    if ($moduleKey === '' || $actionKey === '') {
+                        continue;
+                    }
+
+                    if (!isset($moduleIdCache[$moduleKey])) {
+                        $moduleRow = $db->fetchOne('SELECT id FROM system_modules WHERE module_key = ?', [$moduleKey]);
+                        if (!$moduleRow) {
+                            continue;
+                        }
+                        $moduleIdCache[$moduleKey] = (int)$moduleRow['id'];
+                    }
+
+                    if (!isset($actionIdCache[$actionKey])) {
+                        $actionRow = $db->fetchOne('SELECT id FROM system_actions WHERE action_key = ?', [$actionKey]);
+                        if (!$actionRow) {
+                            continue;
+                        }
+                        $actionIdCache[$actionKey] = (int)$actionRow['id'];
+                    }
+
+                    $db->insert('group_permissions', [
+                        'group_id' => $groupId,
+                        'module_id' => $moduleIdCache[$moduleKey],
+                        'action_id' => $actionIdCache[$actionKey],
+                        'is_granted' => 1,
+                        'granted_by' => $auth->getUserId()
+                    ]);
+                }
+
+                $db->commit();
+                $_SESSION['success_message'] = 'Group permissions updated successfully';
+            } catch (Exception $updateException) {
+                if ($db->inTransaction()) {
+                    $db->rollBack();
+                }
+                throw $updateException;
+            }
+        }
+
+        elseif ($action === 'create_template') {
+            $templateName = sanitizeInput($_POST['template_name'] ?? '');
+            $templateDescription = sanitizeInput($_POST['template_description'] ?? '');
+            $templatePermissions = $_POST['template_permissions'] ?? [];
+
+            if (empty($templateName)) {
+                throw new Exception('Template name is required');
+            }
+
+            $templateData = json_encode([
+                'permissions' => $templatePermissions,
+                'created_at' => date('Y-m-d H:i:s')
+            ]);
+
+            $db->insert('permission_templates', [
+                'name' => $templateName,
+                'description' => $templateDescription,
+                'template_data' => $templateData,
+                'created_by' => $auth->getUserId()
+            ]);
+
+            $_SESSION['success_message'] = 'Permission template created successfully';
+        }
         
     } catch (Exception $e) {
         $_SESSION['error_message'] = 'Error: ' . $e->getMessage();
@@ -114,8 +225,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // Get data for display with error handling
+$moduleActionsMap = [];
 try {
-    $users = $db->fetchAll("SELECT id, username, full_name, role FROM users WHERE is_active = 1 ORDER BY full_name") ?: [];
+    $users = $db->fetchAll("
+        SELECT id, username, full_name, role, is_active
+        FROM users
+        ORDER BY is_active DESC, full_name
+    ") ?: [];
     
     // Load active system modules
     $modules = $db->fetchAll("
@@ -163,56 +279,75 @@ try {
         JOIN system_modules sm ON up.module_id = sm.id 
         JOIN system_actions sa ON up.action_id = sa.id 
         JOIN users u ON up.user_id = u.id 
-        WHERE up.is_active = 1 
+        WHERE up.is_granted = 1 
         ORDER BY u.username, sm.display_name, sa.display_name
     ") ?: [];
     
-    // Define permission groups (role-based templates)
-    $groups = [
-        [
-            'id' => 1,
-            'name' => 'Administrator',
-            'description' => 'Full system access with all permissions',
-            'color' => '#dc3545',
-            'permissions' => ['*'] // All permissions
-        ],
-        [
-            'id' => 2,
-            'name' => 'Manager',
-            'description' => 'Business operations and reporting access',
-            'color' => '#0d6efd',
-            'permissions' => ['pos.*', 'restaurant.*', 'inventory.*', 'customers.*', 'sales.*', 'reports.*']
-        ],
-        [
-            'id' => 3,
-            'name' => 'Cashier',
-            'description' => 'Point of sale operations only',
-            'color' => '#198754',
-            'permissions' => ['pos.create', 'pos.read', 'customers.read', 'customers.create']
-        ],
-        [
-            'id' => 4,
-            'name' => 'Waiter',
-            'description' => 'Restaurant service operations',
-            'color' => '#fd7e14',
-            'permissions' => ['restaurant.*', 'customers.read', 'customers.create']
-        ],
-        [
-            'id' => 5,
-            'name' => 'Inventory Manager',
-            'description' => 'Stock and inventory management',
-            'color' => '#6f42c1',
-            'permissions' => ['inventory.*', 'products.*', 'reports.inventory']
-        ],
-        [
-            'id' => 6,
-            'name' => 'Accountant',
-            'description' => 'Financial and accounting access',
-            'color' => '#20c997',
-            'permissions' => ['accounting.*', 'reports.financial', 'sales.read']
-        ]
-    ];
-    
+    // Load permission groups
+    $groups = $db->fetchAll("
+        SELECT id, group_name AS name, description, color
+        FROM permission_groups
+        WHERE is_active = 1
+        ORDER BY group_name
+    ") ?: [];
+
+    $groupMembersMap = [];
+    $groupPermissionsMap = [];
+
+    if (!empty($groups)) {
+        $groupMembersRows = $db->fetchAll("
+            SELECT 
+                ugm.group_id,
+                ugm.user_id,
+                ugm.expires_at,
+                u.full_name,
+                u.username
+            FROM user_group_memberships ugm
+            JOIN users u ON ugm.user_id = u.id
+            WHERE ugm.is_active = 1
+            ORDER BY u.full_name
+        ") ?: [];
+
+        foreach ($groupMembersRows as $memberRow) {
+            $groupId = (int)$memberRow['group_id'];
+            $groupMembersMap[$groupId][] = [
+                'user_id' => (int)$memberRow['user_id'],
+                'full_name' => $memberRow['full_name'],
+                'username' => $memberRow['username'],
+                'expires_at' => $memberRow['expires_at']
+            ];
+        }
+
+        $groupPermissionsRows = $db->fetchAll("
+            SELECT 
+                gp.group_id,
+                sm.module_key,
+                sa.action_key
+            FROM group_permissions gp
+            JOIN system_modules sm ON gp.module_id = sm.id
+            JOIN system_actions sa ON gp.action_id = sa.id
+            WHERE gp.is_granted = 1
+        ") ?: [];
+
+        foreach ($groupPermissionsRows as $permRow) {
+            $groupId = (int)$permRow['group_id'];
+            $groupPermissionsMap[$groupId][] = $permRow['module_key'] . ':' . $permRow['action_key'];
+        }
+    }
+
+    $groupDataForJs = [];
+    foreach ($groups as $group) {
+        $groupId = (int)$group['id'];
+        $groupDataForJs[$groupId] = [
+            'id' => $groupId,
+            'name' => $group['name'],
+            'description' => $group['description'],
+            'color' => $group['color'],
+            'members' => $groupMembersMap[$groupId] ?? [],
+            'permissions' => $groupPermissionsMap[$groupId] ?? []
+        ];
+    }
+
 } catch (Exception $e) {
     error_log('Permissions data loading error: ' . $e->getMessage());
     $users = [];
@@ -220,7 +355,26 @@ try {
     $actions = [];
     $userPermissions = [];
     $groups = [];
+    $groupMembersMap = [];
+    $groupPermissionsMap = [];
+    $groupDataForJs = [];
 }
+
+$usersForJs = array_map(static function ($user) {
+    $fullName = trim((string)($user['full_name'] ?? ''));
+    $username = (string)($user['username'] ?? '');
+    return [
+        'id' => (int)($user['id'] ?? 0),
+        'full_name' => $fullName !== '' ? $fullName : $username,
+        'username' => $username,
+        'role' => (string)($user['role'] ?? '')
+    ];
+}, $users);
+
+$groupDataJson = json_encode((object)$groupDataForJs, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?: '{}';
+$usersDataJson = json_encode($usersForJs, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?: '[]';
+$moduleActionsJson = json_encode($moduleActionsMap, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?: '{}';
+$modulesJson = json_encode($modules, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?: '[]';
 
 // Get selected user's permissions for matrix display
 $selectedUserId = $_GET['user_id'] ?? ($users[0]['id'] ?? null);
@@ -396,34 +550,34 @@ include 'includes/header.php';
     <!-- Navigation Tabs -->
     <ul class="nav nav-pills page-tabs mb-4" id="permissionTabs" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link active" id="matrix-tab" data-bs-toggle="tab" data-bs-target="#matrix" type="button" role="tab" aria-controls="matrix" aria-selected="true">
+            <a class="nav-link <?= $activeTab === 'matrix' ? 'active' : '' ?>" id="matrix-tab" href="<?= buildPermissionsLink(['tab' => 'matrix']) ?>">
                 <i class="bi bi-grid"></i>
                 <span>Matrix</span>
-            </button>
+            </a>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link" id="groups-tab" data-bs-toggle="tab" data-bs-target="#groups" type="button" role="tab" aria-controls="groups" aria-selected="false">
+            <a class="nav-link <?= $activeTab === 'groups' ? 'active' : '' ?>" id="groups-tab" href="<?= buildPermissionsLink(['tab' => 'groups']) ?>">
                 <i class="bi bi-people"></i>
                 <span>Groups</span>
-            </button>
+            </a>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link" id="individual-tab" data-bs-toggle="tab" data-bs-target="#individual" type="button" role="tab" aria-controls="individual" aria-selected="false">
+            <a class="nav-link <?= $activeTab === 'individual' ? 'active' : '' ?>" id="individual-tab" href="<?= buildPermissionsLink(['tab' => 'individual']) ?>">
                 <i class="bi bi-person-gear"></i>
                 <span>Individual</span>
-            </button>
+            </a>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link" id="templates-tab" data-bs-toggle="tab" data-bs-target="#templates" type="button" role="tab" aria-controls="templates" aria-selected="false">
+            <a class="nav-link <?= $activeTab === 'templates' ? 'active' : '' ?>" id="templates-tab" href="<?= buildPermissionsLink(['tab' => 'templates']) ?>">
                 <i class="bi bi-file-earmark-code"></i>
                 <span>Templates</span>
-            </button>
+            </a>
         </li>
     </ul>
 
     <div class="tab-content" id="permissionTabContent">
     <!-- Permission Matrix Tab -->
-    <div class="tab-pane fade show active" id="matrix" role="tabpanel" aria-labelledby="matrix-tab">
+    <div class="tab-pane fade <?= $activeTab === 'matrix' ? 'show active' : '' ?>" id="matrix" role="tabpanel" aria-labelledby="matrix-tab">
         <div class="card border-0 shadow-sm">
             <div class="card-header bg-white">
                 <div class="row align-items-center">
@@ -431,14 +585,24 @@ include 'includes/header.php';
                         <h6 class="mb-0"><i class="bi bi-grid me-2"></i>Permission Matrix</h6>
                     </div>
                     <div class="col-md-6">
-                        <select class="form-select" id="userSelect" onchange="location.href='?user_id='+this.value">
-                            <option value="">Select User</option>
-                            <?php foreach ($users as $user): ?>
-                                <option value="<?= $user['id'] ?>" <?= $selectedUserId == $user['id'] ? 'selected' : '' ?>>
-                                    <?= htmlspecialchars($user['full_name']) ?> (<?= htmlspecialchars($user['username']) ?>)
-                                </option>
+                        <form method="GET" class="d-flex align-items-center gap-2" id="userSelectForm">
+                            <?php
+                            $preservedQuery = $_GET;
+                            unset($preservedQuery['user_id'], $preservedQuery['action'], $preservedQuery['csrf_token']);
+                            foreach ($preservedQuery as $key => $value):
+                            ?>
+                                <input type="hidden" name="<?= htmlspecialchars($key) ?>" value="<?= htmlspecialchars($value) ?>">
                             <?php endforeach; ?>
-                        </select>
+                            <select class="form-select" id="userSelect" name="user_id">
+                                <option value="">Select User</option>
+                                <?php foreach ($users as $user): ?>
+                                    <option value="<?= $user['id'] ?>" <?= $selectedUserId == $user['id'] ? 'selected' : '' ?>>
+                                        <?= htmlspecialchars($user['full_name']) ?> (<?= htmlspecialchars($user['username']) ?>)
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <button type="submit" class="btn btn-outline-secondary">Go</button>
+                        </form>
                     </div>
                 </div>
             </div>
@@ -496,7 +660,7 @@ include 'includes/header.php';
     </div>
 
     <!-- Permission Groups Tab -->
-    <div class="tab-pane fade" id="groups" role="tabpanel" aria-labelledby="groups-tab">
+    <div class="tab-pane fade <?= $activeTab === 'groups' ? 'show active' : '' ?>" id="groups" role="tabpanel" aria-labelledby="groups-tab">
         <div class="row g-3">
             <?php foreach ($groups as $group): ?>
             <div class="col-md-6 col-lg-4">
@@ -532,10 +696,20 @@ include 'includes/header.php';
                         </div>
                         
                         <div class="d-grid gap-2">
-                            <button class="btn btn-sm btn-outline-primary" onclick="manageGroupMembers(<?= $group['id'] ?>, '<?= htmlspecialchars($group['name']) ?>')">
+                            <button
+                                type="button"
+                                class="btn btn-sm btn-outline-primary manage-group-members-btn"
+                                data-group-id="<?= (int)$group['id'] ?>"
+                                data-group-name="<?= htmlspecialchars($group['name'], ENT_QUOTES) ?>"
+                            >
                                 <i class="bi bi-people me-1"></i>Manage Members
                             </button>
-                            <button class="btn btn-sm btn-outline-secondary" onclick="editGroupPermissions(<?= $group['id'] ?>, '<?= htmlspecialchars($group['name']) ?>')">
+                            <button
+                                type="button"
+                                class="btn btn-sm btn-outline-secondary edit-group-permissions-btn"
+                                data-group-id="<?= (int)$group['id'] ?>"
+                                data-group-name="<?= htmlspecialchars($group['name'], ENT_QUOTES) ?>"
+                            >
                                 <i class="bi bi-shield-lock me-1"></i>Edit Permissions
                             </button>
                         </div>
@@ -547,7 +721,7 @@ include 'includes/header.php';
     </div>
 
     <!-- Individual Permissions Tab -->
-    <div class="tab-pane fade" id="individual" role="tabpanel" aria-labelledby="individual-tab">
+    <div class="tab-pane fade <?= $activeTab === 'individual' ? 'show active' : '' ?>" id="individual" role="tabpanel" aria-labelledby="individual-tab">
         <div class="card border-0 shadow-sm">
             <div class="card-header bg-white">
                 <h6 class="mb-0"><i class="bi bi-person-gear me-2"></i>Individual Permission Overrides</h6>
@@ -629,7 +803,7 @@ include 'includes/header.php';
     </div>
 
     <!-- Permission Templates Tab -->
-    <div class="tab-pane fade" id="templates" role="tabpanel" aria-labelledby="templates-tab">
+    <div class="tab-pane fade <?= $activeTab === 'templates' ? 'show active' : '' ?>" id="templates" role="tabpanel" aria-labelledby="templates-tab">
         <div class="card border-0 shadow-sm">
             <div class="card-header bg-white">
                 <h6 class="mb-0"><i class="bi bi-file-earmark-code me-2"></i>Permission Templates</h6>
@@ -640,13 +814,34 @@ include 'includes/header.php';
                     Permission templates allow you to save and reuse common permission sets. This feature helps maintain consistency and speeds up user setup.
                 </div>
                 
+                <?php
+                $templates = $db->fetchAll("SELECT id, name, description, created_at FROM permission_templates ORDER BY name") ?: [];
+                if (!empty($templates)):
+                ?>
+                <div class="row g-3">
+                    <?php foreach ($templates as $template): ?>
+                    <div class="col-md-4">
+                        <div class="card border">
+                            <div class="card-body">
+                                <h6><?= htmlspecialchars($template['name']) ?></h6>
+                                <p class="small text-muted mb-2"><?= htmlspecialchars($template['description'] ?? '') ?></p>
+                                <button class="btn btn-sm btn-outline-primary" type="button">
+                                    <i class="bi bi-copy me-1"></i>Apply
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+                <?php else: ?>
                 <div class="text-center py-5">
                     <i class="bi bi-file-earmark-plus text-muted" style="font-size: 3rem;"></i>
-                    <p class="text-muted mt-3">Permission templates feature coming soon!</p>
-                    <button class="btn btn-outline-primary" disabled>
+                    <p class="text-muted mt-3">No permission templates created yet.</p>
+                    <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#createTemplateModal" type="button">
                         <i class="bi bi-plus-circle me-2"></i>Create Template
                     </button>
                 </div>
+                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -716,6 +911,105 @@ include 'includes/header.php';
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn btn-primary">Create Group</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Manage Group Members Modal -->
+<div class="modal fade" id="manageGroupMembersModal" tabindex="-1" aria-labelledby="manageGroupMembersModalLabel">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title d-flex align-items-center flex-wrap gap-2" id="manageGroupMembersModalLabel">
+                    <span><i class="bi bi-people me-2"></i>Manage Group Members</span>
+                    <small class="text-muted" id="manageGroupMembersModalName"></small>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-4">
+                    <form method="POST" id="addGroupMemberForm" class="row g-3 align-items-end">
+                        <input type="hidden" name="action" value="add_to_group">
+                        <input type="hidden" name="csrf_token" value="<?= generateCSRFToken(); ?>">
+                        <input type="hidden" name="group_id" id="addMemberGroupId">
+                        <div class="col-md-6">
+                            <label for="addMemberUserSelect" class="form-label">User *</label>
+                            <select class="form-select" id="addMemberUserSelect" name="user_id" required>
+                                <option value="">Select user</option>
+                            </select>
+                            <small class="text-muted" id="addMemberHelper"></small>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Expires At</label>
+                            <input type="datetime-local" class="form-control" name="expires_at">
+                        </div>
+                        <div class="col-md-2 d-grid">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-person-plus me-1"></i>Add
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="table-responsive border rounded">
+                    <table class="table table-sm mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>User</th>
+                                <th>Username</th>
+                                <th>Expires</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="groupMembersList">
+                            <tr>
+                                <td colspan="4" class="text-center text-muted py-4">
+                                    Select a group to manage its members.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Group Permissions Modal -->
+<div class="modal fade" id="editGroupPermissionsModal" tabindex="-1" aria-labelledby="editGroupPermissionsModalLabel">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <form method="POST" id="editGroupPermissionsForm">
+                <input type="hidden" name="action" value="update_group_permissions">
+                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken(); ?>">
+                <input type="hidden" name="group_id" id="editPermissionsGroupId">
+                <div class="modal-header">
+                    <h5 class="modal-title d-flex align-items-center flex-wrap gap-2" id="editGroupPermissionsModalLabel">
+                        <span><i class="bi bi-shield-lock me-2"></i>Edit Group Permissions</span>
+                        <small class="text-muted" id="editGroupPermissionsModalName"></small>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-light border d-flex align-items-center gap-2 mb-4">
+                        <i class="bi bi-info-circle text-primary"></i>
+                        <div class="small mb-0">
+                            Select the actions this group should have access to. Changes take effect immediately for all members.
+                        </div>
+                    </div>
+                    <div id="groupPermissionsChecklist" class="row g-3">
+                        <div class="col-12 text-center text-muted py-4">
+                            Select a group to load its permission map.
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-save me-2"></i>Save Permissions
+                    </button>
                 </div>
             </form>
         </div>
@@ -800,15 +1094,317 @@ include 'includes/header.php';
     </div>
 </div>
 
+<!-- Create Template Modal -->
+<div class="modal fade" id="createTemplateModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="POST">
+                <input type="hidden" name="action" value="create_template">
+                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken(); ?>">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-file-earmark-plus me-2"></i>Create Permission Template</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label class="form-label">Template Name *</label>
+                            <input type="text" class="form-control" name="template_name" required placeholder="e.g., Basic Cashier, Senior Manager">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Description</label>
+                            <textarea class="form-control" name="template_description" rows="2" placeholder="Describe what this template is for..."></textarea>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Permissions</label>
+                            <div class="row g-2">
+                                <?php foreach ($modules as $module): ?>
+                                <div class="col-md-6">
+                                    <div class="card border">
+                                        <div class="card-header py-2">
+                                            <small class="fw-bold">
+                                                <i class="<?= $module['icon'] ?? 'bi bi-gear' ?> me-1"></i>
+                                                <?= htmlspecialchars($module['module_name'] ?? $module['module_key'] ?? 'Unknown') ?>
+                                            </small>
+                                        </div>
+                                        <div class="card-body py-2">
+                                            <?php $moduleActionSet = $moduleActionsMap[$module['module_key']] ?? []; ?>
+                                            <?php if (!empty($moduleActionSet)): ?>
+                                                <?php foreach ($moduleActionSet as $actionKey => $actionMeta): ?>
+                                                    <div class="form-check form-check-inline">
+                                                        <input class="form-check-input" type="checkbox" name="template_permissions[]" 
+                                                               value="<?= $module['module_key'] ?>:<?= $actionKey ?>" 
+                                                               id="tpl_<?= $module['module_key'] ?>_<?= $actionKey ?>">
+                                                        <label class="form-check-label small" for="tpl_<?= $module['module_key'] ?>_<?= $actionKey ?>">
+                                                            <?= htmlspecialchars($actionMeta['action_name'] ?? ucfirst($actionKey)) ?>
+                                                        </label>
+                                                    </div>
+                                                <?php endforeach; ?>
+                                            <?php else: ?>
+                                                <small class="text-muted">No actions</small>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                </div>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-save me-2"></i>Save Template
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
+const GROUP_DATA = <?= $groupDataJson ?>;
+const USERS_DATA = <?= $usersDataJson ?>;
+const MODULE_ACTIONS_MAP = <?= $moduleActionsJson ?>;
+const MODULES_DATA = <?= $modulesJson ?>;
+const CSRF_TOKEN = '<?= generateCSRFToken(); ?>';
+
 function manageGroupMembers(groupId, groupName) {
-    // Implementation for managing group members
-    alert('Manage members for: ' + groupName);
+    const modalEl = document.getElementById('manageGroupMembersModal');
+    if (!modalEl) {
+        return;
+    }
+
+    document.getElementById('manageGroupMembersModalName').textContent = groupName || '';
+    document.getElementById('addMemberGroupId').value = groupId;
+    populateAddMemberSelect(groupId);
+    renderGroupMembersTable(groupId);
+    showBootstrapModal(modalEl);
 }
 
 function editGroupPermissions(groupId, groupName) {
-    // Implementation for editing group permissions
-    alert('Edit permissions for: ' + groupName);
+    const modalEl = document.getElementById('editGroupPermissionsModal');
+    if (!modalEl) {
+        return;
+    }
+
+    document.getElementById('editPermissionsGroupId').value = groupId;
+    document.getElementById('editGroupPermissionsModalName').textContent = groupName || '';
+    buildGroupPermissionChecklist(groupId);
+    showBootstrapModal(modalEl);
+}
+
+function populateAddMemberSelect(groupId) {
+    const selectEl = document.getElementById('addMemberUserSelect');
+    if (!selectEl) {
+        return;
+    }
+
+    selectEl.innerHTML = '<option value="">Select user</option>';
+    const group = GROUP_DATA[groupId] || {};
+    const memberIds = new Set((group.members || []).map(member => member.user_id));
+
+    USERS_DATA.forEach(user => {
+        if (memberIds.has(user.id)) {
+            return;
+        }
+        const option = document.createElement('option');
+        option.value = user.id;
+        option.textContent = `${user.full_name} (${user.username})`;
+        selectEl.appendChild(option);
+    });
+
+    const helper = document.getElementById('addMemberHelper');
+    if (helper) {
+        const count = memberIds.size;
+        helper.textContent = count
+            ? `${count} member${count === 1 ? '' : 's'} currently in this group`
+            : 'No members currently in this group';
+    }
+}
+
+function renderGroupMembersTable(groupId) {
+    const tbody = document.getElementById('groupMembersList');
+    if (!tbody) {
+        return;
+    }
+
+    tbody.innerHTML = '';
+    const group = GROUP_DATA[groupId];
+    const members = group?.members || [];
+
+    if (!members.length) {
+        const emptyRow = document.createElement('tr');
+        const emptyCell = document.createElement('td');
+        emptyCell.colSpan = 4;
+        emptyCell.className = 'text-center text-muted py-4';
+        emptyCell.textContent = 'No members in this group yet.';
+        emptyRow.appendChild(emptyCell);
+        tbody.appendChild(emptyRow);
+        return;
+    }
+
+    members.forEach(member => {
+        const row = document.createElement('tr');
+
+        const nameCell = document.createElement('td');
+        nameCell.textContent = member.full_name || member.username || 'User';
+        row.appendChild(nameCell);
+
+        const usernameCell = document.createElement('td');
+        usernameCell.textContent = member.username || '—';
+        row.appendChild(usernameCell);
+
+        const expiresCell = document.createElement('td');
+        expiresCell.textContent = formatDateLabel(member.expires_at);
+        row.appendChild(expiresCell);
+
+        const actionsCell = document.createElement('td');
+        actionsCell.className = 'text-end';
+
+        const removeForm = document.createElement('form');
+        removeForm.method = 'POST';
+        removeForm.className = 'remove-group-member-form d-inline';
+        removeForm.dataset.memberName = member.full_name || member.username || 'this member';
+
+        removeForm.appendChild(createHiddenInput('action', 'remove_from_group'));
+        removeForm.appendChild(createHiddenInput('csrf_token', CSRF_TOKEN));
+        removeForm.appendChild(createHiddenInput('group_id', groupId));
+        removeForm.appendChild(createHiddenInput('user_id', member.user_id));
+        removeForm.appendChild(createHiddenInput('reason', ''));
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'submit';
+        removeBtn.className = 'btn btn-outline-danger btn-sm';
+        removeBtn.innerHTML = '<i class="bi bi-person-dash"></i>';
+        removeBtn.title = 'Remove from group';
+        removeForm.appendChild(removeBtn);
+
+        actionsCell.appendChild(removeForm);
+        row.appendChild(actionsCell);
+        tbody.appendChild(row);
+    });
+}
+
+function buildGroupPermissionChecklist(groupId) {
+    const container = document.getElementById('groupPermissionsChecklist');
+    if (!container) {
+        return;
+    }
+
+    container.innerHTML = '';
+    const group = GROUP_DATA[groupId];
+    if (!group) {
+        container.innerHTML = '<div class="col-12 text-center text-muted py-4">Unable to load group permissions.</div>';
+        return;
+    }
+
+    const selectedPermissions = new Set(group.permissions || []);
+    const modulesWithActions = MODULES_DATA.filter(module => {
+        const actionSet = MODULE_ACTIONS_MAP[module.module_key] || {};
+        return Object.keys(actionSet).length > 0;
+    });
+
+    if (!modulesWithActions.length) {
+        container.innerHTML = '<div class="col-12 text-center text-muted py-4">No modules have actions configured yet.</div>';
+        return;
+    }
+
+    const fragment = document.createDocumentFragment();
+
+    modulesWithActions.forEach(module => {
+        const actionSet = MODULE_ACTIONS_MAP[module.module_key] || {};
+        const col = document.createElement('div');
+        col.className = 'col-md-6 col-lg-4';
+
+        const card = document.createElement('div');
+        card.className = 'card border';
+
+        const header = document.createElement('div');
+        header.className = 'card-header py-2';
+        header.innerHTML = `<small class="fw-bold"><i class="${module.icon || 'bi bi-gear'} me-1"></i>${module.module_name || module.module_key}</small>`;
+        card.appendChild(header);
+
+        const body = document.createElement('div');
+        body.className = 'card-body py-2';
+
+        if (!Object.keys(actionSet).length) {
+            const emptyText = document.createElement('small');
+            emptyText.className = 'text-muted';
+            emptyText.textContent = 'No actions configured for this module.';
+            body.appendChild(emptyText);
+        } else {
+            Object.entries(actionSet).forEach(([actionKey, actionMeta]) => {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'form-check form-check-inline';
+
+                const input = document.createElement('input');
+                input.type = 'checkbox';
+                input.className = 'form-check-input';
+                input.name = 'permissions[]';
+                input.value = `${module.module_key}:${actionKey}`;
+                input.id = `editPerm_${module.module_key}_${actionKey}`;
+                input.checked = selectedPermissions.has(input.value);
+
+                const label = document.createElement('label');
+                label.className = 'form-check-label small';
+                label.setAttribute('for', input.id);
+                label.textContent = actionMeta.action_name || actionKey;
+
+                wrapper.appendChild(input);
+                wrapper.appendChild(label);
+                body.appendChild(wrapper);
+            });
+        }
+
+        card.appendChild(body);
+        col.appendChild(card);
+        fragment.appendChild(col);
+    });
+
+    container.appendChild(fragment);
+}
+
+function createHiddenInput(name, value) {
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = name;
+    input.value = value;
+    return input;
+}
+
+function formatDateLabel(value) {
+    if (!value) {
+        return 'No expiry';
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return value;
+    }
+    return date.toLocaleString();
+}
+
+function showBootstrapModal(modalEl) {
+    if (window.bootstrap && bootstrap.Modal) {
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    } else {
+        modalEl.classList.add('show');
+        modalEl.style.display = 'block';
+        document.body.classList.add('modal-open');
+    }
+}
+
+function hideBootstrapModal(modalEl) {
+    if (window.bootstrap && bootstrap.Modal) {
+        const instance = bootstrap.Modal.getInstance(modalEl);
+        if (instance) {
+            instance.hide();
+        }
+    } else {
+        modalEl.classList.remove('show');
+        modalEl.style.display = 'none';
+        document.body.classList.remove('modal-open');
+    }
 }
 
 // Auto-refresh audit log every 30 seconds when modal is open
@@ -832,32 +1428,104 @@ if (auditLogModal) {
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-    const tabButtons = Array.from(document.querySelectorAll('#permissionTabs button[data-bs-toggle="tab"]'));
-    if (!tabButtons.length) {
-        return;
+    // Auto-submit user select dropdown on change
+    const userSelect = document.getElementById('userSelect');
+    if (userSelect) {
+        userSelect.addEventListener('change', () => {
+            if (userSelect.value) {
+                userSelect.closest('form').submit();
+            }
+        });
     }
 
-    tabButtons.forEach(button => {
+    // Tabs use URL navigation - no JS needed for tab switching
+
+    const modalToggleButtons = document.querySelectorAll('[data-bs-toggle="modal"][data-bs-target]');
+    modalToggleButtons.forEach(button => {
         button.addEventListener('click', event => {
-            event.preventDefault();
-            if (window.bootstrap && bootstrap.Tab) {
-                bootstrap.Tab.getOrCreateInstance(button).show();
+            const targetSelector = button.getAttribute('data-bs-target');
+            const targetModal = targetSelector ? document.querySelector(targetSelector) : null;
+            if (!targetModal) {
                 return;
             }
+            if (window.bootstrap && bootstrap.Modal) {
+                return;
+            }
+            event.preventDefault();
+            showBootstrapModal(targetModal);
+        });
+    });
 
-            tabButtons.forEach(btn => btn.classList.remove('active'));
-            document.querySelectorAll('#permissionTabContent .tab-pane').forEach(pane => {
-                pane.classList.remove('active', 'show');
-            });
-
-            button.classList.add('active');
-            const targetSelector = button.getAttribute('data-bs-target');
-            const targetPane = targetSelector ? document.querySelector(targetSelector) : null;
-            if (targetPane) {
-                targetPane.classList.add('active', 'show');
+    const modalDismissButtons = document.querySelectorAll('[data-bs-dismiss="modal"]');
+    modalDismissButtons.forEach(button => {
+        button.addEventListener('click', event => {
+            if (window.bootstrap && bootstrap.Modal) {
+                return;
+            }
+            event.preventDefault();
+            const modalEl = button.closest('.modal');
+            if (modalEl) {
+                hideBootstrapModal(modalEl);
             }
         });
     });
+
+    const manageMembersButtons = document.querySelectorAll('.manage-group-members-btn');
+    manageMembersButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            const groupId = parseInt(button.dataset.groupId, 10);
+            if (!groupId) {
+                return;
+            }
+            const groupName = button.dataset.groupName || '';
+            manageGroupMembers(groupId, groupName);
+        });
+    });
+
+    const editGroupButtons = document.querySelectorAll('.edit-group-permissions-btn');
+    editGroupButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            const groupId = parseInt(button.dataset.groupId, 10);
+            if (!groupId) {
+                return;
+            }
+            const groupName = button.dataset.groupName || '';
+            editGroupPermissions(groupId, groupName);
+        });
+    });
+
+    // Confirm before removing group members
+    document.addEventListener('submit', event => {
+        const form = event.target;
+        if (form.classList.contains('remove-group-member-form')) {
+            const memberName = form.dataset.memberName || 'this member';
+            if (!confirm(`Remove ${memberName} from this group?`)) {
+                event.preventDefault();
+            }
+        }
+    });
+
+    // Handle form select dropdowns - populate dependent selects
+    const moduleSelect = document.querySelector('select[name="module_key"]');
+    const actionSelect = document.querySelector('select[name="action_key"]');
+    if (moduleSelect && actionSelect) {
+        moduleSelect.addEventListener('change', () => {
+            const selectedModule = moduleSelect.value;
+            const moduleActions = MODULE_ACTIONS_MAP[selectedModule] || {};
+            
+            // Clear and repopulate action select
+            actionSelect.innerHTML = '<option value="">Select Action</option>';
+            Object.entries(moduleActions).forEach(([actionKey, actionMeta]) => {
+                const option = document.createElement('option');
+                option.value = actionKey;
+                option.textContent = (actionMeta.action_name || actionKey) + (actionMeta.is_sensitive ? ' ⚠️' : '');
+                if (actionMeta.is_sensitive) {
+                    option.dataset.sensitive = 'true';
+                }
+                actionSelect.appendChild(option);
+            });
+        });
+    }
 });
 </script>
 

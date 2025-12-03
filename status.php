@@ -1,6 +1,12 @@
 <?php
 require_once __DIR__ . '/includes/bootstrap.php';
 
+// System status is restricted to super admin only
+if (!$auth->isLoggedIn() || !in_array($auth->getRole(), ['developer', 'super_admin'])) {
+    $_SESSION['error_message'] = 'Access denied. Super admin privileges required.';
+    redirect('index.php');
+}
+
 $db = Database::getInstance();
 
 function waposTableExists(Database $db, string $table): bool

@@ -793,7 +793,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'module' => 'users'
                             ],
                             [
-                                'roles' => ['admin'],
+                                'roles' => ['developer', 'super_admin'],
                                 'href' => '/wapos/system-health.php',
                                 'page' => 'system-health.php',
                                 'icon' => 'bi-heart-pulse',

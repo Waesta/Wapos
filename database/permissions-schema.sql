@@ -142,13 +142,12 @@ CREATE TABLE IF NOT EXISTS user_sessions (
     user_agent TEXT,
     login_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    expires_at TIMESTAMP NOT NULL,
+    expires_at TIMESTAMP NULL DEFAULT NULL,
     is_active TINYINT(1) DEFAULT 1,
     location_id INT UNSIGNED,
     device_fingerprint VARCHAR(255),
     two_factor_verified TINYINT(1) DEFAULT 0,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (location_id) REFERENCES locations(id) ON DELETE SET NULL
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 -- Two-Factor Authentication
@@ -307,7 +306,7 @@ WHERE
 ON DUPLICATE KEY UPDATE is_default = VALUES(is_default);
 
 -- Insert Default Permission Groups
-INSERT INTO permission_groups (name, description, color) VALUES
+INSERT INTO permission_groups (group_name, description, color) VALUES
 ('Super Administrators', 'Full system access with all permissions', '#dc3545'),
 ('Store Managers', 'Full operational access with reporting capabilities', '#28a745'),
 ('Shift Supervisors', 'Limited management access for shift operations', '#ffc107'),

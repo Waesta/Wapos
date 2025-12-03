@@ -2,130 +2,176 @@
 require_once 'includes/bootstrap.php';
 $auth->requireLogin();
 
-$pageTitle = 'Demo Feedback';
+$pageTitle = 'Feedback';
 include 'includes/header.php';
 ?>
 
-<style>
-    .feedback-page .top-bar-title h5 {
-        font-weight: 600;
-    }
-    .feedback-page .app-card {
-        border-radius: 1rem;
-        box-shadow: 0 0.35rem 1.2rem rgba(12, 68, 101, 0.08);
-    }
-    .feedback-page .rating-options .btn {
-        min-width: 54px;
-        border-radius: 999px;
-        font-weight: 600;
-        transition: all 0.15s ease;
-    }
-    .feedback-page .rating-options .btn-check:checked + label,
-    .feedback-page .rating-options .btn-check:focus + label {
-        border-color: #0d6efd;
-        background-color: rgba(13, 110, 253, 0.08);
-        color: #0d6efd;
-        box-shadow: 0 0 0 0.15rem rgba(13, 110, 253, 0.25);
-    }
-    .feedback-page .feedback-layout {
-        max-width: 1100px;
-        margin: 0 auto;
-    }
-    .feedback-page .info-card .list-group-item {
-        border: none;
-        padding-left: 0;
-        padding-right: 0;
-    }
-    @media (max-width: 991.98px) {
-        .feedback-page .app-card {
-            box-shadow: none;
-        }
-    }
-</style>
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white py-3">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h5 class="mb-1"><i class="bi bi-chat-square-text me-2 text-primary"></i>Share Your Feedback</h5>
+                <p class="text-muted mb-0 small">Help us improve by sharing your experience and suggestions.</p>
+            </div>
+        </div>
+    </div>
+</div>
 
-<div class="main-content feedback-page">
-    <div class="top-bar">
-        <div class="top-bar-title">
-            <h5 class="mb-0">Share Your Feedback</h5>
-            <small class="text-muted">Focus group testers can leave comments, ratings, and optional contact information.</small>
+<div class="row g-4">
+    <!-- Feedback Form -->
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white py-3">
+                <h6 class="mb-0"><i class="bi bi-pencil-square me-2"></i>Feedback Form</h6>
+            </div>
+            <div class="card-body">
+                <div id="feedbackAlert" class="alert d-none" role="alert"></div>
+
+                <form id="feedbackForm">
+                    <!-- Rating -->
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold">How would you rate your overall experience?</label>
+                        <div class="d-flex gap-2 mt-2">
+                            <?php 
+                            $ratingLabels = ['Poor', 'Fair', 'Good', 'Very Good', 'Excellent'];
+                            for ($i = 1; $i <= 5; $i++): 
+                            ?>
+                                <div class="text-center">
+                                    <input type="radio" name="rating" value="<?= $i ?>" class="btn-check" id="rating-<?= $i ?>" autocomplete="off">
+                                    <label class="btn btn-outline-primary rounded-circle d-flex align-items-center justify-content-center" 
+                                           for="rating-<?= $i ?>" style="width: 50px; height: 50px; font-weight: 600;">
+                                        <?= $i ?>
+                                    </label>
+                                    <small class="d-block text-muted mt-1" style="font-size: 0.7rem;"><?= $ratingLabels[$i-1] ?></small>
+                                </div>
+                            <?php endfor; ?>
+                        </div>
+                    </div>
+
+                    <!-- Category -->
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold">Feedback Category</label>
+                        <select class="form-select" name="category">
+                            <option value="">Select a category (optional)</option>
+                            <option value="bug">🐛 Bug Report</option>
+                            <option value="feature">💡 Feature Request</option>
+                            <option value="improvement">🔧 Improvement Suggestion</option>
+                            <option value="usability">🎯 Usability Issue</option>
+                            <option value="performance">⚡ Performance Issue</option>
+                            <option value="other">📝 General Feedback</option>
+                        </select>
+                    </div>
+
+                    <!-- Comments -->
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold">Your Feedback <span class="text-danger">*</span></label>
+                        <textarea class="form-control" name="comments" id="feedbackComments" rows="5" 
+                                  placeholder="Please describe your experience, any issues encountered, or suggestions for improvement..." required></textarea>
+                        <div class="form-text">Be as specific as possible. Include screen names, steps to reproduce issues, or feature details.</div>
+                    </div>
+
+                    <!-- Contact -->
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold">Contact Information <span class="text-muted fw-normal">(optional)</span></label>
+                        <input type="text" class="form-control" name="contact" placeholder="Email or phone number for follow-up">
+                        <div class="form-text">Leave your contact if you'd like us to reach out regarding your feedback.</div>
+                    </div>
+
+                    <!-- Submit -->
+                    <div class="d-flex justify-content-between align-items-center pt-3 border-top">
+                        <small class="text-muted">
+                            <i class="bi bi-info-circle me-1"></i>
+                            Submitted as: <strong><?= htmlspecialchars($auth->getUser()['full_name'] ?? $auth->getUser()['username'] ?? 'Anonymous') ?></strong>
+                        </small>
+                        <button type="submit" class="btn btn-primary px-4" id="feedbackSubmitBtn">
+                            <i class="bi bi-send me-2"></i>Submit Feedback
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 
-    <div class="container-fluid py-4">
-        <div class="feedback-layout">
-            <div class="row g-4 align-items-stretch justify-content-center">
-                <div class="col-12 col-xl-7">
-                    <div class="app-card" data-elevation="md">
-                        <div class="app-card-header d-flex justify-content-between align-items-center mb-3">
-                            <div>
-                                <h5 class="mb-0"><i class="bi bi-chat-text me-2"></i>Feedback Form</h5>
-                                <small class="text-muted">All fields except comments are optional, but more detail helps the product team.</small>
-                            </div>
-                        </div>
-
-                        <div id="feedbackAlert" class="alert d-none" role="alert"></div>
-
-                        <form id="feedbackForm" class="stack-md gap-4">
-                            <div>
-                                <label class="form-label">Overall Experience</label>
-                                <div class="rating-options d-flex gap-2 flex-wrap justify-content-center">
-                                    <?php for ($i = 1; $i <= 5; $i++): ?>
-                                        <input type="radio" name="rating" value="<?= $i ?>" class="btn-check" id="rating-<?= $i ?>" autocomplete="off">
-                                        <label class="btn btn-outline-primary d-flex align-items-center justify-content-center" for="rating-<?= $i ?>">
-                                            <span><?= $i ?></span>
-                                        </label>
-                                    <?php endfor; ?>
-                                </div>
-                                <small class="text-muted">1 = Needs a lot of work, 5 = Fantastic</small>
-                            </div>
-
-                            <div>
-                                <label class="form-label">Comments *</label>
-                                <textarea class="form-control" name="comments" id="feedbackComments" rows="5" placeholder="Tell us what worked well and what needs attention..." required></textarea>
-                            </div>
-
-                            <div>
-                                <label class="form-label">Contact (optional)</label>
-                                <input type="text" class="form-control" name="contact" placeholder="Email or phone if you'd like us to follow up">
-                            </div>
-
-                            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                                <small class="text-muted" id="feedbackContextNote">Context: <span id="feedbackContextValue"></span></small>
-                                <button type="submit" class="btn btn-primary" id="feedbackSubmitBtn">
-                                    <i class="bi bi-send me-1"></i>Send Feedback
-                                </button>
-                            </div>
-                        </form>
+    <!-- Tips Sidebar -->
+    <div class="col-lg-4">
+        <!-- Tips Card -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-primary text-white py-3">
+                <h6 class="mb-0"><i class="bi bi-lightbulb me-2"></i>Tips for Great Feedback</h6>
+            </div>
+            <div class="card-body">
+                <div class="d-flex mb-3">
+                    <div class="flex-shrink-0">
+                        <span class="badge bg-primary rounded-circle p-2">
+                            <i class="bi bi-bullseye"></i>
+                        </span>
+                    </div>
+                    <div class="ms-3">
+                        <strong class="d-block">Be Specific</strong>
+                        <small class="text-muted">Mention the exact screen, button, or workflow.</small>
                     </div>
                 </div>
-
-                <div class="col-12 col-xl-5">
-                    <div class="app-card info-card h-100">
-                        <h6 class="text-uppercase text-muted small mb-3">Focus Group Tips</h6>
-                        <ul class="list-group list-group-flush">
-                            <li class="list-group-item">
-                                <strong>Be Specific:</strong>
-                                <p class="mb-0 small text-muted">Mention the screen, workflow, or button that needs improvement.</p>
-                            </li>
-                            <li class="list-group-item">
-                                <strong>Report Bugs:</strong>
-                                <p class="mb-0 small text-muted">If something breaks, describe the exact steps that caused it.</p>
-                            </li>
-                            <li class="list-group-item">
-                                <strong>Share Wishlist Ideas:</strong>
-                                <p class="mb-0 small text-muted">Tell us about features that would make your daily tasks easier.</p>
-                            </li>
-                            <li class="list-group-item">
-                                <strong>Optional Follow-up:</strong>
-                                <p class="mb-0 small text-muted">Leave an email/phone if you'd like the team to reach out.</p>
-                            </li>
-                        </ul>
+                <div class="d-flex mb-3">
+                    <div class="flex-shrink-0">
+                        <span class="badge bg-danger rounded-circle p-2">
+                            <i class="bi bi-bug"></i>
+                        </span>
                     </div>
+                    <div class="ms-3">
+                        <strong class="d-block">Report Bugs Clearly</strong>
+                        <small class="text-muted">Describe the steps that caused the issue.</small>
+                    </div>
+                </div>
+                <div class="d-flex mb-3">
+                    <div class="flex-shrink-0">
+                        <span class="badge bg-success rounded-circle p-2">
+                            <i class="bi bi-stars"></i>
+                        </span>
+                    </div>
+                    <div class="ms-3">
+                        <strong class="d-block">Share Ideas</strong>
+                        <small class="text-muted">Tell us features that would help your work.</small>
+                    </div>
+                </div>
+                <div class="d-flex">
+                    <div class="flex-shrink-0">
+                        <span class="badge bg-info rounded-circle p-2">
+                            <i class="bi bi-telephone"></i>
+                        </span>
+                    </div>
+                    <div class="ms-3">
+                        <strong class="d-block">Stay Connected</strong>
+                        <small class="text-muted">Leave contact info for follow-up discussions.</small>
+                    </div>
+                </div>
+            </div>
+        </div>
 
-                    <div class="app-card mt-4">
-                        <h6 class="text-uppercase text-muted small mb-3">What Happens Next?</h6>
-                        <p class="mb-2">Every submission lands in the <code>demo_feedback</code> table. Product leads will triage ratings, tag themes, and respond when contact info is provided.</p>
-                        <p class="mb-0 text-muted small">Need to escalate an issue urgently? Ping the facilitator on the focus group chat with a screenshot.</p>
+        <!-- Process Card -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white py-3">
+                <h6 class="mb-0"><i class="bi bi-diagram-3 me-2"></i>What Happens Next?</h6>
+            </div>
+            <div class="card-body">
+                <div class="d-flex align-items-start mb-3">
+                    <span class="badge bg-light text-dark rounded-circle me-3 p-2">1</span>
+                    <div>
+                        <strong class="d-block small">Review</strong>
+                        <small class="text-muted">Our team reviews all submissions daily.</small>
+                    </div>
+                </div>
+                <div class="d-flex align-items-start mb-3">
+                    <span class="badge bg-light text-dark rounded-circle me-3 p-2">2</span>
+                    <div>
+                        <strong class="d-block small">Prioritize</strong>
+                        <small class="text-muted">Issues are categorized and prioritized.</small>
+                    </div>
+                </div>
+                <div class="d-flex align-items-start">
+                    <span class="badge bg-light text-dark rounded-circle me-3 p-2">3</span>
+                    <div>
+                        <strong class="d-block small">Action</strong>
+                        <small class="text-muted">We implement fixes and reach out if needed.</small>
                     </div>
                 </div>
             </div>
@@ -133,26 +179,28 @@ include 'includes/header.php';
     </div>
 </div>
 
+<input type="hidden" id="feedbackContextValue" value="<?= htmlspecialchars($_SERVER['HTTP_REFERER'] ?? '/wapos/feedback.php') ?>">
+
 <script>
 (function() {
     const form = document.getElementById('feedbackForm');
     const alertBox = document.getElementById('feedbackAlert');
-    const contextSpan = document.getElementById('feedbackContextValue');
+    const contextInput = document.getElementById('feedbackContextValue');
     const submitBtn = document.getElementById('feedbackSubmitBtn');
 
-    const contextPage = window.location.pathname;
-    contextSpan.textContent = contextPage;
+    const contextPage = contextInput.value || window.location.pathname;
 
-    function showAlert(type, message) {
-        alertBox.classList.remove('d-none', 'alert-success', 'alert-danger');
+    function showAlert(type, message, icon) {
+        alertBox.classList.remove('d-none', 'alert-success', 'alert-danger', 'alert-warning');
         alertBox.classList.add(`alert-${type}`);
-        alertBox.textContent = message;
+        alertBox.innerHTML = `<i class="bi ${icon} me-2"></i>${message}`;
+        alertBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
     form.addEventListener('submit', async (event) => {
         event.preventDefault();
         submitBtn.disabled = true;
-        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Sending...';
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Submitting...';
 
         const formData = new FormData(form);
         const payload = Object.fromEntries(formData.entries());
@@ -167,17 +215,17 @@ include 'includes/header.php';
 
             const result = await response.json();
             if (!result.success) {
-                throw new Error(result.message || 'Unable to send feedback');
+                throw new Error(result.message || 'Unable to submit feedback');
             }
 
-            showAlert('success', result.message || 'Thanks for your input!');
+            showAlert('success', 'Thank you! Your feedback has been submitted successfully.', 'bi-check-circle-fill');
             form.reset();
         } catch (error) {
             console.error(error);
-            showAlert('danger', error.message || 'Something went wrong. Please try again.');
+            showAlert('danger', error.message || 'Something went wrong. Please try again.', 'bi-exclamation-triangle-fill');
         } finally {
             submitBtn.disabled = false;
-            submitBtn.innerHTML = '<i class="bi bi-send me-1"></i>Send Feedback';
+            submitBtn.innerHTML = '<i class="bi bi-send me-2"></i>Submit Feedback';
         }
     });
 })();

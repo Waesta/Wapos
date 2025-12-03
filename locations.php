@@ -67,8 +67,10 @@ include 'includes/header.php';
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-start mb-3">
                     <div>
-                        <h5 class="mb-1"><?= htmlspecialchars($location['name']) ?></h5>
+                        <h5 class="mb-1"><?= htmlspecialchars($location['name'] ?? '') ?></h5>
+                        <?php if (!empty($location['code'])): ?>
                         <span class="badge bg-primary"><?= htmlspecialchars($location['code']) ?></span>
+                        <?php endif; ?>
                     </div>
                     <span class="badge bg-<?= $location['is_active'] ? 'success' : 'secondary' ?>">
                         <?= $location['is_active'] ? 'Active' : 'Inactive' ?>
@@ -76,13 +78,13 @@ include 'includes/header.php';
                 </div>
                 
                 <p class="text-muted small mb-2">
-                    <i class="bi bi-geo-alt me-1"></i><?= htmlspecialchars($location['address'] ?: 'No address') ?>
+                    <i class="bi bi-geo-alt me-1"></i><?= htmlspecialchars($location['address'] ?? 'No address') ?>
                 </p>
                 <p class="text-muted small mb-2">
-                    <i class="bi bi-phone me-1"></i><?= htmlspecialchars($location['phone'] ?: 'No phone') ?>
+                    <i class="bi bi-phone me-1"></i><?= htmlspecialchars($location['phone'] ?? 'No phone') ?>
                 </p>
                 <p class="text-muted small mb-3">
-                    <i class="bi bi-person me-1"></i>Manager: <?= htmlspecialchars($location['manager_name'] ?: 'Not assigned') ?>
+                    <i class="bi bi-person me-1"></i>Manager: <?= htmlspecialchars($location['manager_name'] ?? 'Not assigned') ?>
                 </p>
                 
                 <div class="border-top pt-3">
@@ -184,8 +186,8 @@ function editLocation(location) {
     document.getElementById('formAction').value = 'edit';
     document.getElementById('modalTitle').textContent = 'Edit Location';
     document.getElementById('locationId').value = location.id;
-    document.getElementById('name').value = location.name;
-    document.getElementById('code').value = location.code;
+    document.getElementById('name').value = location.name || '';
+    document.getElementById('code').value = location.code || '';
     document.getElementById('address').value = location.address || '';
     document.getElementById('phone').value = location.phone || '';
     document.getElementById('email').value = location.email || '';

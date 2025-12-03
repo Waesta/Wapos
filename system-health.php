@@ -5,7 +5,11 @@ header("Pragma: no-cache");
 header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
 
 require_once 'includes/bootstrap.php';
-$auth->requireRole('admin');
+// System health is restricted to super admin only
+if (!$auth->isLoggedIn() || !in_array($auth->getRole(), ['developer', 'super_admin'])) {
+    $_SESSION['error_message'] = 'Access denied. Super admin privileges required.';
+    redirect('index.php');
+}
 
 $db = Database::getInstance()->getConnection();
 

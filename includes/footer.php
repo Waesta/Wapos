@@ -5,8 +5,29 @@
     </div>
 <?php endif; ?>
 
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Bootstrap JS with local fallback -->
+    <script>
+        window.__loadLocalBootstrap = window.__loadLocalBootstrap || function () {
+            if (window.__localBootstrapLoaded) {
+                return;
+            }
+            window.__localBootstrapLoaded = true;
+            var fallback = document.createElement('script');
+            fallback.src = '<?= APP_URL ?>/assets/js/bootstrap.bundle.min.js?v=1';
+            fallback.defer = false;
+            document.head.appendChild(fallback);
+        };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"
+            crossorigin="anonymous"
+            onerror="window.__loadLocalBootstrap && window.__loadLocalBootstrap();"></script>
+    <script>
+        setTimeout(function () {
+            if (!(window.bootstrap && window.bootstrap.Modal)) {
+                window.__loadLocalBootstrap && window.__loadLocalBootstrap();
+            }
+        }, 1500);
+    </script>
     
     <!-- Sidebar Interaction & Service Worker Registration -->
     <script>
@@ -60,6 +81,49 @@
                     target.style.maxHeight = isOpen ? target.scrollHeight + 'px' : '0';
                 });
             });
+
+            const dropdownToggles = document.querySelectorAll('[data-bs-toggle="dropdown"]');
+            if (dropdownToggles.length) {
+                const closeAllDropdowns = () => {
+                    document.querySelectorAll('.dropdown-menu.show').forEach(menu => {
+                        menu.classList.remove('show');
+                        menu.style.display = '';
+                    });
+                };
+
+                dropdownToggles.forEach(toggle => {
+                    toggle.addEventListener('click', event => {
+                        if (window.bootstrap && bootstrap.Dropdown) {
+                            return;
+                        }
+                        event.preventDefault();
+                        event.stopPropagation();
+
+                        const menu = toggle.nextElementSibling && toggle.nextElementSibling.classList.contains('dropdown-menu')
+                            ? toggle.nextElementSibling
+                            : null;
+                        if (!menu) {
+                            return;
+                        }
+
+                        const isShown = menu.classList.contains('show');
+                        closeAllDropdowns();
+                        if (!isShown) {
+                            menu.classList.add('show');
+                            menu.style.display = 'block';
+                        }
+                    });
+                });
+
+                document.addEventListener('click', event => {
+                    if (window.bootstrap && bootstrap.Dropdown) {
+                        return;
+                    }
+                    if (!event.target.closest('.dropdown-menu') && !event.target.closest('[data-bs-toggle="dropdown"]')) {
+                        closeAllDropdowns();
+                    }
+                });
+            }
         });
 
         if ("serviceWorker" in navigator) {
