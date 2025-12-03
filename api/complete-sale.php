@@ -216,6 +216,8 @@ try {
         'user_id' => $auth->getUserId(),
         'customer_name' => $data['customer_name'] ?? null,
         'customer_phone' => $data['customer_phone'] ?? null,
+        'mobile_money_phone' => $data['mobile_money_phone'] ?? null,
+        'mobile_money_reference' => $data['mobile_money_reference'] ?? ($data['gateway_reference'] ?? null),
         'items' => $items,
         'promotions' => $promotions,
         'module_scope' => $moduleScope,

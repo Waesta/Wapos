@@ -76,6 +76,34 @@ try {
     $checkedInRooms = [];
 }
 $modifiers = $db->fetchAll("SELECT * FROM modifiers WHERE is_active = 1 ORDER BY category, name");
+$modifierLibraryNotice = null;
+$hospitalityPresets = [
+    ['id' => 'prep_rare', 'category' => 'Preparation', 'name' => 'Cook Rare', 'price' => 0],
+    ['id' => 'prep_medium', 'category' => 'Preparation', 'name' => 'Cook Medium', 'price' => 0],
+    ['id' => 'prep_well', 'category' => 'Preparation', 'name' => 'Cook Well Done', 'price' => 0],
+    ['id' => 'diet_gluten_free', 'category' => 'Dietary Notes', 'name' => 'Gluten-free Prep', 'price' => 0],
+    ['id' => 'diet_allergy_nuts', 'category' => 'Dietary Notes', 'name' => 'Nut Allergy – Prevent Cross Contact', 'price' => 0],
+    ['id' => 'diet_allergy_shellfish', 'category' => 'Dietary Notes', 'name' => 'Shellfish Allergy', 'price' => 0],
+    ['id' => 'add_extra_sauce', 'category' => 'Add-ons & Sauces', 'name' => 'Extra House Sauce', 'price' => 1.00],
+    ['id' => 'add_side_salad', 'category' => 'Add-ons & Sauces', 'name' => 'Side Salad', 'price' => 3.50],
+    ['id' => 'add_side_fries', 'category' => 'Add-ons & Sauces', 'name' => 'Extra Fries', 'price' => 2.50],
+    ['id' => 'service_special_event', 'category' => 'Service Notes', 'name' => 'Special Occasion (Birthday/Anniversary)', 'price' => 0],
+];
+
+if (empty($modifiers)) {
+    $modifiers = $hospitalityPresets;
+    $modifierLibraryNotice = 'Default hospitality additions loaded. Configure custom modifiers under Restaurant ▸ Modifier Library.';
+}
+
+$instructionPresets = [
+    'No onions',
+    'Extra spicy',
+    'Less salt',
+    'Serve sauce on the side',
+    'Allergic to nuts',
+    'Child portion',
+    'Birthday – add complimentary flair',
+];
 
 $deliveryConfigKeys = [
     'google_maps_api_key',
@@ -723,36 +751,56 @@ window.EXISTING_LOYALTY_PAYLOAD = <?= json_encode($existingLoyaltyPayload, JSON_
                 <h6 id="itemName"></h6>
                 <p class="text-muted" id="itemPrice"></p>
                 
-                <h6 class="mt-3">Add Modifiers:</h6>
+                <h6 class="mt-3 d-flex justify-content-between align-items-center">
+                    <span>Guest Additions & Preferences</span>
+                    <?php if ($modifierLibraryNotice): ?>
+                        <span class="badge bg-info text-dark text-uppercase" style="font-size: 0.65rem; letter-spacing: 0.05em;">Starter Set</span>
+                    <?php endif; ?>
+                </h6>
                 <div id="modifiersList">
                     <?php 
                     $modsByCategory = [];
                     foreach ($modifiers as $mod) {
-                        $modsByCategory[$mod['category']][] = $mod;
+                        $categoryKey = $mod['category'] ?: 'General';
+                        $modsByCategory[$categoryKey][] = $mod;
                     }
                     ?>
                     <?php foreach ($modsByCategory as $category => $mods): ?>
-                        <h6 class="mt-3 mb-2"><?= htmlspecialchars($category) ?></h6>
+                        <h6 class="mt-3 mb-2 text-uppercase small text-muted"><?= htmlspecialchars($category) ?></h6>
                         <?php foreach ($mods as $mod): ?>
+                        <?php $modifierDomId = 'mod_' . preg_replace('/[^a-zA-Z0-9_\-]/', '_', (string)$mod['id']); ?>
                         <div class="form-check">
                             <input class="form-check-input modifier-check" type="checkbox" 
-                                   data-id="<?= $mod['id'] ?>"
+                                   data-id="<?= htmlspecialchars((string)$mod['id']) ?>"
                                    data-name="<?= htmlspecialchars($mod['name']) ?>"
-                                   data-price="<?= $mod['price'] ?>"
-                                   id="mod_<?= $mod['id'] ?>">
-                            <label class="form-check-label" for="mod_<?= $mod['id'] ?>">
+                                   data-price="<?= (float)$mod['price'] ?>"
+                                   id="<?= $modifierDomId ?>">
+                            <label class="form-check-label" for="<?= $modifierDomId ?>">
                                 <?= htmlspecialchars($mod['name']) ?>
-                                <?php if ($mod['price'] > 0): ?>
+                                <?php if ((float)$mod['price'] > 0): ?>
                                     (+<?= formatMoney($mod['price'], false) ?>)
                                 <?php endif; ?>
                             </label>
                         </div>
                         <?php endforeach; ?>
                     <?php endforeach; ?>
+                    <?php if (empty($modsByCategory)): ?>
+                        <p class="text-muted small mb-0">No modifier options configured yet. You can add them via the Modifier Library.</p>
+                    <?php endif; ?>
                 </div>
                 
                 <h6 class="mt-3">Special Instructions:</h6>
-                <textarea class="form-control" id="specialInstructions" rows="2" placeholder="e.g., No onions, extra spicy..."></textarea>
+                <textarea class="form-control" id="specialInstructions" rows="3" placeholder="e.g., Split plate, guest allergic to nuts..."></textarea>
+                <?php if (!empty($instructionPresets)): ?>
+                <div class="mt-2">
+                    <div class="text-muted small mb-1">Quick requests</div>
+                    <div class="d-flex flex-wrap gap-2">
+                        <?php foreach ($instructionPresets as $preset): ?>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" data-instruction="<?= htmlspecialchars($preset) ?>" onclick="applyInstructionTemplate(this.dataset.instruction)"><?= htmlspecialchars($preset) ?></button>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+                <?php endif; ?>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -787,7 +835,7 @@ const businessCoordinates = {
 const EXISTING_ORDER_META = window.EXISTING_ORDER_META || null;
 const EXISTING_ORDER_ITEMS = Array.isArray(window.EXISTING_ORDER_ITEMS) ? window.EXISTING_ORDER_ITEMS : [];
 const modifierModalEl = document.getElementById('modifierModal');
-const hasModifierOptions = modifierModalEl && modifierModalEl.querySelectorAll('.modifier-check').length > 0;
+const hasModifierOptions = modifierModalEl && (modifierModalEl.querySelectorAll('.modifier-check').length > 0 || modifierModalEl.querySelector('#specialInstructions'));
 let modifierModalInstance = null;
 let deliveryPricingState = {
     distance: null,
@@ -1491,15 +1539,7 @@ function addToCart(product) {
         base_price: parseFloat(product.selling_price)
     };
     
-    if (!hasModifierOptions) {
-        currentItem.total = currentItem.price * currentItem.quantity;
-        cart.push(Object.assign({}, currentItem));
-        updateCart();
-        currentItem = null;
-        return;
-    }
-
-    // Show modifier modal
+    // Always show modifier modal to capture additions/instructions
     document.getElementById('itemName').textContent = product.name;
     document.getElementById('itemPrice').textContent = parseFloat(product.selling_price).toFixed(2);
     document.querySelectorAll('.modifier-check').forEach(cb => cb.checked = false);

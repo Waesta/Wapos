@@ -59,7 +59,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         redirect($_SERVER['PHP_SELF']);
     }
-    
+
+    if ($action === 'reset_password') {
+        if (!$auth->hasRole(['admin', 'super_admin'])) {
+            $_SESSION['error_message'] = 'You do not have permission to reset passwords.';
+            redirect($_SERVER['PHP_SELF']);
+        }
+
+        $id = (int)($_POST['id'] ?? 0);
+        $newPassword = trim($_POST['new_password'] ?? '');
+        $confirmPassword = trim($_POST['confirm_password'] ?? '');
+
+        if ($id <= 0) {
+            $_SESSION['error_message'] = 'Invalid user selected.';
+        } elseif ($newPassword === '' || strlen($newPassword) < 8) {
+            $_SESSION['error_message'] = 'Password must be at least 8 characters.';
+        } elseif ($newPassword !== $confirmPassword) {
+            $_SESSION['error_message'] = 'Passwords do not match.';
+        } else {
+            try {
+                $hashed = Auth::hashPassword($newPassword);
+                $updated = $db->update('users', ['password' => $hashed], 'id = :id', ['id' => $id]);
+                if ($updated) {
+                    $_SESSION['success_message'] = 'Password reset successfully.';
+                } else {
+                    $_SESSION['error_message'] = 'Failed to reset password.';
+                }
+            } catch (Exception $e) {
+                $_SESSION['error_message'] = 'Error: ' . $e->getMessage();
+            }
+        }
+
+        redirect($_SERVER['PHP_SELF']);
+    }
+
     if ($action === 'delete') {
         $id = $_POST['id'];
         // Soft delete by deactivating
@@ -296,10 +329,15 @@ $inactiveCount = count($users) - $activeCount;
                                 <?= $user['is_active'] ? 'Active' : 'Inactive' ?>
                             </span>
                         </td>
-                        <td>
+                        <td class="d-flex gap-1">
                             <button class="btn btn-sm btn-outline-primary" onclick='editUser(<?= json_encode($user) ?>)'>
                                 <i class="bi bi-pencil"></i>
                             </button>
+                            <?php if ($auth->hasRole(['admin', 'super_admin'])): ?>
+                            <button class="btn btn-sm btn-outline-warning" onclick="openResetModal(<?= (int)$user['id'] ?>, '<?= htmlspecialchars($user['username'], ENT_QUOTES) ?>')">
+                                <i class="bi bi-key"></i>
+                            </button>
+                            <?php endif; ?>
                             <?php if ($user['id'] != $auth->getUserId()): ?>
                             <button class="btn btn-sm btn-outline-danger" onclick="deleteUser(<?= $user['id'] ?>, '<?= htmlspecialchars($user['username']) ?>')">
                                 <i class="bi bi-trash"></i>
@@ -386,6 +424,42 @@ $inactiveCount = count($users) - $activeCount;
     </div>
 </div>
 
+<!-- Password Reset Modal -->
+<div class="modal fade" id="passwordResetModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" id="passwordResetForm">
+                <div class="modal-header">
+                    <h5 class="modal-title">Reset Password</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="action" value="reset_password">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken); ?>">
+                    <input type="hidden" name="id" id="resetUserId">
+                    <div class="mb-3">
+                        <label class="form-label">Username</label>
+                        <input type="text" class="form-control" id="resetUsername" disabled>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">New Password *</label>
+                        <input type="password" class="form-control" name="new_password" id="new_password" required minlength="8">
+                        <small class="text-muted">Minimum 8 characters.</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Confirm Password *</label>
+                        <input type="password" class="form-control" name="confirm_password" id="confirm_password" required minlength="8">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning"><i class="bi bi-key me-1"></i>Reset Password</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
 const CSRF_TOKEN = '<?= htmlspecialchars($csrfToken); ?>';
 function resetForm() {
@@ -426,6 +500,14 @@ function deleteUser(id, username) {
         document.body.appendChild(form);
         form.submit();
     }
+}
+
+function openResetModal(id, username) {
+    document.getElementById('resetUserId').value = id;
+    document.getElementById('resetUsername').value = username;
+    document.getElementById('new_password').value = '';
+    document.getElementById('confirm_password').value = '';
+    new bootstrap.Modal(document.getElementById('passwordResetModal')).show();
 }
 
 document.addEventListener('DOMContentLoaded', () => {

@@ -118,6 +118,12 @@ $pageTitle = 'Digital Receipt - ' . $sale['sale_number'];
                     <strong>Customer:</strong> <?= htmlspecialchars($sale['customer_name']) ?><br>
                     <?php endif; ?>
                     <strong>Payment:</strong> <?= ucfirst(str_replace('_', ' ', $sale['payment_method'])) ?><br>
+                    <?php if ($sale['payment_method'] === 'mobile_money' && !empty($sale['mobile_money_phone'])): ?>
+                    <strong>Mobile No.:</strong> <?= htmlspecialchars($sale['mobile_money_phone']) ?><br>
+                    <?php endif; ?>
+                    <?php if ($sale['payment_method'] === 'mobile_money' && !empty($sale['mobile_money_reference'])): ?>
+                    <strong>Transaction ID:</strong> <?= htmlspecialchars($sale['mobile_money_reference']) ?><br>
+                    <?php endif; ?>
                     <strong>Total:</strong> <span class="text-success fw-bold"><?= formatMoney($sale['total_amount']) ?></span>
                 </div>
             </div>

@@ -11,6 +11,9 @@ $currencyManager = CurrencyManager::getInstance();
 $categories = $db->fetchAll("SELECT * FROM categories WHERE is_active = 1 ORDER BY name");
 $products = $db->fetchAll("SELECT * FROM products WHERE is_active = 1 ORDER BY name");
 
+$existingOrderMeta = null;
+$existingItemsPayload = [];
+
 $pdo = $db->getConnection();
 $activePromotions = loadActivePromotions($pdo);
 $canManagePromotions = $auth->hasRole(['admin','manager']);
@@ -647,6 +650,18 @@ include 'includes/header.php';
                                 </div>
                                 <small class="text-muted">Use international format. The prompt will be sent to this number.</small>
                             </div>
+                            <div class="col-lg-6 d-none" id="mobileMoneyReferenceWrap">
+                                <label for="mobileMoneyReference" class="form-label">Transaction ID / Reference</label>
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text"><i class="bi bi-hash"></i></span>
+                                    <input type="text"
+                                           class="form-control"
+                                           id="mobileMoneyReference"
+                                           placeholder="e.g. MP123ABC"
+                                           autocomplete="off">
+                                </div>
+                                <small class="text-muted">Enter the confirmation code from the customer's mobile money receipt.</small>
+                            </div>
                         </div>
 
                         <div class="row g-2 mt-2 d-none" id="mobileMoneyStatusWrap">
@@ -784,6 +799,11 @@ include 'includes/header.php';
                                 <h6 class="text-muted text-uppercase small"><i class="bi bi-credit-card me-2"></i>Card Payment</h6>
                                 <p class="small mb-0">Process the card via your terminal and confirm the transaction before completing the sale.</p>
                             </div>
+                            <div id="mobileMoneyInstructions" class="app-card border-0 shadow-sm d-none">
+                                <h6 class="text-muted text-uppercase small"><i class="bi bi-phone me-2"></i>Mobile Payment</h6>
+                                <p class="small mb-1">Await the confirmation prompt from the customer&apos;s wallet. When approved, the Transaction ID is captured automatically.</p>
+                                <p class="small mb-0">If confirmation isn&apos;t received, enter the Transaction ID from the customer&apos;s SMS manually before completing the sale.</p>
+                            </div>
                             <div id="roomChargeInstructions" class="app-card border-0 shadow-sm d-none">
                                 <h6 class="text-muted text-uppercase small"><i class="bi bi-door-open me-2"></i>Room Charge</h6>
                                 <p class="small mb-0">Verify guest authorization and ensure folio notes reflect the purchase accurately.</p>
@@ -871,13 +891,17 @@ window.EXISTING_ORDER_META = <?= json_encode($existingOrderMeta, JSON_HEX_TAG | 
 window.EXISTING_ORDER_ITEMS = <?= json_encode($existingItemsPayload, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
 window.ACTIVE_POS_PROMOTIONS = <?= json_encode($posAppliedPromotions, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
 window.CURRENCY_CONFIG = <?= json_encode($currencyManager->getJavaScriptConfig(), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+window.LIVE_SALES_CONFIG = <?= json_encode($liveSalesConfig, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
 </script>
 
 <script>
 const CSRF_TOKEN = '<?= generateCSRFToken(); ?>';
 let cart = [];
 const TAX_RATE = 16; // Default tax rate percentage
-
+const CURRENCY_CODE = (window.CURRENCY_CONFIG && window.CURRENCY_CONFIG.code) ? String(window.CURRENCY_CONFIG.code) : '';
+const CURRENCY_DECIMALS = Number((window.CURRENCY_CONFIG && window.CURRENCY_CONFIG.decimal_places !== undefined)
+    ? window.CURRENCY_CONFIG.decimal_places
+    : 2);
 const POS_PROMOTIONS = Array.isArray(window.ACTIVE_POS_PROMOTIONS)
     ? window.ACTIVE_POS_PROMOTIONS.map((promotion) => ({
         ...promotion,
@@ -899,7 +923,6 @@ let currentCartTotals = {
     totalDueBeforeLoyalty: 0,
     totalDue: 0
 };
-const CURRENCY_DECIMALS = Number(CURRENCY_CONFIG.decimal_places ?? 2);
 
 function roundCurrency(value) {
     const factor = Math.pow(10, CURRENCY_DECIMALS);
@@ -1321,11 +1344,37 @@ function clearLoyaltyRedemption() {
     updateCart();
 }
 
+function getLoyaltyPayload() {
+    if (!loyaltyState.linked) {
+        return null;
+    }
+
+    const payload = {
+        customer_id: loyaltyState.customerId,
+        customer_name: loyaltyState.customerName,
+        program_id: loyaltyState.programId,
+        points_redeemed: loyaltyState.pointsToRedeem,
+        discount_amount: loyaltyState.effectiveDiscount || loyaltyState.discountAmount || 0,
+        balance: loyaltyState.balance,
+    };
+
+    if (loyaltyState.program) {
+        payload.program = loyaltyState.program;
+    }
+
+    if (loyaltyState.detailMessage) {
+        payload.detail = loyaltyState.detailMessage;
+    }
+
+    return payload;
+}
+
 // Currency formatting function
 function formatCurrency(amount) {
+    const decimals = CURRENCY_DECIMALS;
     const formatted = new Intl.NumberFormat('en-US', {
-        minimumFractionDigits: CURRENCY_CONFIG.decimal_places,
-        maximumFractionDigits: CURRENCY_CONFIG.decimal_places
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals
     }).format(amount);
     
     return formatted; // Return amount only, no currency symbol
@@ -1392,9 +1441,6 @@ function refreshPaymentUIState() {
 }
 
 // Search products
-document.getElementById('searchProduct').addEventListener('input', filterProducts);
-document.getElementById('filterCategory').addEventListener('change', filterProducts);
-
 function filterProducts() {
     const searchTerm = document.getElementById('searchProduct').value.toLowerCase();
     const categoryFilter = document.getElementById('filterCategory').value;
@@ -1753,6 +1799,12 @@ async function initiateMobileMoneyPayment(payment) {
         const data = result.data || {};
         payment.gatewayReference = data.reference;
         mobileMoneyCurrentReference = data.reference;
+        if (data.reference) {
+            const referenceInput = document.getElementById('mobileMoneyReference');
+            if (referenceInput) {
+                referenceInput.value = data.reference;
+            }
+        }
         mobileMoneyPollAttempts = 0;
 
         if (data.instructions) {
@@ -1800,6 +1852,14 @@ async function pollMobileMoneyStatus() {
 
         if (isMobileMoneySuccess(status)) {
             setMobileMoneyStatus('Payment confirmed! Completing sale...', 'success');
+            if (record.reference) {
+                window.pendingPayment = window.pendingPayment || {};
+                window.pendingPayment.gatewayReference = record.reference;
+                const referenceInput = document.getElementById('mobileMoneyReference');
+                if (referenceInput) {
+                    referenceInput.value = record.reference;
+                }
+            }
             await finalizePayment(true);
             return;
         }
@@ -1832,6 +1892,7 @@ function handlePaymentMethodChange() {
     const cashAlerts = document.getElementById('cashAlerts');
     const roomChargeSection = document.getElementById('roomChargeSection');
     const mobileMoneyInputWrap = document.getElementById('mobileMoneyInputWrap');
+    const mobileMoneyReferenceWrap = document.getElementById('mobileMoneyReferenceWrap');
     const mobileMoneyStatusWrap = document.getElementById('mobileMoneyStatusWrap');
 
     if (paymentMethod === 'cash') {
@@ -1864,6 +1925,10 @@ function handlePaymentMethodChange() {
         if (paymentMethod === 'mobile_money') {
             mobileMoneyInputWrap?.classList.remove('d-none');
             mobileMoneyInputWrap && (mobileMoneyInputWrap.style.display = 'block');
+            mobileMoneyReferenceWrap?.classList.remove('d-none');
+            if (mobileMoneyReferenceWrap) {
+                mobileMoneyReferenceWrap.style.display = 'block';
+            }
             if (mobileMoneyStatusWrap) {
                 mobileMoneyStatusWrap.classList.toggle('d-none', !mobileMoneyGatewayActive);
                 mobileMoneyStatusWrap.style.display = mobileMoneyGatewayActive ? 'block' : 'none';
@@ -1880,6 +1945,8 @@ function handlePaymentMethodChange() {
         } else {
             mobileMoneyInputWrap?.classList.add('d-none');
             if (mobileMoneyInputWrap) mobileMoneyInputWrap.style.display = 'none';
+            mobileMoneyReferenceWrap?.classList.add('d-none');
+            if (mobileMoneyReferenceWrap) mobileMoneyReferenceWrap.style.display = 'none';
             mobileMoneyStatusWrap?.classList.add('d-none');
             if (mobileMoneyStatusWrap) mobileMoneyStatusWrap.style.display = 'none';
             clearMobileMoneyStatus();
@@ -1923,15 +1990,25 @@ function calculateChange() {
         return;
     }
 
+    const cartHasItems = cart.length > 0;
+    if (!cartHasItems) {
+        processBtn.disabled = true;
+    }
+
     const total = currentCartTotals.totalDue || 0;
-    const tendered = parseFloat(amountField.value) || 0;
+    const rawValue = amountField.value.trim();
+    const tendered = rawValue === '' ? 0 : parseFloat(rawValue) || 0;
     const change = tendered - total;
 
     alerts.innerHTML = '';
     alerts.style.display = 'none';
 
+    if (!cartHasItems) {
+        return;
+    }
+
     if (tendered === 0) {
-        processBtn.disabled = true;
+        processBtn.disabled = false;
         return;
     }
 
@@ -2074,13 +2151,17 @@ function processPayment() {
     if (paymentMethod === 'mobile_money') {
         const phoneInput = document.getElementById('mobileMoneyPhone');
         const phoneValue = phoneInput ? phoneInput.value.trim() : '';
+        const referenceInput = document.getElementById('mobileMoneyReference');
+        const referenceValue = referenceInput ? referenceInput.value.trim() : '';
         if (phoneValue.length < 7) {
             alert('Please provide the customer phone number to send the payment prompt.');
             phoneInput?.focus();
             return;
         }
+        const gatewayActive = isGatewayMobileMoneyEnabled();
         extras.mobileMoneyPhone = phoneValue;
-        if (isGatewayMobileMoneyEnabled()) {
+        extras.mobileMoneyReference = referenceValue || null;
+        if (gatewayActive) {
             amountPaid = 0;
             changeAmount = 0;
         }
@@ -2152,6 +2233,7 @@ function showPaymentConfirmation(paymentMethod, amountPaid, changeAmount, extras
     // Show appropriate instructions
     const cashInstructions = document.getElementById('cashInstructions');
     const cardInstructions = document.getElementById('cardInstructions');
+    const mobileMoneyInstructions = document.getElementById('mobileMoneyInstructions');
     const roomChargeInstructions = document.getElementById('roomChargeInstructions');
     const roomChargeRow = document.getElementById('confirmRoomChargeRow');
     const amountPaidRow = document.getElementById('confirmAmountPaidRow');
@@ -2170,6 +2252,7 @@ function showPaymentConfirmation(paymentMethod, amountPaid, changeAmount, extras
     if (paymentMethod === 'cash') {
         showElement(cashInstructions);
         hideElement(cardInstructions);
+        hideElement(mobileMoneyInstructions);
         hideElement(roomChargeInstructions);
         roomChargeRow.classList.add('d-none');
         roomChargeRow.style.display = 'none';
@@ -2179,6 +2262,7 @@ function showPaymentConfirmation(paymentMethod, amountPaid, changeAmount, extras
     } else if (paymentMethod === 'room_charge') {
         hideElement(cashInstructions);
         hideElement(cardInstructions);
+        hideElement(mobileMoneyInstructions);
         showElement(roomChargeInstructions);
         if (extras.roomBookingLabel) {
             document.getElementById('confirmRoomCharge').textContent = extras.roomBookingLabel;
@@ -2190,14 +2274,26 @@ function showPaymentConfirmation(paymentMethod, amountPaid, changeAmount, extras
         }
         amountPaidRow.classList.add('d-none');
         amountPaidRow.style.display = 'none';
-    } else {
+    } else if (paymentMethod === 'mobile_money') {
         hideElement(cashInstructions);
-        showElement(cardInstructions);
+        hideElement(cardInstructions);
+        showElement(mobileMoneyInstructions);
         hideElement(roomChargeInstructions);
         roomChargeRow.classList.add('d-none');
         roomChargeRow.style.display = 'none';
         amountPaidRow.classList.remove('d-none');
         amountPaidRow.style.display = '';
+        hideChangeBreakdown();
+    } else {
+        hideElement(cashInstructions);
+        showElement(cardInstructions);
+        hideElement(mobileMoneyInstructions);
+        hideElement(roomChargeInstructions);
+        roomChargeRow.classList.add('d-none');
+        roomChargeRow.style.display = 'none';
+        amountPaidRow.classList.remove('d-none');
+        amountPaidRow.style.display = '';
+        hideChangeBreakdown();
     }
 
     window.pendingPayment = {
@@ -2207,11 +2303,17 @@ function showPaymentConfirmation(paymentMethod, amountPaid, changeAmount, extras
         cartTotals: totals,
         promotionSummary: extras.promotionSummary || currentPromotionSummary,
         loyaltyPayload: extras.loyaltyPayload || getLoyaltyPayload(),
+        mobileMoneyPhone: extras.mobileMoneyPhone || null,
+        mobileMoneyReference: extras.mobileMoneyReference || null,
         ...extras
     };
 
     // Show modal
-    new bootstrap.Modal(document.getElementById('paymentConfirmationModal')).show();
+    const modalEl = document.getElementById('paymentConfirmationModal');
+    if (!modalEl) {
+        return;
+    }
+    new bootstrap.Modal(modalEl).show();
 }
 
 // Show change breakdown
@@ -2246,7 +2348,7 @@ function hideChangeBreakdown() {
 }
 
 // Finalize payment
-async function finalizePayment() {
+async function finalizePayment(autoConfirmed = false) {
     const payment = window.pendingPayment;
     if (!payment) {
         alert('No pending payment found');
@@ -2256,11 +2358,15 @@ async function finalizePayment() {
     const totals = payment.cartTotals || currentCartTotals;
     const promotionSummary = payment.promotionSummary || currentPromotionSummary;
     const loyaltyPayload = payment.loyaltyPayload || null;
-    const customerName = document.getElementById('customerName').value || null;
+    const customerNameInput = document.getElementById('customerName');
+    const customerNameValue = customerNameInput ? customerNameInput.value.trim() : '';
+    const contactPhoneInput = document.getElementById('customerPhone');
+    const contactPhoneValue = contactPhoneInput ? contactPhoneInput.value.trim() : '';
 
     const saleData = {
         csrf_token: CSRF_TOKEN,
-        customer_name: customerName,
+        customer_name: customerNameValue || null,
+        customer_phone: contactPhoneValue || null,
         payment_method: payment.paymentMethod,
         subtotal: totals.grossSubtotal,
         net_subtotal: totals.netSubtotal,
@@ -2298,8 +2404,21 @@ async function finalizePayment() {
             saleData.room_charge_description = payment.roomChargeDescription;
         }
     }
-    if (payment.paymentMethod === 'mobile_money' && payment.gatewayReference) {
-        saleData.gateway_reference = payment.gatewayReference;
+    if (payment.paymentMethod === 'mobile_money') {
+        if (payment.mobileMoneyPhone) {
+            saleData.mobile_money_phone = payment.mobileMoneyPhone;
+        }
+        let reference = payment.gatewayReference || payment.mobileMoneyReference || window.mobileMoneyCurrentReference || null;
+        if (!reference && !autoConfirmed) {
+            const refInput = document.getElementById('mobileMoneyReference');
+            const manualRef = refInput ? refInput.value.trim() : '';
+            if (manualRef.length >= 4) {
+                reference = manualRef;
+            }
+        }
+        if (reference) {
+            saleData.mobile_money_reference = reference;
+        }
     }
     if (loyaltyPayload) {
         saleData.loyalty = loyaltyPayload;
@@ -2412,6 +2531,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 addToCartFromElement(primaryButton);
             }
         });
+    }
+
+    // Search/filter event listeners
+    const searchProduct = document.getElementById('searchProduct');
+    const filterCategory = document.getElementById('filterCategory');
+    if (searchProduct) {
+        searchProduct.addEventListener('input', filterProducts);
+    }
+    if (filterCategory) {
+        filterCategory.addEventListener('change', filterProducts);
     }
 
     handlePaymentMethodChange(); // Set initial payment method state

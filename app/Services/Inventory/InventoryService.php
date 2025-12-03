@@ -11,6 +11,12 @@ class InventoryService
 {
     private PDO $db;
     private bool $schemaEnsured = false;
+    private bool $legacyCategoryColumnEnsured = false;
+    private bool $productModuleScopeEnsured = false;
+    private bool $inventoryCategoryModuleScopeEnsured = false;
+    private bool $inventoryCategoryTrackingColumnsEnsured = false;
+    private bool $inventoryCategoryIsConsumableEnsured = false;
+    private bool $productIsConsumableEnsured = false;
     private array $recipeCache = [];
 
     public function __construct(PDO $db)
@@ -25,11 +31,17 @@ class InventoryService
         }
 
         $this->createInventoryCategoriesTable();
+        $this->ensureInventoryCategoryModuleScopeColumn();
+        $this->ensureInventoryCategoryTrackingColumns();
+        $this->ensureInventoryCategoryIsConsumableColumn();
+        $this->ensureLegacyCategoryColumn();
         $this->createInventoryItemsTable();
         $this->createInventoryStockLedgerTable();
         $this->createInventoryConsumptionTable();
         $this->createProductRecipesTable();
         $this->ensureProductReorderColumns();
+        $this->ensureProductModuleScopeColumn();
+        $this->ensureProductIsConsumableColumn();
         $this->schemaEnsured = true;
     }
 
@@ -166,7 +178,9 @@ class InventoryService
             ]);
             $this->db->commit();
         } catch (Throwable $e) {
-            $this->db->rollBack();
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
             throw $e;
         }
     }
@@ -228,7 +242,9 @@ class InventoryService
 
             $this->db->commit();
         } catch (Throwable $e) {
-            $this->db->rollBack();
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
             throw $e;
         }
     }
@@ -309,10 +325,10 @@ class InventoryService
                 updated_at = NOW()
             WHERE id = :id");
         $update->execute([
-            ':current_stock' => $newStock,
-            ':unit_cost_check' => $unitCost,
-            ':unit_cost_value' => $unitCost,
-            ':id' => $inventoryItemId,
+            'current_stock' => $newStock,
+            'unit_cost_check' => $unitCost,
+            'unit_cost_value' => $unitCost,
+            'id' => $inventoryItemId,
         ]);
     }
 
@@ -424,6 +440,10 @@ class InventoryService
     private function ensureInventoryCategoryFromProduct(array $product): int
     {
         $legacyCategoryId = $product['category_id'] ?? null;
+        $this->ensureLegacyCategoryColumn();
+
+        $this->ensureInventoryCategoryIsConsumableColumn();
+
         if ($legacyCategoryId) {
             $stmt = $this->db->prepare("SELECT id FROM inventory_categories WHERE legacy_category_id = ? LIMIT 1");
             $stmt->execute([$legacyCategoryId]);
@@ -487,6 +507,10 @@ class InventoryService
 
     private function fetchProduct(int $productId): ?array
     {
+        $this->ensureProductModuleScopeColumn();
+
+        $this->ensureProductIsConsumableColumn();
+
         $stmt = $this->db->prepare("SELECT p.*, c.name AS category_name FROM products p LEFT JOIN categories c ON c.id = p.category_id WHERE p.id = ? LIMIT 1");
         $stmt->execute([$productId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -516,6 +540,31 @@ class InventoryService
             INDEX idx_parent (parent_id)
         ) ENGINE=InnoDB";
         $this->db->exec($sql);
+    }
+
+    private function ensureLegacyCategoryColumn(): void
+    {
+        if ($this->legacyCategoryColumnEnsured) {
+            return;
+        }
+
+        if ($this->db->inTransaction()) {
+            $this->legacyCategoryColumnEnsured = true;
+            return;
+        }
+
+        try {
+            $stmt = $this->db->query("SHOW COLUMNS FROM inventory_categories LIKE 'legacy_category_id'");
+            $column = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
+            if (!$column) {
+                $this->db->exec("ALTER TABLE inventory_categories ADD COLUMN legacy_category_id INT UNSIGNED NULL AFTER id");
+                $this->db->exec("ALTER TABLE inventory_categories ADD UNIQUE KEY uniq_legacy_category (legacy_category_id)");
+            }
+        } catch (PDOException $e) {
+            // ignore; queries using the column will fail if truly unsupported
+        }
+
+        $this->legacyCategoryColumnEnsured = true;
     }
 
     private function createProductRecipesTable(): void
@@ -620,9 +669,130 @@ class InventoryService
         $this->addColumnIfMissing('products', 'reorder_quantity', "DECIMAL(18,4) NOT NULL DEFAULT 0 AFTER reorder_level");
         $this->addColumnIfMissing('products', 'track_expiry', "TINYINT(1) NOT NULL DEFAULT 0 AFTER unit");
         $this->addColumnIfMissing('products', 'track_wastage', "TINYINT(1) NOT NULL DEFAULT 0 AFTER track_expiry");
-        $this->addColumnIfMissing('products', 'module_scope', "ENUM('retail','restaurant','housekeeping','maintenance','general') DEFAULT 'retail' AFTER category_id");
         $this->addColumnIfMissing('products', 'tags', "VARCHAR(255) NULL AFTER description");
-        $this->addColumnIfMissing('products', 'is_consumable', "TINYINT(1) NOT NULL DEFAULT 0 AFTER module_scope");
+    }
+
+    private function ensureProductModuleScopeColumn(): void
+    {
+        if ($this->productModuleScopeEnsured) {
+            return;
+        }
+
+        if ($this->db->inTransaction()) {
+            $this->productModuleScopeEnsured = true;
+            return;
+        }
+
+        try {
+            $stmt = $this->db->query("SHOW COLUMNS FROM products LIKE 'module_scope'");
+            $column = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
+            if (!$column) {
+                $this->db->exec("ALTER TABLE products ADD COLUMN module_scope ENUM('retail','restaurant','housekeeping','maintenance','general') DEFAULT 'retail' AFTER category_id");
+            }
+        } catch (PDOException $e) {
+            // ignore; select queries will fail later if unsupported
+        }
+
+        $this->productModuleScopeEnsured = true;
+    }
+
+    private function ensureInventoryCategoryModuleScopeColumn(): void
+    {
+        if ($this->inventoryCategoryModuleScopeEnsured) {
+            return;
+        }
+
+        if ($this->db->inTransaction()) {
+            $this->inventoryCategoryModuleScopeEnsured = true;
+            return;
+        }
+
+        try {
+            $stmt = $this->db->query("SHOW COLUMNS FROM inventory_categories LIKE 'module_scope'");
+            $column = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
+            if (!$column) {
+                $this->db->exec("ALTER TABLE inventory_categories ADD COLUMN module_scope ENUM('retail','restaurant','housekeeping','maintenance','general') DEFAULT 'general' AFTER name");
+                $this->db->exec("ALTER TABLE inventory_categories ADD INDEX idx_scope (module_scope)");
+            }
+        } catch (PDOException $e) {
+            // ignore
+        }
+
+        $this->inventoryCategoryModuleScopeEnsured = true;
+    }
+
+    private function ensureInventoryCategoryIsConsumableColumn(): void
+    {
+        if ($this->inventoryCategoryIsConsumableEnsured) {
+            return;
+        }
+
+        if ($this->db->inTransaction()) {
+            $this->inventoryCategoryIsConsumableEnsured = true;
+            return;
+        }
+
+        try {
+            $stmt = $this->db->query("SHOW COLUMNS FROM inventory_categories LIKE 'is_consumable'");
+            $column = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
+            if (!$column) {
+                $this->db->exec("ALTER TABLE inventory_categories ADD COLUMN is_consumable TINYINT(1) DEFAULT 0 AFTER module_scope");
+            }
+        } catch (PDOException $e) {
+            // ignore
+        }
+
+        $this->inventoryCategoryIsConsumableEnsured = true;
+    }
+
+    private function ensureInventoryCategoryTrackingColumns(): void
+    {
+        if ($this->inventoryCategoryTrackingColumnsEnsured) {
+            return;
+        }
+
+        if ($this->db->inTransaction()) {
+            $this->inventoryCategoryTrackingColumnsEnsured = true;
+            return;
+        }
+
+        try {
+            $columns = $this->getTableColumns('inventory_categories');
+            if (!in_array('track_expiry', $columns, true)) {
+                $this->db->exec("ALTER TABLE inventory_categories ADD COLUMN track_expiry TINYINT(1) DEFAULT 0 AFTER is_consumable");
+            }
+            if (!in_array('track_wastage', $columns, true)) {
+                $this->db->exec("ALTER TABLE inventory_categories ADD COLUMN track_wastage TINYINT(1) DEFAULT 0 AFTER track_expiry");
+            }
+        } catch (PDOException $e) {
+            // ignore
+        }
+
+        $this->inventoryCategoryTrackingColumnsEnsured = true;
+    }
+
+    private function ensureProductIsConsumableColumn(): void
+    {
+        if ($this->productIsConsumableEnsured) {
+            return;
+        }
+
+        if ($this->db->inTransaction()) {
+            $this->productIsConsumableEnsured = true;
+            return;
+        }
+
+        try {
+            $stmt = $this->db->query("SHOW COLUMNS FROM products LIKE 'is_consumable'");
+            $column = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
+            if (!$column) {
+                $this->db->exec("ALTER TABLE products ADD COLUMN is_consumable TINYINT(1) NOT NULL DEFAULT 0 AFTER module_scope");
+            }
+        } catch (PDOException $e) {
+            // ignore
+        }
+
+        $this->productIsConsumableEnsured = true;
     }
 
     private function addColumnIfMissing(string $table, string $column, string $definition): void

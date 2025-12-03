@@ -351,6 +351,18 @@ foreach ($settingsRaw as $setting) {
             <span>Payment Method:</span>
             <span><?= ucfirst(str_replace('_', ' ', $sale['payment_method'])) ?></span>
         </div>
+        <?php if ($sale['payment_method'] === 'mobile_money' && !empty($sale['mobile_money_phone'])): ?>
+        <div class="total-line" style="font-size: 10px;">
+            <span>Mobile No.:</span>
+            <span><?= htmlspecialchars($sale['mobile_money_phone']) ?></span>
+        </div>
+        <?php endif; ?>
+        <?php if ($sale['payment_method'] === 'mobile_money' && !empty($sale['mobile_money_reference'])): ?>
+        <div class="total-line" style="font-size: 10px;">
+            <span>Transaction ID:</span>
+            <span><?= htmlspecialchars($sale['mobile_money_reference']) ?></span>
+        </div>
+        <?php endif; ?>
         <?php if ($loyaltySummary): ?>
             <hr>
             <div class="total-line">

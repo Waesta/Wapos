@@ -18,6 +18,8 @@ class SalesService
     private InventoryService $inventoryService;
     private bool $roomChargePaymentEnsured = false;
     private bool $salePromotionsTableEnsured = false;
+    private bool $salesIdempotencyEnsured = false;
+    private bool $salesMobileMoneyColumnsEnsured = false;
     private ?RoomBookingService $roomBookingService = null;
 
     public function __construct(PDO $db, AccountingService $accountingService, ?InventoryService $inventoryService = null)
@@ -65,6 +67,85 @@ class SalesService
         $this->roomChargePaymentEnsured = true;
     }
 
+    private function ensureSalesIdempotencySchema(): void
+    {
+        if ($this->salesIdempotencyEnsured) {
+            return;
+        }
+
+        if ($this->db->inTransaction()) {
+            $this->salesIdempotencyEnsured = true;
+            return;
+        }
+
+        try {
+            $stmt = $this->db->query("SHOW COLUMNS FROM sales LIKE 'external_id'");
+            $column = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
+            if (!$column) {
+                $this->db->exec("ALTER TABLE sales ADD COLUMN external_id VARCHAR(100) NULL AFTER id");
+            }
+        } catch (PDOException $e) {
+            // ignore
+        }
+
+        try {
+            $stmt = $this->db->query("SHOW COLUMNS FROM sales LIKE 'device_id'");
+            $column = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
+            if (!$column) {
+                $this->db->exec("ALTER TABLE sales ADD COLUMN device_id VARCHAR(100) NULL AFTER external_id");
+            }
+        } catch (PDOException $e) {
+            // ignore
+        }
+
+        try {
+            $stmt = $this->db->query("SHOW INDEX FROM sales WHERE Key_name = 'ux_sales_external_id'");
+            $index = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
+            if (!$index) {
+                $this->db->exec("ALTER TABLE sales ADD UNIQUE KEY ux_sales_external_id (external_id)");
+            }
+        } catch (PDOException $e) {
+            // ignore
+        }
+
+        $this->salesIdempotencyEnsured = true;
+    }
+
+    private function ensureSalesMobileMoneyColumns(): void
+    {
+        if ($this->salesMobileMoneyColumnsEnsured) {
+            return;
+        }
+
+        if ($this->db->inTransaction()) {
+            $this->salesMobileMoneyColumnsEnsured = true;
+            return;
+        }
+
+        try {
+            $stmt = $this->db->query("SHOW COLUMNS FROM sales LIKE 'mobile_money_phone'");
+            $column = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
+            if (!$column) {
+                $this->db->exec("ALTER TABLE sales ADD COLUMN mobile_money_phone VARCHAR(30) NULL AFTER customer_phone");
+            }
+        } catch (PDOException $e) {
+            // ignore
+        }
+
+        try {
+            $stmt = $this->db->query("SHOW COLUMNS FROM sales LIKE 'mobile_money_reference'");
+            $column = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
+            if (!$column) {
+                $this->db->exec("ALTER TABLE sales ADD COLUMN mobile_money_reference VARCHAR(100) NULL AFTER mobile_money_phone");
+                $this->db->exec("ALTER TABLE sales ADD INDEX idx_sales_mobile_reference (mobile_money_reference)");
+            }
+        } catch (PDOException $e) {
+            // ignore
+        }
+
+        $this->salesMobileMoneyColumnsEnsured = true;
+    }
+
     /**
      * Create sale with idempotency support
      * If external_id exists, returns existing sale
@@ -72,6 +153,8 @@ class SalesService
     public function createSale(array $data): array
     {
         $this->ensureRoomChargePaymentMethod();
+        $this->ensureSalesIdempotencySchema();
+        $this->ensureSalesMobileMoneyColumns();
 
         $externalId = $data['external_id'] ?? null;
         
@@ -150,18 +233,41 @@ class SalesService
                      payment_method, room_booking_id, notes, created_at) 
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
+            $includeMobileMoney = $paymentMethod === 'mobile_money';
+            $this->ensureSalesMobileMoneyColumns();
+
+            if ($includeMobileMoney) {
+                $sql = "INSERT INTO sales 
+                    (external_id, sale_number, user_id, location_id, device_id, 
+                     customer_name, customer_phone, mobile_money_phone, mobile_money_reference,
+                     subtotal, tax_amount, 
+                     discount_amount, total_amount, amount_paid, change_amount, 
+                     payment_method, room_booking_id, notes, created_at) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            }
+
             $stmt = $this->db->prepare($sql);
 
             $userId = $data['user_id'] ?? $_SESSION['user_id'] ?? 1;
 
-            $stmt->execute([
+            $locationId = $this->resolveLocationId($data['location_id'] ?? null, $userId);
+
+            $params = [
                 $externalId,
                 $saleNumber,
                 $userId,
-                $data['location_id'] ?? 1,
+                $locationId,
                 $data['device_id'] ?? null,
                 $data['customer_name'] ?? null,
                 $data['customer_phone'] ?? null,
+            ];
+
+            if ($includeMobileMoney) {
+                $params[] = $data['mobile_money_phone'] ?? null;
+                $params[] = $data['mobile_money_reference'] ?? null;
+            }
+
+            $params = array_merge($params, [
                 $subtotal,
                 $taxAmount,
                 $discountAmount,
@@ -173,6 +279,8 @@ class SalesService
                 $data['notes'] ?? null,
                 $data['created_at'] ?? date('Y-m-d H:i:s')
             ]);
+
+            $stmt->execute($params);
 
             $saleId = (int) $this->db->lastInsertId();
 
@@ -371,6 +479,42 @@ class SalesService
         $stmt->execute([$externalId]);
         $result = $stmt->fetch(PDO::FETCH_ASSOC);
         return $result ?: null;
+    }
+
+    private function resolveLocationId($preferredLocationId, ?int $userId): ?int
+    {
+        $preferred = $this->validateLocationId($preferredLocationId);
+        if ($preferred !== null) {
+            return $preferred;
+        }
+
+        if ($userId !== null) {
+            $stmt = $this->db->prepare('SELECT location_id FROM users WHERE id = ? LIMIT 1');
+            $stmt->execute([$userId]);
+            $userLocation = $stmt->fetchColumn();
+            $validated = $this->validateLocationId($userLocation);
+            if ($validated !== null) {
+                return $validated;
+            }
+        }
+
+        $stmt = $this->db->query('SELECT id FROM locations ORDER BY id ASC LIMIT 1');
+        $fallback = $stmt ? $stmt->fetchColumn() : false;
+        $validatedFallback = $this->validateLocationId($fallback);
+        return $validatedFallback;
+    }
+
+    private function validateLocationId($locationId): ?int
+    {
+        $id = is_numeric($locationId) ? (int) $locationId : null;
+        if ($id === null || $id <= 0) {
+            return null;
+        }
+
+        $stmt = $this->db->prepare('SELECT id FROM locations WHERE id = ? LIMIT 1');
+        $stmt->execute([$id]);
+        $exists = $stmt->fetchColumn();
+        return $exists ? $id : null;
     }
 
     /**

@@ -297,6 +297,74 @@ include 'includes/header.php';
     max-height: 400px;
     overflow-y: auto;
 }
+.permissions-shell {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xl, 2rem);
+}
+.page-toolbar {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+    border: 1px solid var(--color-border, #e9ecef);
+    border-radius: var(--radius-lg, 1rem);
+    padding: 1.25rem;
+    background: var(--color-surface, #fff);
+    box-shadow: var(--shadow-sm, 0 1px 2px rgba(15, 23, 42, 0.08));
+}
+.page-toolbar .toolbar-info h4 {
+    margin-bottom: 0.25rem;
+}
+.page-toolbar .toolbar-info p {
+    margin: 0;
+    color: var(--color-text-muted, #6c757d);
+}
+.page-toolbar .toolbar-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+}
+.page-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    border: none;
+}
+.page-tabs .nav-link {
+    border-radius: 999px;
+    border: 1px solid var(--color-border, #e0e0e0);
+    background: #fff;
+    color: var(--color-text, #0f172a);
+    padding: 0.45rem 1.15rem;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+.page-tabs .nav-link.active {
+    background: var(--bs-primary, #0d6efd);
+    color: #fff;
+    border-color: var(--bs-primary, #0d6efd);
+    box-shadow: 0 0.35rem 1rem rgba(13, 110, 253, 0.15);
+}
+.tab-pane {
+    transition: opacity 0.2s ease;
+}
+@media (max-width: 767px) {
+    .page-toolbar {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    .page-tabs {
+        width: 100%;
+    }
+    .page-tabs .nav-link {
+        flex: 1 1 calc(50% - 0.5rem);
+        justify-content: center;
+    }
+}
 </style>
 
 <?php if (isset($_SESSION['success_message'])): ?>
@@ -306,48 +374,56 @@ include 'includes/header.php';
     <div class="alert alert-danger"><?= $_SESSION['error_message']; unset($_SESSION['error_message']); ?></div>
 <?php endif; ?>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h4 class="mb-0"><i class="bi bi-shield-lock me-2"></i>User Permissions Management</h4>
-    <div class="btn-group">
-        <a href="create-permission-templates.php" class="btn btn-success">
-            <i class="bi bi-collection me-2"></i>Permission Templates
-        </a>
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createGroupModal">
-            <i class="bi bi-plus-circle me-2"></i>Create Group
-        </button>
-        <button class="btn btn-outline-info" data-bs-toggle="modal" data-bs-target="#auditLogModal">
-            <i class="bi bi-clock-history me-2"></i>Audit Log
-        </button>
-    </div>
-</div>
+<div class="permissions-shell">
+    <section class="page-toolbar">
+        <div class="toolbar-info">
+            <h4 class="mb-1"><i class="bi bi-shield-lock me-2"></i>User Permissions</h4>
+            <p class="mb-0">Audit, grant, and monitor granular access across every module.</p>
+        </div>
+        <div class="toolbar-actions">
+            <a href="create-permission-templates.php" class="btn btn-light">
+                <i class="bi bi-collection me-2"></i>Templates
+            </a>
+            <button class="btn btn-outline-info" data-bs-toggle="modal" data-bs-target="#auditLogModal" type="button">
+                <i class="bi bi-clock-history me-2"></i>Audit Log
+            </button>
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createGroupModal" type="button">
+                <i class="bi bi-plus-circle me-2"></i>Create Group
+            </button>
+        </div>
+    </section>
 
-<!-- Navigation Tabs -->
-<ul class="nav nav-tabs mb-4" id="permissionTabs" role="tablist">
-    <li class="nav-item" role="presentation">
-        <button class="nav-link active" id="matrix-tab" data-bs-toggle="tab" data-bs-target="#matrix" type="button">
-            <i class="bi bi-grid me-2"></i>Permission Matrix
-        </button>
-    </li>
-    <li class="nav-item" role="presentation">
-        <button class="nav-link" id="groups-tab" data-bs-toggle="tab" data-bs-target="#groups" type="button">
-            <i class="bi bi-people me-2"></i>Permission Groups
-        </button>
-    </li>
-    <li class="nav-item" role="presentation">
-        <button class="nav-link" id="individual-tab" data-bs-toggle="tab" data-bs-target="#individual" type="button">
-            <i class="bi bi-person-gear me-2"></i>Individual Permissions
-        </button>
-    </li>
-    <li class="nav-item" role="presentation">
-        <button class="nav-link" id="templates-tab" data-bs-toggle="tab" data-bs-target="#templates" type="button">
-            <i class="bi bi-file-earmark-code me-2"></i>Permission Templates
-        </button>
-    </li>
-</ul>
+    <!-- Navigation Tabs -->
+    <ul class="nav nav-pills page-tabs mb-4" id="permissionTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="matrix-tab" data-bs-toggle="tab" data-bs-target="#matrix" type="button" role="tab" aria-controls="matrix" aria-selected="true">
+                <i class="bi bi-grid"></i>
+                <span>Matrix</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="groups-tab" data-bs-toggle="tab" data-bs-target="#groups" type="button" role="tab" aria-controls="groups" aria-selected="false">
+                <i class="bi bi-people"></i>
+                <span>Groups</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="individual-tab" data-bs-toggle="tab" data-bs-target="#individual" type="button" role="tab" aria-controls="individual" aria-selected="false">
+                <i class="bi bi-person-gear"></i>
+                <span>Individual</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="templates-tab" data-bs-toggle="tab" data-bs-target="#templates" type="button" role="tab" aria-controls="templates" aria-selected="false">
+                <i class="bi bi-file-earmark-code"></i>
+                <span>Templates</span>
+            </button>
+        </li>
+    </ul>
 
-<div class="tab-content" id="permissionTabContent">
+    <div class="tab-content" id="permissionTabContent">
     <!-- Permission Matrix Tab -->
-    <div class="tab-pane fade show active" id="matrix" role="tabpanel">
+    <div class="tab-pane fade show active" id="matrix" role="tabpanel" aria-labelledby="matrix-tab">
         <div class="card border-0 shadow-sm">
             <div class="card-header bg-white">
                 <div class="row align-items-center">
@@ -420,7 +496,7 @@ include 'includes/header.php';
     </div>
 
     <!-- Permission Groups Tab -->
-    <div class="tab-pane fade" id="groups" role="tabpanel">
+    <div class="tab-pane fade" id="groups" role="tabpanel" aria-labelledby="groups-tab">
         <div class="row g-3">
             <?php foreach ($groups as $group): ?>
             <div class="col-md-6 col-lg-4">
@@ -471,7 +547,7 @@ include 'includes/header.php';
     </div>
 
     <!-- Individual Permissions Tab -->
-    <div class="tab-pane fade" id="individual" role="tabpanel">
+    <div class="tab-pane fade" id="individual" role="tabpanel" aria-labelledby="individual-tab">
         <div class="card border-0 shadow-sm">
             <div class="card-header bg-white">
                 <h6 class="mb-0"><i class="bi bi-person-gear me-2"></i>Individual Permission Overrides</h6>
@@ -553,7 +629,7 @@ include 'includes/header.php';
     </div>
 
     <!-- Permission Templates Tab -->
-    <div class="tab-pane fade" id="templates" role="tabpanel">
+    <div class="tab-pane fade" id="templates" role="tabpanel" aria-labelledby="templates-tab">
         <div class="card border-0 shadow-sm">
             <div class="card-header bg-white">
                 <h6 class="mb-0"><i class="bi bi-file-earmark-code me-2"></i>Permission Templates</h6>
@@ -737,17 +813,51 @@ function editGroupPermissions(groupId, groupName) {
 
 // Auto-refresh audit log every 30 seconds when modal is open
 let auditLogInterval;
-$('#auditLogModal').on('shown.bs.modal', function() {
-    auditLogInterval = setInterval(function() {
-        // Refresh audit log content
-        location.reload();
-    }, 30000);
-});
+const auditLogModal = document.getElementById('auditLogModal');
+if (auditLogModal) {
+    auditLogModal.addEventListener('shown.bs.modal', () => {
+        auditLogInterval = setInterval(() => {
+            window.location.reload();
+        }, 30000);
+    });
 
-$('#auditLogModal').on('hidden.bs.modal', function() {
-    if (auditLogInterval) {
-        clearInterval(auditLogInterval);
+    auditLogModal.addEventListener('hidden.bs.modal', () => {
+        if (auditLogInterval) {
+            clearInterval(auditLogInterval);
+            auditLogInterval = null;
+        }
+    });
+}
+</script>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const tabButtons = Array.from(document.querySelectorAll('#permissionTabs button[data-bs-toggle="tab"]'));
+    if (!tabButtons.length) {
+        return;
     }
+
+    tabButtons.forEach(button => {
+        button.addEventListener('click', event => {
+            event.preventDefault();
+            if (window.bootstrap && bootstrap.Tab) {
+                bootstrap.Tab.getOrCreateInstance(button).show();
+                return;
+            }
+
+            tabButtons.forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('#permissionTabContent .tab-pane').forEach(pane => {
+                pane.classList.remove('active', 'show');
+            });
+
+            button.classList.add('active');
+            const targetSelector = button.getAttribute('data-bs-target');
+            const targetPane = targetSelector ? document.querySelector(targetSelector) : null;
+            if (targetPane) {
+                targetPane.classList.add('active', 'show');
+            }
+        });
+    });
 });
 </script>
 
