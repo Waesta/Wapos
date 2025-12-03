@@ -870,6 +870,7 @@ include 'includes/header.php';
 window.EXISTING_ORDER_META = <?= json_encode($existingOrderMeta, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
 window.EXISTING_ORDER_ITEMS = <?= json_encode($existingItemsPayload, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
 window.ACTIVE_POS_PROMOTIONS = <?= json_encode($posAppliedPromotions, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+window.CURRENCY_CONFIG = <?= json_encode($currencyManager->getJavaScriptConfig(), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
 </script>
 
 <script>
