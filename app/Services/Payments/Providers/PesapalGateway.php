@@ -1,4 +1,18 @@
 <?php
+/**
+ * PesaPal Payment Gateway Integration (API v3)
+ * 
+ * Supports:
+ * - M-Pesa (Kenya, Tanzania)
+ * - Airtel Money
+ * - Visa / Mastercard / Amex
+ * - Bank Transfers
+ * - Equity Bank
+ * 
+ * Documentation: https://developer.pesapal.com/how-to-integrate/e-commerce/api-30-json/api-reference
+ * 
+ * @copyright Waesta Enterprises U Ltd. All rights reserved.
+ */
 
 namespace App\Services\Payments\Providers;
 
@@ -12,6 +26,9 @@ class PesapalGateway extends AbstractGateway implements PaymentGatewayInterface
 {
     private const BASE_URL_LIVE = 'https://pay.pesapal.com/v3/api';
     private const BASE_URL_SANDBOX = 'https://cybqa.pesapal.com/pesapalv3/api';
+    
+    private ?string $cachedToken = null;
+    private ?int $tokenExpiry = null;
 
     public function getName(): string
     {
@@ -88,8 +105,88 @@ class PesapalGateway extends AbstractGateway implements PaymentGatewayInterface
         ]);
     }
 
+    /**
+     * Register IPN URL with PesaPal
+     * This should be done once during setup
+     */
+    public function registerIpn(string $ipnUrl, string $ipnNotificationType = 'GET'): array
+    {
+        $token = $this->issueToken();
+        
+        $payload = [
+            'url' => $ipnUrl,
+            'ipn_notification_type' => $ipnNotificationType, // GET or POST
+        ];
+
+        $response = $this->postJson(
+            $this->baseUrl() . '/URLSetup/RegisterIPN',
+            $payload,
+            ['Authorization: Bearer ' . $token]
+        );
+
+        return [
+            'success' => !empty($response['ipn_id']),
+            'ipn_id' => $response['ipn_id'] ?? null,
+            'url' => $response['url'] ?? $ipnUrl,
+            'raw' => $response,
+        ];
+    }
+
+    /**
+     * Get list of registered IPN URLs
+     */
+    public function getRegisteredIpns(): array
+    {
+        $token = $this->issueToken();
+        
+        return $this->getJson(
+            $this->baseUrl() . '/URLSetup/GetIpnList',
+            ['Authorization: Bearer ' . $token]
+        );
+    }
+
+    /**
+     * Check transaction status
+     */
+    public function checkStatus(string $trackingId): array
+    {
+        $token = $this->issueToken();
+        
+        $response = $this->getJson(
+            $this->baseUrl() . '/Transactions/GetTransactionStatus?orderTrackingId=' . urlencode($trackingId),
+            ['Authorization: Bearer ' . $token]
+        );
+
+        $statusCode = strtolower($response['payment_status_description'] ?? 'pending');
+        $mappedStatus = match($statusCode) {
+            'completed' => 'completed',
+            'failed' => 'failed',
+            'reversed' => 'refunded',
+            default => 'pending'
+        };
+
+        return [
+            'status' => $mappedStatus,
+            'tracking_id' => $trackingId,
+            'merchant_reference' => $response['merchant_reference'] ?? null,
+            'amount' => $response['amount'] ?? 0,
+            'currency' => $response['currency'] ?? 'KES',
+            'payment_method' => $response['payment_method'] ?? null,
+            'description' => $response['description'] ?? null,
+            'raw' => $response,
+        ];
+    }
+
+    /**
+     * Get auth token with caching
+     */
     private function issueToken(): string
     {
+        // Return cached token if still valid
+        if ($this->cachedToken && $this->tokenExpiry && time() < $this->tokenExpiry) {
+            return $this->cachedToken;
+        }
+        
         $consumerKey = $this->requireConfig('consumer_key', 'Pesapal Consumer Key');
         $consumerSecret = $this->requireConfig('consumer_secret', 'Pesapal Consumer Secret');
 
@@ -104,15 +201,19 @@ class PesapalGateway extends AbstractGateway implements PaymentGatewayInterface
         );
 
         if (empty($response['token'])) {
-            throw new RuntimeException('Unable to obtain Pesapal auth token');
+            throw new RuntimeException('Unable to obtain Pesapal auth token: ' . json_encode($response));
         }
 
-        return (string)$response['token'];
+        // Cache token (expires in 5 minutes by default, we cache for 4)
+        $this->cachedToken = (string)$response['token'];
+        $this->tokenExpiry = time() + 240; // 4 minutes
+
+        return $this->cachedToken;
     }
 
     private function baseUrl(): string
     {
-        $env = strtolower($this->config['environment'] ?? 'live');
+        $env = strtolower($this->config['environment'] ?? 'sandbox');
         return $env === 'sandbox' ? self::BASE_URL_SANDBOX : self::BASE_URL_LIVE;
     }
 
@@ -123,5 +224,38 @@ class PesapalGateway extends AbstractGateway implements PaymentGatewayInterface
         }
 
         return 'PES-' . strtoupper(substr(md5($request->contextType . '-' . $request->contextId . microtime(true)), 0, 12));
+    }
+
+    /**
+     * Normalize phone number for East Africa
+     */
+    private function normalizePhone(?string $phone): ?string
+    {
+        if (!$phone) return null;
+        
+        $phone = preg_replace('/[^0-9]/', '', $phone);
+        
+        // Kenya
+        if (strlen($phone) === 9 && in_array(substr($phone, 0, 1), ['7', '1'])) {
+            return '+254' . $phone;
+        }
+        if (strlen($phone) === 10 && substr($phone, 0, 1) === '0') {
+            return '+254' . substr($phone, 1);
+        }
+        if (strlen($phone) === 12 && substr($phone, 0, 3) === '254') {
+            return '+' . $phone;
+        }
+        
+        // Tanzania
+        if (strlen($phone) === 9 && in_array(substr($phone, 0, 1), ['6', '7'])) {
+            return '+255' . $phone;
+        }
+        
+        // Uganda
+        if (strlen($phone) === 9 && substr($phone, 0, 1) === '7') {
+            return '+256' . $phone;
+        }
+        
+        return $phone;
     }
 }

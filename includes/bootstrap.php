@@ -33,6 +33,7 @@ require_once __DIR__ . "/accounting-helpers.php";
 require_once __DIR__ . "/SystemManager.php";
 require_once __DIR__ . "/RateLimiter.php";
 require_once __DIR__ . "/ApiRateLimiter.php";
+require_once __DIR__ . "/SystemLogger.php";
 
 // Autoload application namespaces if vendor autoloader exists
 $composerAutoload = ROOT_PATH . '/vendor/autoload.php';
@@ -72,6 +73,23 @@ function redirect($url) {
     }
     echo "<script>window.location.href=\"" . $url . "\";</script>";
     exit;
+}
+
+function redirectToDashboard($auth) {
+    $role = $auth->getRole();
+    
+    $dashboardMap = [
+        'super_admin' => '/dashboards/admin.php',
+        'developer' => '/dashboards/admin.php',
+        'admin' => '/dashboards/admin.php',
+        'manager' => '/dashboards/manager.php',
+        'accountant' => '/dashboards/accountant.php',
+        'cashier' => '/dashboards/cashier.php',
+        'waiter' => '/dashboards/waiter.php',
+    ];
+    
+    $dashboard = $dashboardMap[$role] ?? '/pos.php';
+    redirect(APP_URL . $dashboard);
 }
 
 function requireModuleEnabled($moduleKey, $redirectUrl = '/wapos/index.php') {

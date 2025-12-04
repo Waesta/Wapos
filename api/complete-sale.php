@@ -223,7 +223,7 @@ try {
         'promotions' => $promotions,
         'module_scope' => $moduleScope,
         'totals' => [
-            'subtotal' => $subtotal,
+            'subtotal' => $netSubtotal,
             'tax' => $taxAmount,
             'discount' => $discountAmount,
             'grand' => $grandTotal,

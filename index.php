@@ -1,53 +1,92 @@
 <?php
 /**
- * WAPOS - Professional Landing Page
- * Welcome page with login access
+ * WAPOS - Unified Point of Sale System
+ * Professional Landing Page - Powered by Waesta Enterprises U Ltd
+ * 
+ * @copyright <?= date('Y') ?> Waesta Enterprises U Ltd. All rights reserved.
+ * @link https://waesta.com
  */
 
-// Prevent caching
+// Prevent caching for dynamic content
 header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
 header("Pragma: no-cache");
 header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
 
 require_once 'includes/bootstrap.php';
 
-// If already logged in, redirect to dashboard
+// If already logged in, redirect to appropriate dashboard
 if ($auth->isLoggedIn()) {
-    $role = strtolower($auth->getUser()['role'] ?? '');
-
-    switch ($role) {
-        case 'super_admin':
-        case 'developer':
-        case 'admin':
-            redirect('dashboards/admin.php');
-            break;
-        case 'manager':
-            redirect('dashboards/manager.php');
-            break;
-        case 'accountant':
-            redirect('dashboards/accountant.php');
-            break;
-        case 'cashier':
-            redirect('dashboards/cashier.php');
-            break;
-        case 'waiter':
-            redirect('dashboards/waiter.php');
-            break;
-        default:
-            redirect('pos.php');
-    }
+    redirectToDashboard($auth);
 }
 
-$pageTitle = 'Welcome to WAPOS';
+// SEO Meta Data
+$pageTitle = 'WAPOS - Unified Point of Sale System | Retail, Restaurant & Hospitality';
+$pageDescription = 'WAPOS is a comprehensive point of sale system for retail, restaurant, and hospitality businesses. Manage sales, inventory, deliveries, and accounting from one unified platform.';
+$pageKeywords = 'POS system, point of sale, retail POS, restaurant POS, hospitality management, inventory management, sales tracking, business software';
+$canonicalUrl = rtrim(APP_URL, '/');
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= $pageTitle ?></title>
+    
+    <!-- SEO Meta Tags -->
+    <title><?= htmlspecialchars($pageTitle) ?></title>
+    <meta name="description" content="<?= htmlspecialchars($pageDescription) ?>">
+    <meta name="keywords" content="<?= htmlspecialchars($pageKeywords) ?>">
+    <meta name="author" content="Waesta Enterprises U Ltd">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="<?= htmlspecialchars($canonicalUrl) ?>">
+    
+    <!-- Open Graph / Social Media -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="<?= htmlspecialchars($pageTitle) ?>">
+    <meta property="og:description" content="<?= htmlspecialchars($pageDescription) ?>">
+    <meta property="og:url" content="<?= htmlspecialchars($canonicalUrl) ?>">
+    <meta property="og:site_name" content="WAPOS">
+    <meta property="og:locale" content="en_US">
+    
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="<?= htmlspecialchars($pageTitle) ?>">
+    <meta name="twitter:description" content="<?= htmlspecialchars($pageDescription) ?>">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="<?= APP_URL ?>/assets/favicon.ico">
+    <link rel="apple-touch-icon" href="<?= APP_URL ?>/assets/apple-touch-icon.png">
+    
+    <!-- Preconnect for Performance -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net">
+    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
+    
+    <!-- Stylesheets -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    
+    <!-- Structured Data (JSON-LD) for SEO -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "WAPOS",
+        "applicationCategory": "BusinessApplication",
+        "operatingSystem": "Web Browser",
+        "description": "<?= htmlspecialchars($pageDescription) ?>",
+        "url": "<?= htmlspecialchars($canonicalUrl) ?>",
+        "author": {
+            "@type": "Organization",
+            "name": "Waesta Enterprises U Ltd",
+            "url": "https://waesta.com"
+        },
+        "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+        }
+    }
+    </script>
+    
     <style>
         :root {
             --brand-deep: #0f172a;
@@ -109,9 +148,40 @@ $pageTitle = 'Welcome to WAPOS';
             font-size: 1.4rem;
         }
 
+        .brand-name {
+            display: block;
+            font-weight: 700;
+            font-size: 1.1rem;
+            line-height: 1.2;
+        }
+
+        .brand-tagline {
+            display: block;
+            font-size: 0.7rem;
+            color: var(--brand-muted);
+            font-weight: 500;
+            letter-spacing: 0.02em;
+        }
+
         .nav-actions {
             display: flex;
-            gap: 12px;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .nav-link {
+            padding: 8px 14px;
+            color: var(--brand-muted);
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.9rem;
+            border-radius: 6px;
+            transition: color 0.2s, background 0.2s;
+        }
+
+        .nav-link:hover {
+            color: var(--brand-deep);
+            background: rgba(0,0,0,0.04);
         }
 
         .btn-outline,
@@ -322,9 +392,197 @@ $pageTitle = 'Welcome to WAPOS';
         }
 
         .footer {
-            text-align: center;
-            margin-top: 40px;
+            margin-top: 48px;
+            padding: 40px 0 24px;
+            border-top: 1px solid var(--border-soft);
+        }
+
+        .footer-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        .footer-logo {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 700;
+            font-size: 1.1rem;
+            color: var(--brand-deep);
+        }
+
+        .footer-logo i {
+            color: var(--brand-primary);
+        }
+
+        .footer-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 24px;
+        }
+
+        .footer-links a {
             color: var(--brand-muted);
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.2s;
+        }
+
+        .footer-links a:hover {
+            color: var(--brand-primary);
+        }
+
+        .footer-bottom {
+            text-align: center;
+            padding-top: 24px;
+            border-top: 1px solid var(--border-soft);
+        }
+
+        .footer-bottom p {
+            margin: 0;
+            font-size: 0.85rem;
+            color: var(--brand-muted);
+        }
+
+        .footer-bottom strong {
+            color: var(--brand-deep);
+        }
+
+        .hero-content {
+            text-align: center;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .hero-content h1 {
+            font-size: clamp(2rem, 4vw, 2.8rem);
+            margin: 0 0 20px;
+            line-height: 1.2;
+        }
+
+        .hero-subtitle {
+            font-size: 1.1rem;
+            color: var(--brand-muted);
+            margin-bottom: 28px;
+            line-height: 1.6;
+        }
+
+        .btn-lg {
+            padding: 16px 32px;
+            font-size: 1.1rem;
+        }
+
+        /* Modules Section */
+        .modules-section {
+            padding: 48px 0 32px;
+        }
+
+        .module-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+        }
+
+        .module-card {
+            background: var(--surface);
+            border-radius: 16px;
+            padding: 28px;
+            border: 1px solid var(--border-soft);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .module-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 32px rgba(15,23,42,0.1);
+        }
+
+        .module-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, var(--brand-primary), #1d4ed8);
+            color: #fff;
+            display: grid;
+            place-items: center;
+            font-size: 1.3rem;
+            margin-bottom: 16px;
+        }
+
+        .module-card h3 {
+            font-size: 1.15rem;
+            margin: 0 0 12px;
+            color: var(--brand-deep);
+        }
+
+        .module-features {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .module-features li {
+            padding: 6px 0;
+            font-size: 0.9rem;
+            color: var(--brand-muted);
+            border-bottom: 1px solid var(--border-soft);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .module-features li:last-child {
+            border-bottom: none;
+        }
+
+        .module-features li::before {
+            content: "✓";
+            color: var(--brand-primary);
+            font-weight: 600;
+            font-size: 0.8rem;
+        }
+
+        /* Capabilities Section */
+        .capabilities-section {
+            padding: 32px 0 48px;
+        }
+
+        .capabilities-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 16px;
+        }
+
+        .capability {
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            padding: 20px;
+            background: var(--surface);
+            border-radius: 12px;
+            border: 1px solid var(--border-soft);
+        }
+
+        .capability i {
+            font-size: 1.5rem;
+            color: var(--brand-primary);
+            flex-shrink: 0;
+        }
+
+        .capability strong {
+            display: block;
+            font-size: 0.95rem;
+            color: var(--brand-deep);
+            margin-bottom: 4px;
+        }
+
+        .capability span {
+            font-size: 0.85rem;
+            color: var(--brand-muted);
+            line-height: 1.4;
         }
 
         @media (max-width: 768px) {
@@ -333,129 +591,254 @@ $pageTitle = 'Welcome to WAPOS';
                 gap: 12px;
             }
 
+            .nav-actions {
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+
             .hero-panel {
-                padding: 32px;
+                padding: 32px 20px;
+            }
+
+            .module-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .capabilities-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .footer-content {
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .footer-links {
+                justify-content: center;
             }
         }
     </style>
 </head>
 <body>
     <div class="page-shell">
-        <header class="landing-nav">
+        <header class="landing-nav" role="banner">
             <div class="brand-mark">
                 <div class="brand-icon"><i class="bi bi-shop"></i></div>
-                <span>WAPOS Suite</span>
+                <div>
+                    <span class="brand-name">WAPOS</span>
+                    <small class="brand-tagline">by Waesta Enterprises</small>
+                </div>
             </div>
-            <div class="nav-actions">
-                <a class="btn-outline" href="diagnostics.php"><i class="bi bi-activity"></i> Diagnostics</a>
-                <a class="btn-primary" href="login.php"><i class="bi bi-box-arrow-in-right"></i> Login</a>
-            </div>
+            <nav class="nav-actions" role="navigation" aria-label="Main navigation">
+                <a class="nav-link" href="about.php">About</a>
+                <a class="nav-link" href="resources.php">User Manual</a>
+                <a class="nav-link" href="contact.php">Contact</a>
+                <a class="btn-primary" href="login.php"><i class="bi bi-box-arrow-in-right"></i> Sign In</a>
+            </nav>
         </header>
 
-        <section class="hero-panel">
-            <div class="hero-grid">
-                <div class="hero-copy">
-                    <div class="hero-pills">
-                        <span class="pill"><i class="bi bi-stars"></i>Omni-channel POS</span>
-                        <span class="pill"><i class="bi bi-shield-lock"></i>Role-aware Access</span>
-                    </div>
-                    <h1>Operate retail, restaurant, and hospitality workflows from one console.</h1>
-                    <p>WAPOS orchestrates inventory, payments, delivery logistics, and finance in real time. Configurable modules keep every team aligned—sales, kitchen, riders, and accounting.</p>
-                    <div class="nav-actions">
-                        <a class="btn-primary" href="login.php"><i class="bi bi-play-circle"></i>Launch Workspace</a>
-                        <a class="btn-outline" href="settings.php"><i class="bi bi-gear"></i>Review Settings</a>
-                    </div>
-                </div>
-                <div class="hero-visual">
-                    <div class="chart-card">
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <div>
-                                <small class="text-uppercase text-muted">Today's Signal</small>
-                                <h5 class="mb-0">Operational Pulse</h5>
-                            </div>
-                            <span class="badge bg-light text-dark">Live</span>
-                        </div>
-                        <div class="chart-bar"><span style="width: 82%"></span></div>
-                        <div class="chart-bar"><span style="width: 64%"></span></div>
-                        <div class="chart-bar"><span style="width: 92%"></span></div>
-                        <ul class="list-unstyled small text-muted mb-0">
-                            <li class="d-flex justify-content-between"><span>POS & Reservations</span><strong>+18% vs last week</strong></li>
-                            <li class="d-flex justify-content-between"><span>Deliveries in SLA</span><strong>96% on-time</strong></li>
-                            <li class="d-flex justify-content-between"><span>Accounting checks</span><strong>No exceptions</strong></li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
-
-            <div class="stat-grid">
-                <div class="stat-card">
-                    <h4>15</h4>
-                    <span>Active Modules</span>
-                </div>
-                <div class="stat-card">
-                    <h4>24/7</h4>
-                    <span>Monitoring</span>
-                </div>
-                <div class="stat-card">
-                    <h4>5m+</h4>
-                    <span>Transactions</span>
-                </div>
-                <div class="stat-card">
-                    <h4>120+</h4>
-                    <span>Roles & Permissions</span>
-                </div>
+        <main>
+        <!-- Hero Section -->
+        <section class="hero-panel" aria-labelledby="hero-heading">
+            <div class="hero-content">
+                <h1 id="hero-heading">Complete Business Management System</h1>
+                <p class="hero-subtitle">Point of Sale, Restaurant Operations, Inventory, Deliveries, Housekeeping, Maintenance, and Accounting — all in one unified platform.</p>
+                <a class="btn-primary btn-lg" href="login.php"><i class="bi bi-box-arrow-in-right" aria-hidden="true"></i> Sign In to Dashboard</a>
             </div>
         </section>
 
-        <section>
+        <!-- Core Modules -->
+        <section id="features" class="modules-section" aria-labelledby="features-heading">
             <div class="section-heading">
-                <h2>Everything operators need, from front-of-house to finance.</h2>
-                <p>Deploy the same workspace for retail counters, dining rooms, delivery teams, and corporate controllers.</p>
+                <h2 id="features-heading">System Modules</h2>
             </div>
-            <div class="feature-grid">
-                <div class="feature-card">
-                    <div class="feature-icon"><i class="bi bi-cart-check"></i></div>
-                    <h4>Unified Point of Sale</h4>
-                    <p>Lightning-fast basket building, loyalty capture, held orders, and omni tendering built in.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon"><i class="bi bi-columns-gap"></i></div>
-                    <h4>Role-focused Dashboards</h4>
-                    <p>Managers, accountants, riders, and super admins see only what they need—with contextual guardrails.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon"><i class="bi bi-truck"></i></div>
-                    <h4>Delivery & Logistics</h4>
-                    <p>Live rider tracking, SLA alerts, and Google Distance Matrix integrations keep field ops accountable.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon"><i class="bi bi-calculator"></i></div>
-                    <h4>Accounting-ready</h4>
-                    <p>Auto-locked journals, tax packs, and ledger exports simplify handoffs to finance systems.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon"><i class="bi bi-shield-check"></i></div>
-                    <h4>Security & Audit</h4>
-                    <p>Module toggles, privilege bypass for super admins, and compliance logs baked into every action.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon"><i class="bi bi-phone"></i></div>
-                    <h4>Responsive & Offline-aware</h4>
-                    <p>PWA-ready experience keeps service moving on tablets and touch devices.</p>
-                </div>
+            
+            <div class="module-grid">
+                <!-- Point of Sale -->
+                <article class="module-card">
+                    <div class="module-icon"><i class="bi bi-cart-check" aria-hidden="true"></i></div>
+                    <h3>Point of Sale</h3>
+                    <ul class="module-features">
+                        <li>Fast checkout with barcode scanning</li>
+                        <li>Multiple payment methods (Cash, Card, Mobile Money, Bank Transfer)</li>
+                        <li>Customer loyalty & promotions</li>
+                        <li>Held orders & split payments</li>
+                        <li>Receipt printing & customization</li>
+                        <li>Register X/Y/Z reports</li>
+                    </ul>
+                </article>
+
+                <!-- Restaurant -->
+                <article class="module-card">
+                    <div class="module-icon"><i class="bi bi-cup-straw" aria-hidden="true"></i></div>
+                    <h3>Restaurant</h3>
+                    <ul class="module-features">
+                        <li>Table management & floor plan</li>
+                        <li>Dine-in, takeout & delivery orders</li>
+                        <li>Kitchen Display System (KDS)</li>
+                        <li>Menu & modifier management</li>
+                        <li>Reservations & waitlist</li>
+                        <li>Waiter order taking</li>
+                    </ul>
+                </article>
+
+                <!-- Inventory -->
+                <article class="module-card">
+                    <div class="module-icon"><i class="bi bi-boxes" aria-hidden="true"></i></div>
+                    <h3>Inventory</h3>
+                    <ul class="module-features">
+                        <li>Product catalog with categories</li>
+                        <li>Stock level tracking</li>
+                        <li>Low stock alerts</li>
+                        <li>Goods received notes (GRN)</li>
+                        <li>Supplier management</li>
+                        <li>Stock adjustments & transfers</li>
+                    </ul>
+                </article>
+
+                <!-- Delivery -->
+                <article class="module-card">
+                    <div class="module-icon"><i class="bi bi-truck" aria-hidden="true"></i></div>
+                    <h3>Delivery</h3>
+                    <ul class="module-features">
+                        <li>Order dispatch & assignment</li>
+                        <li>Live rider GPS tracking</li>
+                        <li>Delivery status updates</li>
+                        <li>Distance-based pricing rules</li>
+                        <li>Rider performance metrics</li>
+                        <li>Delivery zones management</li>
+                    </ul>
+                </article>
+
+                <!-- Housekeeping -->
+                <article class="module-card">
+                    <div class="module-icon"><i class="bi bi-house-check" aria-hidden="true"></i></div>
+                    <h3>Housekeeping</h3>
+                    <ul class="module-features">
+                        <li>Room status board</li>
+                        <li>Task assignment & tracking</li>
+                        <li>Cleaning schedules</li>
+                        <li>Staff workload management</li>
+                        <li>Inspection checklists</li>
+                        <li>Real-time status updates</li>
+                    </ul>
+                </article>
+
+                <!-- Maintenance -->
+                <article class="module-card">
+                    <div class="module-icon"><i class="bi bi-tools" aria-hidden="true"></i></div>
+                    <h3>Maintenance</h3>
+                    <ul class="module-features">
+                        <li>Work order management</li>
+                        <li>Request submission & tracking</li>
+                        <li>Priority-based scheduling</li>
+                        <li>Technician assignment</li>
+                        <li>Asset maintenance history</li>
+                        <li>Completion reporting</li>
+                    </ul>
+                </article>
+
+                <!-- Accounting -->
+                <article class="module-card">
+                    <div class="module-icon"><i class="bi bi-calculator" aria-hidden="true"></i></div>
+                    <h3>Accounting</h3>
+                    <ul class="module-features">
+                        <li>Chart of accounts</li>
+                        <li>Journal entries & ledgers</li>
+                        <li>Profit & Loss statements</li>
+                        <li>Balance sheet reports</li>
+                        <li>Sales tax reporting</li>
+                        <li>Payment reconciliation</li>
+                    </ul>
+                </article>
+
+                <!-- Administration -->
+                <article class="module-card">
+                    <div class="module-icon"><i class="bi bi-shield-lock" aria-hidden="true"></i></div>
+                    <h3>Administration</h3>
+                    <ul class="module-features">
+                        <li>User & role management</li>
+                        <li>Granular permissions</li>
+                        <li>Multi-location support</li>
+                        <li>System settings & configuration</li>
+                        <li>Audit logs & activity tracking</li>
+                        <li>Data backup & restore</li>
+                    </ul>
+                </article>
             </div>
         </section>
 
-        <section class="cta-panel">
-            <div>
-                <h3 class="mb-1">Ready to continue operations?</h3>
-                <p>Sign in with your assigned role to access dashboards, modules, and live diagnostics.</p>
+        <!-- Key Capabilities -->
+        <section class="capabilities-section" aria-labelledby="capabilities-heading">
+            <div class="section-heading">
+                <h2 id="capabilities-heading">Key Capabilities</h2>
             </div>
-            <a class="btn btn-light btn-lg" href="login.php"><i class="bi bi-box-arrow-in-right me-2"></i>Login to Workspace</a>
+            <div class="capabilities-grid">
+                <div class="capability">
+                    <i class="bi bi-people" aria-hidden="true"></i>
+                    <div>
+                        <strong>Role-Based Dashboards</strong>
+                        <span>Admin, Manager, Cashier, Waiter, Rider, Accountant, Housekeeper</span>
+                    </div>
+                </div>
+                <div class="capability">
+                    <i class="bi bi-currency-exchange" aria-hidden="true"></i>
+                    <div>
+                        <strong>Currency Neutral</strong>
+                        <span>Works with any currency — configure symbol, format & position</span>
+                    </div>
+                </div>
+                <div class="capability">
+                    <i class="bi bi-phone" aria-hidden="true"></i>
+                    <div>
+                        <strong>Responsive Design</strong>
+                        <span>Works on desktop, tablet & mobile devices</span>
+                    </div>
+                </div>
+                <div class="capability">
+                    <i class="bi bi-graph-up" aria-hidden="true"></i>
+                    <div>
+                        <strong>Real-Time Reports</strong>
+                        <span>Sales, inventory, payments & performance analytics</span>
+                    </div>
+                </div>
+                <div class="capability">
+                    <i class="bi bi-cloud-check" aria-hidden="true"></i>
+                    <div>
+                        <strong>Cloud Ready</strong>
+                        <span>Deploy on cPanel, AWS, DigitalOcean or any LAMP server</span>
+                    </div>
+                </div>
+                <div class="capability">
+                    <i class="bi bi-shield-check" aria-hidden="true"></i>
+                    <div>
+                        <strong>Secure & Compliant</strong>
+                        <span>GDPR ready, rate limiting, audit trails & encrypted sessions</span>
+                    </div>
+                </div>
+            </div>
         </section>
+        </main>
 
-        <footer class="footer">
-            <small>&copy; <?= date('Y') ?> WAPOS • Unified commerce & hospitality control center.</small>
+        <footer class="footer" role="contentinfo">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <div class="footer-logo">
+                        <i class="bi bi-shop"></i>
+                        <span>WAPOS</span>
+                    </div>
+                </div>
+                <div class="footer-links">
+                    <a href="about.php">About</a>
+                    <a href="resources.php">User Manual</a>
+                    <a href="contact.php">Contact</a>
+                    <a href="privacy-policy.php">Privacy Policy</a>
+                    <a href="terms-of-service.php">Terms of Service</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; <?= date('Y') ?> <strong>Waesta Enterprises U Ltd</strong>. All rights reserved.</p>
+            </div>
         </footer>
     </div>
 

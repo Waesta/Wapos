@@ -469,14 +469,27 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                 $systemManager = SystemManager::getInstance();
                 $privilegedRoles = ['super_admin', 'developer'];
                 $isPrivileged = in_array($userRole, $privilegedRoles, true);
+                
+                // Determine dashboard URL based on role
+                $dashboardUrls = [
+                    'super_admin' => '/wapos/dashboards/admin.php',
+                    'developer' => '/wapos/dashboards/admin.php',
+                    'admin' => '/wapos/dashboards/admin.php',
+                    'manager' => '/wapos/dashboards/manager.php',
+                    'accountant' => '/wapos/dashboards/accountant.php',
+                    'cashier' => '/wapos/dashboards/cashier.php',
+                    'waiter' => '/wapos/dashboards/waiter.php',
+                ];
+                $userDashboard = $dashboardUrls[$userRole] ?? '/wapos/pos.php';
+                
                 $navGroups = [
                     'core' => [
                         'label' => 'Core',
                         'items' => [
                             [
                                 'roles' => 'all',
-                                'href' => '/wapos/index.php',
-                                'page' => 'index.php',
+                                'href' => $userDashboard,
+                                'page' => basename($userDashboard),
                                 'icon' => 'bi-speedometer2',
                                 'label' => 'Dashboard'
                             ],
@@ -801,7 +814,15 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'module' => 'settings'
                             ],
                             [
-                                'roles' => ['super_admin'],
+                                'roles' => ['developer', 'super_admin', 'admin'],
+                                'href' => '/wapos/system-logs.php',
+                                'page' => 'system-logs.php',
+                                'icon' => 'bi-journal-text',
+                                'label' => 'System Logs',
+                                'module' => 'settings'
+                            ],
+                            [
+                                'roles' => ['super_admin', 'admin', 'developer'],
                                 'href' => '/wapos/module-manager.php',
                                 'page' => 'module-manager.php',
                                 'icon' => 'bi-toggle2-on',
@@ -823,6 +844,13 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'icon' => 'bi-currency-exchange',
                                 'label' => 'Currency',
                                 'module' => 'settings'
+                            ],
+                            [
+                                'roles' => ['super_admin', 'developer'],
+                                'href' => '/wapos/payment-gateways.php',
+                                'page' => 'payment-gateways.php',
+                                'icon' => 'bi-credit-card',
+                                'label' => 'Payment Gateways'
                             ]
                         ]
                     ]

@@ -26,10 +26,11 @@ define('APP_URL', 'https://your-domain.com/wapos'); // [CHANGE_ME] Your producti
 define('TIMEZONE', 'Africa/Nairobi');               // [CHANGE_ME] Your timezone
 
 // ============================================
-// CURRENCY SETTINGS
+// CURRENCY SETTINGS (Currency Neutral by Default)
 // ============================================
-define('CURRENCY_CODE', 'USD');        // [CHANGE_ME] ISO currency code
-define('CURRENCY_SYMBOL', '$');        // [CHANGE_ME] Currency symbol
+// Leave empty for neutral - configure via Settings page in the app
+define('CURRENCY_CODE', '');           // Configure in Settings page (e.g., USD, EUR, KES)
+define('CURRENCY_SYMBOL', '');         // Configure in Settings page (e.g., $, €, KSh)
 define('CURRENCY_POSITION', 'before'); // 'before' or 'after' the amount
 define('DECIMAL_SEPARATOR', '.');
 define('THOUSANDS_SEPARATOR', ',');

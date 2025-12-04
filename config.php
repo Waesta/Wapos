@@ -16,9 +16,9 @@ define('APP_NAME', 'WAPOS');
 define('APP_URL', 'http://localhost/wapos');
 define('TIMEZONE', 'Africa/Nairobi');
 
-// Currency Settings (Configure for your region)
-define('CURRENCY_CODE', 'USD');        // ISO currency code (USD, EUR, GBP, KES, etc.)
-define('CURRENCY_SYMBOL', '$');        // Currency symbol to display
+// Currency Settings (Configure in Settings page or set defaults here)
+define('CURRENCY_CODE', '');           // Leave empty for neutral - configure in Settings
+define('CURRENCY_SYMBOL', '');         // Leave empty for neutral - configure in Settings
 define('CURRENCY_POSITION', 'before'); // 'before' or 'after' the amount
 define('DECIMAL_SEPARATOR', '.');      // Decimal separator (. or ,)
 define('THOUSANDS_SEPARATOR', ',');    // Thousands separator (, or . or space)

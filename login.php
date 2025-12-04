@@ -7,9 +7,9 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
 require_once 'includes/bootstrap.php';
 require_once 'includes/RateLimiter.php';
 
-// If already logged in, redirect to dashboard
+// If already logged in, redirect to appropriate dashboard
 if ($auth->isLoggedIn()) {
-    redirect(APP_URL . '/index.php');
+    redirectToDashboard($auth);
 }
 
 $error = '';
@@ -40,7 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($auth->login($username, $password)) {
                 // Clear rate limit on successful login
                 $rateLimiter->clear($rateLimitKey);
-                redirect(APP_URL . '/index.php');
+                redirectToDashboard($auth);
             } else {
                 // Increment rate limit counter on failed attempt
                 $rateLimiter->hit($rateLimitKey);
@@ -133,13 +133,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </button>
                         </form>
 
-                        <div class="card bg-light">
-                            <div class="card-body py-2">
-                                <small class="text-muted d-block mb-1"><strong>Default Login:</strong></small>
-                                <small class="text-muted">Username: <code>admin</code> or <code>developer</code></small><br>
-                                <small class="text-muted">Password: <code>admin123</code></small>
-                            </div>
-                        </div>
                     </div>
                 </div>
 

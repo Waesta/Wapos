@@ -229,8 +229,8 @@ if (!empty($existingItems)) {
     }
 }
 
-$currencySetting = $db->fetchOne("SELECT setting_value FROM settings WHERE setting_key = 'currency'");
-$currencySymbol = $currencySetting['setting_value'] ?? '$';
+$currencySetting = $db->fetchOne("SELECT setting_value FROM settings WHERE setting_key = 'currency_symbol'");
+$currencySymbol = $currencySetting['setting_value'] ?? '';
 
 $pageTitle = $orderType === 'dine-in' ? 'Dine-In Order' : 'Takeout Order';
 include 'includes/header.php';

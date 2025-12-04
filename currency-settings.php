@@ -237,7 +237,7 @@ function updateCurrencyInfo() {
 }
 
 function updatePreview() {
-    const symbol = document.getElementById('currency_symbol').value || '$';
+    const symbol = document.getElementById('currency_symbol').value || '';
     const position = document.getElementById('currency_position').value;
     const decimalPlaces = parseInt(document.getElementById('decimal_places').value) || 2;
     const decimalSeparator = document.getElementById('decimal_separator').value || '.';

@@ -110,6 +110,13 @@ class Auth {
             return false;
         }
         
+        $currentRole = $this->getRole();
+        
+        // Super admin and developer have full access to everything
+        if (in_array($currentRole, ['super_admin', 'developer'], true)) {
+            return true;
+        }
+        
         $userRole = $this->getRole();
         
         // Super admin has unrestricted access
@@ -156,7 +163,8 @@ class Auth {
     public function requireRole($role) {
         $this->requireLogin();
         if (!$this->hasRole($role)) {
-            header('Location: ' . APP_URL . '/index.php?error=access_denied');
+            // Redirect to access denied page or show error
+            header('Location: ' . APP_URL . '/access-denied.php');
             exit;
         }
     }

@@ -49,6 +49,14 @@ Options -Indexes
     # RewriteCond %{HTTPS} off
     # RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
     
+    # Remove index.php from URL (clean URLs)
+    # Redirect /wapos/index.php to /wapos/
+    RewriteCond %{THE_REQUEST} ^[A-Z]{3,}\s/wapos/index\.php [NC]
+    RewriteRule ^index\.php$ / [R=301,L]
+    
+    # Serve index.php for root requests
+    DirectoryIndex index.php
+    
     # Prevent access to sensitive files and directories
     RewriteRule ^includes/ - [F,L]
     RewriteRule ^database/ - [F,L]

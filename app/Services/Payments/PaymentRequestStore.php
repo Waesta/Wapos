@@ -170,6 +170,91 @@ class PaymentRequestStore
         return $row;
     }
 
+    public function findByProviderReference(string $providerReference): ?array
+    {
+        $stmt = $this->db->prepare('SELECT * FROM payment_requests WHERE provider_reference = :provider_reference LIMIT 1');
+        $stmt->execute([':provider_reference' => $providerReference]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            return null;
+        }
+
+        if (!empty($row['meta'])) {
+            $decoded = json_decode($row['meta'], true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                $row['meta'] = $decoded;
+            }
+        }
+
+        return $row;
+    }
+
+    public function updateByProviderReference(string $providerReference, string $status, array $updates = []): bool
+    {
+        $fields = ['status = :status'];
+        $params = [
+            ':status' => $status,
+            ':provider_reference' => $providerReference,
+        ];
+
+        if (array_key_exists('reference', $updates)) {
+            $fields[] = 'reference = :reference';
+            $params[':reference'] = $updates['reference'];
+        }
+
+        if (array_key_exists('amount_paid', $updates)) {
+            $fields[] = 'amount = :amount';
+            $params[':amount'] = (float)$updates['amount_paid'];
+        }
+
+        if (array_key_exists('message', $updates)) {
+            $fields[] = 'instructions = :instructions';
+            $params[':instructions'] = $updates['message'];
+        }
+
+        if (array_key_exists('raw_response', $updates)) {
+            $fields[] = 'meta = :meta';
+            $params[':meta'] = $this->encodeMeta($updates['raw_response']);
+        }
+
+        if (array_key_exists('completed_at', $updates) && $updates['completed_at']) {
+            $fields[] = 'updated_at = :completed_at';
+            $params[':completed_at'] = $updates['completed_at'];
+        }
+
+        $sql = 'UPDATE payment_requests SET ' . implode(', ', $fields) . ' WHERE provider_reference = :provider_reference';
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+
+        return $stmt->rowCount() > 0;
+    }
+
+    public function getPendingPayments(string $provider = null, int $limit = 100): array
+    {
+        $sql = 'SELECT * FROM payment_requests WHERE status = :status';
+        $params = [':status' => 'pending'];
+        
+        if ($provider) {
+            $sql .= ' AND provider = :provider';
+            $params[':provider'] = $provider;
+        }
+        
+        $sql .= ' ORDER BY created_at DESC LIMIT ' . (int)$limit;
+        
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function getRecentPayments(int $limit = 50): array
+    {
+        $stmt = $this->db->prepare('SELECT * FROM payment_requests ORDER BY created_at DESC LIMIT ' . (int)$limit);
+        $stmt->execute();
+        
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
     private function encodeMeta($meta): ?string
     {
         if ($meta === null) {

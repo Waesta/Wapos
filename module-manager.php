@@ -1,6 +1,11 @@
 <?php
 require_once 'includes/bootstrap.php';
-$auth->requireRole('super_admin');
+
+// Allow super_admin, admin, and developer roles
+$userRole = $auth->getRole();
+if (!in_array($userRole, ['super_admin', 'admin', 'developer'], true)) {
+    $auth->requireRole('super_admin'); // Will redirect to access denied
+}
 
 $systemManager = SystemManager::getInstance();
 $moduleCatalog = require __DIR__ . '/includes/module-catalog.php';

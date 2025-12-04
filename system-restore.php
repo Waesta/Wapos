@@ -127,15 +127,18 @@ function formatMoney($amount, $showCurrency = true) {
     
     if ($currency === null) {
         try {
-            $setting = $db->fetchOne("SELECT setting_value FROM settings WHERE setting_key = \"currency\"");
-            $currency = $setting["setting_value"] ?? "$";
+            $setting = $db->fetchOne("SELECT setting_value FROM settings WHERE setting_key = \"currency_symbol\"");
+            $currency = $setting["setting_value"] ?? "";
         } catch (Exception $e) {
-            $currency = "$";
+            $currency = "";
         }
     }
     
     $formatted = number_format($amount, 2);
-    return $showCurrency ? $currency . $formatted : $formatted;
+    if (!$showCurrency || $currency === "") {
+        return $formatted;
+    }
+    return $currency . " " . $formatted;
 }
 
 function sanitizeInput($input) {
