@@ -7,6 +7,36 @@ $auth->requireLogin();
 $db = Database::getInstance();
 $currencyManager = CurrencyManager::getInstance();
 
+// Check for register session (optional - can be enabled via settings)
+$requireRegisterSession = (bool)(settings('require_register_session') ?? false);
+$currentRegister = null;
+$currentSession = null;
+
+// Check if user has an active register session
+if (isset($_SESSION['register_session_id'])) {
+    $currentSession = $db->fetchOne("
+        SELECT rs.*, r.name as register_name, r.register_number
+        FROM register_sessions rs
+        JOIN registers r ON rs.register_id = r.id
+        WHERE rs.id = ? AND rs.status = 'open'
+    ", [$_SESSION['register_session_id']]);
+    
+    if ($currentSession) {
+        $currentRegister = $db->fetchOne("SELECT * FROM registers WHERE id = ?", [$currentSession['register_id']]);
+    } else {
+        // Session was closed, clear the session variables
+        unset($_SESSION['register_id']);
+        unset($_SESSION['register_session_id']);
+    }
+}
+
+// If register session is required but not active, redirect to registers page
+if ($requireRegisterSession && !$currentSession) {
+    $_SESSION['info'] = 'Please open a register session before making sales.';
+    header('Location: registers.php');
+    exit;
+}
+
 // Get active categories and products
 $categories = $db->fetchAll("SELECT * FROM categories WHERE is_active = 1 ORDER BY name");
 $products = $db->fetchAll("SELECT * FROM products WHERE is_active = 1 ORDER BY name");
@@ -350,12 +380,30 @@ include 'includes/header.php';
     <span id="scanFeedbackText"></span>
 </div>
 <div class="container-fluid py-4 pos-shell">
+    <?php if ($currentSession): ?>
+    <div class="alert alert-success py-2 mb-3 d-flex justify-content-between align-items-center">
+        <span>
+            <i class="bi bi-cash-stack me-2"></i>
+            <strong>Register:</strong> <?= htmlspecialchars($currentSession['register_name']) ?> 
+            (<?= htmlspecialchars($currentSession['register_number']) ?>)
+            <span class="ms-3 text-muted">Session: <?= htmlspecialchars($currentSession['session_number']) ?></span>
+        </span>
+        <a href="registers.php" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-box-arrow-right me-1"></i>Close Session
+        </a>
+    </div>
+    <?php endif; ?>
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
         <div class="stack-sm">
             <h1 class="mb-0"><i class="bi bi-cart4 me-2"></i>Point of Sale</h1>
             <p class="text-muted mb-0">Search products, build a sale, and complete payments faster.</p>
         </div>
         <div class="d-flex flex-wrap gap-2">
+            <?php if (!$currentSession): ?>
+            <a href="registers.php" class="btn btn-outline-primary btn-icon">
+                <i class="bi bi-cash-stack"></i><span>Open Register</span>
+            </a>
+            <?php endif; ?>
             <button class="btn btn-outline-secondary btn-icon" onclick="showHeldOrders()">
                 <i class="bi bi-list"></i><span>Held Orders</span>
             </button>

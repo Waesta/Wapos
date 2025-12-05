@@ -83,6 +83,9 @@ $fieldDefinitions = [
     'whatsapp_auto_replies' => ['type' => 'bool'],
     'whatsapp_enabled' => ['type' => 'bool'],
     'notification_reply_to_email' => ['type' => 'string'],
+    'require_register_session' => ['type' => 'bool'],
+    'blind_close_enabled' => ['type' => 'bool'],
+    'max_variance_without_approval' => ['type' => 'float'],
 ];
 
 // Handle form submission
@@ -485,6 +488,28 @@ $visibleSections = array_filter($sections, function ($section) use ($userRole) {
                                 <label class="form-label">Reply-to Email for Notifications</label>
                                 <input type="email" class="form-control" name="notification_reply_to_email" value="<?= htmlspecialchars($settings['notification_reply_to_email'] ?? '') ?>">
                                 <div class="form-text">Used as the default reply-to address for automated mailers.</div>
+                            </div>
+                            <div class="col-12 mt-3">
+                                <h6 class="text-muted mb-2"><i class="bi bi-cash-stack me-1"></i>Register/Till Settings</h6>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" name="require_register_session" id="requireRegisterSession" value="1" <?= ($settings['require_register_session'] ?? '0') == '1' ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="requireRegisterSession">Require Register Session for POS</label>
+                                </div>
+                                <div class="form-text">When enabled, cashiers must open a register session before making sales.</div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" name="blind_close_enabled" id="blindCloseEnabled" value="1" <?= ($settings['blind_close_enabled'] ?? '0') == '1' ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="blindCloseEnabled">Enable Blind Close</label>
+                                </div>
+                                <div class="form-text">Cashiers enter counted amount without seeing expected balance first.</div>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Max Variance Without Approval</label>
+                                <input type="number" class="form-control" name="max_variance_without_approval" min="0" step="0.01" value="<?= htmlspecialchars($settings['max_variance_without_approval'] ?? '0') ?>">
+                                <div class="form-text">Variances above this amount require manager approval. 0 = no limit.</div>
                             </div>
                         </div>
                     <?php elseif ($key === 'receipts_branding'): ?>

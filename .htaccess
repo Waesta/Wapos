@@ -87,7 +87,8 @@ RedirectMatch 404 ^/app
 RedirectMatch 404 ^/config
 
 # Block access to installation and maintenance scripts (except admin migration tools)
-<FilesMatch "^(install|setup|update|upgrade|emergency|test)-.*\\.php$">
+# Note: test-data-guide.php is allowed (public testing documentation)
+<FilesMatch "^(install|setup|update|upgrade|emergency)-.*\\.php$">
     Require all denied
 </FilesMatch>
 

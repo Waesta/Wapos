@@ -357,6 +357,7 @@ $pageDescription = 'Complete user manual and documentation for WAPOS - Point of 
                     <h3>Quick Actions</h3>
                     <ul class="nav-links">
                         <li><a href="login.php"><i class="bi bi-box-arrow-in-right"></i> Sign In</a></li>
+                        <li><a href="test-data-guide.php"><i class="bi bi-clipboard-check"></i> Test Data Guide</a></li>
                         <li><a href="#" onclick="window.print(); return false;"><i class="bi bi-printer"></i> Print Manual</a></li>
                     </ul>
                 </div>
@@ -1107,6 +1108,45 @@ $pageDescription = 'Complete user manual and documentation for WAPOS - Point of 
                         <li><strong>Receipt Settings</strong> - Header, footer, format</li>
                         <li><strong>Module Settings</strong> - Enable/disable modules</li>
                     </ul>
+
+                    <h3>Registers/Tills</h3>
+                    <p>Manage multiple POS terminals for supermarkets, restaurants with multiple bars, or any business with multiple checkout points.</p>
+                    
+                    <h4>Setting Up Registers</h4>
+                    <ol class="steps-list">
+                        <li>Go to <strong>Admin → Registers/Tills</strong></li>
+                        <li>Click <strong>Add Register</strong></li>
+                        <li>Select location and enter register number (e.g., REG-01, BAR-01)</li>
+                        <li>Choose register type (POS, Retail, Restaurant, Bar, Service)</li>
+                        <li>Set default opening float amount</li>
+                        <li>Save register</li>
+                    </ol>
+
+                    <h4>Opening a Register Session</h4>
+                    <ol class="steps-list">
+                        <li>Go to <strong>Registers</strong> page</li>
+                        <li>Find your assigned register (showing "Available")</li>
+                        <li>Click <strong>Open</strong></li>
+                        <li>Count the cash in the drawer</li>
+                        <li>Enter the opening balance</li>
+                        <li>Click <strong>Open Session</strong> - you'll be redirected to POS</li>
+                    </ol>
+
+                    <h4>Closing a Register Session</h4>
+                    <ol class="steps-list">
+                        <li>Return to <strong>Registers</strong> page</li>
+                        <li>Click <strong>Close</strong> on your active register</li>
+                        <li>Count the physical cash in the drawer</li>
+                        <li>Enter the counted amount</li>
+                        <li>Review variance (over/short)</li>
+                        <li>Add notes if there's a variance</li>
+                        <li>Click <strong>Close Session</strong></li>
+                        <li>Print Z-Report for records</li>
+                    </ol>
+
+                    <div class="info-box">
+                        <p><strong>Tip:</strong> Enable "Require Register Session" in Settings to ensure all sales are tracked to a specific register and cashier shift.</p>
+                    </div>
 
                     <h3>Data Backup</h3>
                     <div class="info-box warning">

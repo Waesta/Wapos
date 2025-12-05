@@ -197,7 +197,8 @@ if (php_sapi_name() !== 'cli') {
         'enhanced-delivery-tracking.php' => 'delivery',
         'receipt-settings.php' => 'sales',
         'manage-promotions.php' => 'sales',
-        'locations.php' => 'locations'
+        'locations.php' => 'locations',
+        'registers.php' => 'sales'
     ];
 
     $currentPath = $_SERVER['PHP_SELF'] ?? '';

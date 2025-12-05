@@ -225,25 +225,29 @@ class SalesService
                 throw new PDOException('Amount paid cannot be negative.');
             }
 
+            // Get register and session from user's session if available
+            $registerId = $data['register_id'] ?? $_SESSION['register_id'] ?? null;
+            $sessionId = $data['session_id'] ?? $_SESSION['register_session_id'] ?? null;
+
             // Insert sale
             $sql = "INSERT INTO sales 
-                    (external_id, sale_number, user_id, location_id, device_id, 
+                    (external_id, sale_number, user_id, location_id, register_id, session_id, device_id, 
                      customer_name, customer_phone, subtotal, tax_amount, 
                      discount_amount, total_amount, amount_paid, change_amount, 
                      payment_method, room_booking_id, notes, created_at) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
             $includeMobileMoney = $paymentMethod === 'mobile_money';
             $this->ensureSalesMobileMoneyColumns();
 
             if ($includeMobileMoney) {
                 $sql = "INSERT INTO sales 
-                    (external_id, sale_number, user_id, location_id, device_id, 
+                    (external_id, sale_number, user_id, location_id, register_id, session_id, device_id, 
                      customer_name, customer_phone, mobile_money_phone, mobile_money_reference,
                      subtotal, tax_amount, 
                      discount_amount, total_amount, amount_paid, change_amount, 
                      payment_method, room_booking_id, notes, created_at) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
             }
 
             $stmt = $this->db->prepare($sql);
@@ -257,6 +261,8 @@ class SalesService
                 $saleNumber,
                 $userId,
                 $locationId,
+                $registerId,
+                $sessionId,
                 $data['device_id'] ?? null,
                 $data['customer_name'] ?? null,
                 $data['customer_phone'] ?? null,
@@ -350,6 +356,11 @@ class SalesService
                     'reference_id' => $saleId,
                     'reference_source' => 'sales',
                 ], $userId ? (int)$userId : null);
+            }
+
+            // Update register session totals if session is active
+            if ($sessionId) {
+                $this->updateRegisterSessionTotals($sessionId, $grandTotal, $paymentMethod);
             }
 
             if ($manageTransaction && $this->db->inTransaction()) {
@@ -626,5 +637,43 @@ class SalesService
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Update register session totals after a sale
+     */
+    private function updateRegisterSessionTotals(int $sessionId, float $amount, string $paymentMethod): void
+    {
+        try {
+            // Map payment method to column
+            $paymentColumn = match($paymentMethod) {
+                'cash' => 'cash_sales',
+                'card', 'credit_card', 'debit_card' => 'card_sales',
+                'mobile_money', 'mpesa' => 'mobile_sales',
+                default => 'cash_sales'
+            };
+
+            $sql = "UPDATE register_sessions SET 
+                    {$paymentColumn} = {$paymentColumn} + ?,
+                    total_sales = total_sales + ?,
+                    transaction_count = transaction_count + 1
+                    WHERE id = ? AND status = 'open'";
+            
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute([$amount, $amount, $sessionId]);
+
+            // Also update register current balance for cash payments
+            if ($paymentMethod === 'cash') {
+                $updateRegister = $this->db->prepare("
+                    UPDATE registers r
+                    JOIN register_sessions rs ON r.id = rs.register_id
+                    SET r.current_balance = r.current_balance + ?
+                    WHERE rs.id = ?
+                ");
+                $updateRegister->execute([$amount, $sessionId]);
+            }
+        } catch (Throwable $e) {
+            error_log('Failed to update register session totals: ' . $e->getMessage());
+        }
     }
 }

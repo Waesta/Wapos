@@ -815,6 +815,14 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'module' => 'locations'
                             ],
                             [
+                                'roles' => ['admin','manager'],
+                                'href' => '/wapos/registers.php',
+                                'page' => 'registers.php',
+                                'icon' => 'bi-cash-stack',
+                                'label' => 'Registers/Tills',
+                                'module' => 'sales'
+                            ],
+                            [
                                 'roles' => ['developer', 'super_admin'],
                                 'href' => '/wapos/system-health.php',
                                 'page' => 'system-health.php',
