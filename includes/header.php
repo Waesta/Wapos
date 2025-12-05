@@ -545,6 +545,22 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'module' => 'sales'
                             ],
                             [
+                                'roles' => ['admin','manager','owner'],
+                                'href' => '/wapos/register-analytics.php',
+                                'page' => 'register-analytics.php',
+                                'icon' => 'bi-graph-up',
+                                'label' => 'Register Analytics',
+                                'module' => 'sales'
+                            ],
+                            [
+                                'roles' => ['admin','manager','owner'],
+                                'href' => '/wapos/location-analytics.php',
+                                'page' => 'location-analytics.php',
+                                'icon' => 'bi-geo-alt',
+                                'label' => 'Location Analytics',
+                                'module' => 'sales'
+                            ],
+                            [
                                 'roles' => ['admin','manager'],
                                 'href' => '/wapos/manage-promotions.php',
                                 'page' => 'manage-promotions.php',

@@ -207,14 +207,17 @@ include 'includes/header.php';
             <p class="text-muted mb-0">Generate X, Y, and Z register snapshots, manage cash sessions, and review closures.</p>
         </div>
         <div class="d-flex flex-wrap gap-2">
+            <a href="registers.php" class="btn btn-secondary">
+                <i class="bi bi-cash-stack me-1"></i>Manage Registers
+            </a>
             <button class="btn btn-outline-primary" data-action="generate-x">
-                <i class="bi bi-speedometer2"></i>Generate X Report
+                <i class="bi bi-speedometer2 me-1"></i>X Report
             </button>
             <button class="btn btn-outline-success" data-action="generate-y">
-                <i class="bi bi-clock-history"></i>Generate Y Report
+                <i class="bi bi-clock-history me-1"></i>Y Report
             </button>
             <button class="btn btn-outline-danger" data-action="generate-z">
-                <i class="bi bi-calendar-check"></i>Generate Z Report
+                <i class="bi bi-calendar-check me-1"></i>Z Report
             </button>
         </div>
     </section>

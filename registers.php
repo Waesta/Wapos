@@ -94,8 +94,11 @@ require_once 'includes/header.php';
                     </option>
                 <?php endforeach; ?>
             </select>
-            <a href="reports.php?type=register_sessions" class="btn btn-outline-secondary">
-                <i class="bi bi-file-earmark-bar-graph me-1"></i>Reports
+            <a href="register-analytics.php" class="btn btn-outline-info">
+                <i class="bi bi-graph-up me-1"></i>Analytics
+            </a>
+            <a href="register-reports.php" class="btn btn-outline-secondary">
+                <i class="bi bi-printer me-1"></i>X/Y/Z Reports
             </a>
             <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addRegisterModal">
                 <i class="bi bi-plus-lg me-1"></i>Add Register
@@ -232,7 +235,10 @@ require_once 'includes/header.php';
                                 <button class="btn btn-outline-secondary btn-sm" onclick="editRegister(<?= $reg['id'] ?>)" title="Edit">
                                     <i class="bi bi-pencil"></i>
                                 </button>
-                                <button class="btn btn-outline-info btn-sm" onclick="viewHistory(<?= $reg['id'] ?>)" title="History">
+                                <a href="register-analytics.php?register_id=<?= $reg['id'] ?>" class="btn btn-outline-info btn-sm" title="Analytics">
+                                    <i class="bi bi-graph-up"></i>
+                                </a>
+                                <button class="btn btn-outline-secondary btn-sm" onclick="viewHistory(<?= $reg['id'] ?>)" title="History">
                                     <i class="bi bi-clock-history"></i>
                                 </button>
                             </div>

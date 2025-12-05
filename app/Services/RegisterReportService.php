@@ -26,6 +26,7 @@ class RegisterReportService
 
     /**
      * Ensure supporting tables exist.
+     * Uses the unified register_sessions table from migration 003.
      */
     public function ensureSchema(): void
     {
@@ -33,33 +34,14 @@ class RegisterReportService
             return;
         }
 
-        $sessionSql = <<<SQL
-CREATE TABLE IF NOT EXISTS pos_register_sessions (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    location_id INT UNSIGNED NULL,
-    opened_by_user_id INT UNSIGNED NOT NULL,
-    closed_by_user_id INT UNSIGNED NULL,
-    opening_amount DECIMAL(15,2) NOT NULL DEFAULT 0,
-    closing_amount DECIMAL(15,2) NULL,
-    opening_note VARCHAR(255) NULL,
-    closing_note VARCHAR(255) NULL,
-    opened_at DATETIME NOT NULL,
-    closed_at DATETIME NULL,
-    status ENUM('open','closed') NOT NULL DEFAULT 'open',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_session_status (status),
-    INDEX idx_session_opened (opened_at)
-) ENGINE=InnoDB
-SQL;
-
-        $this->db->exec($sessionSql);
-
+        // The register_sessions table is created by migration 003_add_registers_tills.sql
+        // We only need to ensure the closures table exists for X/Y/Z reports
         $closureSqlJson = <<<SQL
 CREATE TABLE IF NOT EXISTS pos_register_closures (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     closure_type ENUM('X','Y','Z') NOT NULL,
     session_id INT UNSIGNED NULL,
+    register_id INT UNSIGNED NULL,
     location_id INT UNSIGNED NULL,
     range_start DATETIME NOT NULL,
     range_end DATETIME NOT NULL,
@@ -68,9 +50,7 @@ CREATE TABLE IF NOT EXISTS pos_register_closures (
     generated_at DATETIME NOT NULL,
     reset_applied TINYINT(1) NOT NULL DEFAULT 0,
     INDEX idx_closure_type (closure_type),
-    INDEX idx_closure_generated (generated_at),
-    CONSTRAINT fk_closure_session FOREIGN KEY (session_id)
-        REFERENCES pos_register_sessions(id) ON DELETE SET NULL
+    INDEX idx_closure_generated (generated_at)
 ) ENGINE=InnoDB
 SQL;
 
@@ -91,50 +71,87 @@ SQL;
 
     /**
      * Open a new register session.
+     * Uses the unified register_sessions table.
      */
-    public function openSession(int $userId, float $openingAmount = 0.0, ?string $note = null, ?int $locationId = null): array
+    public function openSession(int $userId, float $openingAmount = 0.0, ?string $note = null, ?int $locationId = null, ?int $registerId = null): array
     {
         $this->ensureSchema();
 
-        $sql = "INSERT INTO pos_register_sessions (location_id, opened_by_user_id, opening_amount, opening_note, opened_at) VALUES (?, ?, ?, ?, NOW())";
+        // Generate session number
+        $sessionNumber = 'SES-' . date('Ymd') . '-' . str_pad($registerId ?? 0, 3, '0', STR_PAD_LEFT) . '-' . substr(uniqid(), -4);
+
+        $sql = "INSERT INTO register_sessions (register_id, user_id, session_number, opening_balance, opening_notes, opened_at, status) VALUES (?, ?, ?, ?, ?, NOW(), 'open')";
         $stmt = $this->db->prepare($sql);
         $stmt->execute([
-            $locationId,
+            $registerId,
             $userId,
+            $sessionNumber,
             $openingAmount,
             $note,
         ]);
 
         $sessionId = (int)$this->db->lastInsertId();
+        
+        // Store in PHP session
+        $_SESSION['register_id'] = $registerId;
+        $_SESSION['register_session_id'] = $sessionId;
+        
         return $this->getSessionById($sessionId);
     }
 
     /**
      * Close an active register session.
+     * Uses the unified register_sessions table.
      */
     public function closeSession(int $sessionId, int $userId, ?float $closingAmount = null, ?string $note = null): array
     {
         $this->ensureSchema();
 
-        $sql = "UPDATE pos_register_sessions SET status = 'closed', closed_by_user_id = ?, closing_amount = ?, closing_note = ?, closed_at = NOW() WHERE id = ? AND status = 'open'";
+        // Get session to calculate variance
+        $session = $this->getSessionById($sessionId);
+        $expectedBalance = ($session['opening_balance'] ?? 0) + ($session['cash_sales'] ?? 0);
+        $variance = $closingAmount !== null ? $closingAmount - $expectedBalance : null;
+
+        $sql = "UPDATE register_sessions SET 
+                status = 'closed', 
+                closed_by = ?, 
+                closing_balance = ?, 
+                expected_balance = ?,
+                variance = ?,
+                closing_notes = ?, 
+                closed_at = NOW() 
+                WHERE id = ? AND status = 'open'";
         $stmt = $this->db->prepare($sql);
         $stmt->execute([
             $userId,
             $closingAmount,
+            $expectedBalance,
+            $variance,
             $note,
             $sessionId,
         ]);
+
+        // Clear PHP session
+        unset($_SESSION['register_id']);
+        unset($_SESSION['register_session_id']);
 
         return $this->getSessionById($sessionId);
     }
 
     /**
      * Fetch session by id.
+     * Uses the unified register_sessions table.
      */
     public function getSessionById(int $sessionId): array
     {
         $this->ensureSchema();
-        $stmt = $this->db->prepare("SELECT * FROM pos_register_sessions WHERE id = ?");
+        $stmt = $this->db->prepare("
+            SELECT rs.*, r.name as register_name, r.register_number, r.location_id,
+                   rs.opening_balance as opening_amount, rs.closing_balance as closing_amount
+            FROM register_sessions rs
+            LEFT JOIN registers r ON rs.register_id = r.id
+            WHERE rs.id = ?
+        ");
         $stmt->execute([$sessionId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         return $row ?: [];
@@ -142,17 +159,22 @@ SQL;
 
     /**
      * Get the latest open session, optionally filtered by location.
+     * Uses the unified register_sessions table.
      */
     public function getActiveSession(?int $locationId = null): ?array
     {
         $this->ensureSchema();
-        $sql = "SELECT * FROM pos_register_sessions WHERE status = 'open'";
+        $sql = "SELECT rs.*, r.name as register_name, r.register_number, r.location_id,
+                       rs.opening_balance as opening_amount, rs.closing_balance as closing_amount
+                FROM register_sessions rs
+                LEFT JOIN registers r ON rs.register_id = r.id
+                WHERE rs.status = 'open'";
         $params = [];
         if ($locationId !== null) {
-            $sql .= " AND (location_id = ? OR location_id IS NULL)";
+            $sql .= " AND r.location_id = ?";
             $params[] = $locationId;
         }
-        $sql .= " ORDER BY opened_at DESC LIMIT 1";
+        $sql .= " ORDER BY rs.opened_at DESC LIMIT 1";
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -161,25 +183,30 @@ SQL;
 
     /**
      * List sessions, optionally filtered by status/location.
+     * Uses the unified register_sessions table.
      */
     public function listSessions(?string $status = null, ?int $locationId = null, int $limit = 25): array
     {
         $this->ensureSchema();
 
-        $sql = "SELECT * FROM pos_register_sessions WHERE 1=1";
+        $sql = "SELECT rs.*, r.name as register_name, r.register_number, r.location_id,
+                       rs.opening_balance as opening_amount, rs.closing_balance as closing_amount
+                FROM register_sessions rs
+                LEFT JOIN registers r ON rs.register_id = r.id
+                WHERE 1=1";
         $params = [];
 
         if ($status !== null) {
-            $sql .= " AND status = ?";
+            $sql .= " AND rs.status = ?";
             $params[] = $status;
         }
 
         if ($locationId !== null) {
-            $sql .= " AND (location_id = ? OR location_id IS NULL)";
+            $sql .= " AND r.location_id = ?";
             $params[] = $locationId;
         }
 
-        $sql .= " ORDER BY opened_at DESC LIMIT ?";
+        $sql .= " ORDER BY rs.opened_at DESC LIMIT ?";
         $params[] = $limit;
 
         $stmt = $this->db->prepare($sql);
@@ -199,6 +226,7 @@ SQL;
 
     /**
      * Generate Y report (shift/session specific).
+     * Uses session_id from unified register_sessions table.
      */
     public function generateYReport(int $sessionId): array
     {
@@ -211,7 +239,19 @@ SQL;
         $end = $session['closed_at'] ? new DateTimeImmutable($session['closed_at']) : new DateTimeImmutable('now');
         $locationId = $session['location_id'] !== null ? (int)$session['location_id'] : null;
 
-        return $this->buildReportPayload('Y', $start, $end, $session, $locationId);
+        // Build report with session-specific sales data
+        $payload = $this->buildReportPayload('Y', $start, $end, $session, $locationId);
+        
+        // Add session-specific totals from register_sessions
+        $payload['session_totals'] = [
+            'cash_sales' => (float)($session['cash_sales'] ?? 0),
+            'card_sales' => (float)($session['card_sales'] ?? 0),
+            'mobile_sales' => (float)($session['mobile_sales'] ?? 0),
+            'total_sales' => (float)($session['total_sales'] ?? 0),
+            'transaction_count' => (int)($session['transaction_count'] ?? 0),
+        ];
+
+        return $payload;
     }
 
     /**
