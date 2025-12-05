@@ -132,13 +132,32 @@ Simple 3-step process:
 
 ## 💳 Payment Gateway Integration
 
-Easy to add:
-- **M-Pesa** - Just add API credentials
-- **PayPal** - Simple REST API integration
-- **Stripe** - Clean PHP SDK
-- **Flutterwave** - African payment gateway
+Fully integrated payment gateways:
 
-All documentation and hooks ready!
+### M-Pesa Daraja (Direct Safaricom)
+- **STK Push** - Send payment prompt to customer's phone
+- **Paybill** - Accept C2B payments to your Paybill number
+- **Till/Buy Goods** - Accept payments to your Till number
+- **B2C** - Send money to customers (refunds, disbursements)
+
+### Relworx (East Africa Aggregator)
+- **Airtel Money** - Kenya, Uganda, Rwanda, Tanzania
+- **MTN MoMo** - Uganda, Rwanda
+- **Card Payments** - Visa, Mastercard
+
+### PesaPal
+- Multi-method payment aggregator
+- Hosted payment page
+- IPN notifications
+
+### Quick Setup
+1. Go to **Settings → Payment Gateways**
+2. Enter your API credentials
+3. Configure callback URLs
+4. Test in Sandbox mode
+5. Switch to Live when ready
+
+All callbacks and webhooks are handled automatically!
 
 ---
 

@@ -342,7 +342,9 @@ $pageDescription = 'Complete user manual and documentation for WAPOS - Point of 
                         <li><a href="#delivery"><i class="bi bi-truck"></i> Delivery</a></li>
                         <li><a href="#housekeeping"><i class="bi bi-house"></i> Housekeeping</a></li>
                         <li><a href="#maintenance"><i class="bi bi-tools"></i> Maintenance</a></li>
+                        <li><a href="#guest-portal"><i class="bi bi-shield-lock"></i> Guest Portal</a></li>
                         <li><a href="#accounting"><i class="bi bi-calculator"></i> Accounting</a></li>
+                        <li><a href="#payments"><i class="bi bi-credit-card"></i> Payment Gateways</a></li>
                         <li><a href="#reports"><i class="bi bi-graph-up"></i> Reports</a></li>
                         <li><a href="#administration"><i class="bi bi-gear"></i> Administration</a></li>
                         <li><a href="#shortcuts"><i class="bi bi-keyboard"></i> Keyboard Shortcuts</a></li>
@@ -380,6 +382,18 @@ $pageDescription = 'Complete user manual and documentation for WAPOS - Point of 
 
                     <div class="info-box">
                         <p><strong>Currency Neutral:</strong> WAPOS works with any currency. Configure your preferred currency symbol, format, and decimal places in Settings.</p>
+                    </div>
+
+                    <h3>Device Compatibility</h3>
+                    <p>WAPOS is fully responsive and works on:</p>
+                    <ul>
+                        <li><strong>Desktop</strong> - Full-featured experience on Windows, Mac, Linux</li>
+                        <li><strong>Tablet</strong> - Optimized for iPad, Android tablets (landscape & portrait)</li>
+                        <li><strong>Mobile</strong> - Touch-friendly interface for smartphones</li>
+                    </ul>
+                    
+                    <div class="info-box success">
+                        <p><strong>PWA Support:</strong> WAPOS can be installed as an app on your device. Look for the "Add to Home Screen" option in your browser for quick access.</p>
                     </div>
                 </section>
 
@@ -710,6 +724,224 @@ $pageDescription = 'Complete user manual and documentation for WAPOS - Point of 
                         <li>Mark discrepancies for investigation</li>
                         <li>Complete reconciliation</li>
                     </ol>
+                </section>
+
+                <!-- Guest Portal -->
+                <section id="guest-portal">
+                    <h2><i class="bi bi-shield-lock me-2"></i>Secure Guest Portal</h2>
+                    <p>Allow registered guests to submit maintenance and housekeeping requests through a secure, authenticated portal.</p>
+
+                    <div class="info-box warning">
+                        <p><strong>Security First:</strong> The guest portal requires authentication. Credentials are generated at check-in and automatically expire at checkout.</p>
+                    </div>
+
+                    <h3>Security Features</h3>
+                    <ul>
+                        <li><strong>AES-256-GCM Encryption</strong> - All sensitive data encrypted at rest</li>
+                        <li><strong>Argon2ID Password Hashing</strong> - Industry-leading password security</li>
+                        <li><strong>Rate Limiting</strong> - 5 failed attempts = 30 minute lockout</li>
+                        <li><strong>Auto-Expiry</strong> - Access expires on checkout date</li>
+                        <li><strong>Secure Sessions</strong> - HTTPOnly cookies, SHA-256 tokens</li>
+                        <li><strong>Activity Logging</strong> - All access attempts logged with IP</li>
+                    </ul>
+
+                    <h3>Creating Guest Access (At Check-in)</h3>
+                    <ol class="steps-list">
+                        <li>Go to <strong>Settings → Guest Portal</strong></li>
+                        <li>Fill in guest name, room number, and dates</li>
+                        <li>Click <strong>Generate Credentials</strong></li>
+                        <li>Share credentials via WhatsApp, Email, or print</li>
+                    </ol>
+
+                    <h3>Guest Login Options</h3>
+                    <ul>
+                        <li><strong>Direct Link</strong> - One-click secure access (recommended)</li>
+                        <li><strong>Username/Password</strong> - Manual login with Guest ID</li>
+                    </ul>
+
+                    <h3>How Guests Use the Portal</h3>
+                    <ol class="steps-list">
+                        <li>Guest receives credentials at check-in</li>
+                        <li>Clicks the secure link or logs in manually</li>
+                        <li>Submits maintenance or housekeeping request</li>
+                        <li>Receives tracking code for status updates</li>
+                        <li>Access automatically expires on checkout</li>
+                    </ol>
+
+                    <h3>Managing Guest Access</h3>
+                    <p>From the Guest Portal settings page, staff can:</p>
+                    <ul>
+                        <li><strong>View Active Accesses</strong> - See all current guest credentials</li>
+                        <li><strong>Regenerate Credentials</strong> - Issue new password if needed</li>
+                        <li><strong>Revoke Access</strong> - Immediately disable guest access</li>
+                        <li><strong>Track Logins</strong> - Monitor guest portal usage</li>
+                    </ul>
+
+                    <h3>For Staff</h3>
+                    <p>Guest requests appear in the Maintenance dashboard with a "Guest" tag. Staff can:</p>
+                    <ul>
+                        <li>View all guest requests in one place</li>
+                        <li>Assign technicians or housekeepers</li>
+                        <li>Update status (guests see updates in real-time)</li>
+                        <li>Contact guest if needed</li>
+                    </ul>
+                </section>
+
+                <!-- Payment Gateways -->
+                <section id="payments">
+                    <h2><i class="bi bi-credit-card me-2"></i>Payment Gateways</h2>
+                    <p>WAPOS supports multiple payment gateways for seamless payment processing.</p>
+
+                    <h3>Supported Payment Methods</h3>
+                    <ul>
+                        <li><strong>M-Pesa (Daraja API)</strong> - Direct Safaricom integration for Kenya</li>
+                        <li><strong>Airtel Money</strong> - Kenya, Uganda, Rwanda, Tanzania via Relworx</li>
+                        <li><strong>MTN Mobile Money</strong> - Uganda, Rwanda via Relworx</li>
+                        <li><strong>Card Payments</strong> - Visa/Mastercard via Relworx or PesaPal</li>
+                        <li><strong>PesaPal</strong> - Multi-method payment aggregator</li>
+                    </ul>
+
+                    <h3>M-Pesa STK Push (USSD Prompt)</h3>
+                    <p>The most common payment method in Kenya. Sends a payment prompt directly to the customer's phone.</p>
+                    
+                    <h4>How STK Push Works</h4>
+                    <ol class="steps-list">
+                        <li>Customer provides their Safaricom phone number at checkout</li>
+                        <li>Cashier clicks <strong>Pay with M-Pesa</strong></li>
+                        <li>Customer receives USSD prompt on their phone</li>
+                        <li>Customer enters M-Pesa PIN to authorize payment</li>
+                        <li>Payment confirmation appears in WAPOS automatically</li>
+                        <li>Receipt is printed with M-Pesa reference number</li>
+                    </ol>
+
+                    <div class="info-box success">
+                        <p><strong>Instant Confirmation:</strong> STK Push payments are confirmed within seconds. The system automatically updates the sale status when payment is received.</p>
+                    </div>
+
+                    <h4>Accepted Phone Formats</h4>
+                    <p>Enter customer phone in any of these formats:</p>
+                    <ul>
+                        <li><code>0712345678</code> - Local format</li>
+                        <li><code>712345678</code> - Without leading zero</li>
+                        <li><code>254712345678</code> - With country code</li>
+                        <li><code>+254712345678</code> - International format</li>
+                    </ul>
+
+                    <h3>M-Pesa Paybill & Till</h3>
+                    <p>For customers who prefer to initiate payment themselves:</p>
+                    
+                    <h4>Paybill Payment</h4>
+                    <ol class="steps-list">
+                        <li>Customer opens M-Pesa on their phone</li>
+                        <li>Selects <strong>Lipa na M-Pesa → Pay Bill</strong></li>
+                        <li>Enters your Business Number (Paybill)</li>
+                        <li>Enters Account Number (invoice/order number)</li>
+                        <li>Enters amount and M-Pesa PIN</li>
+                        <li>WAPOS receives confirmation automatically</li>
+                    </ol>
+
+                    <h4>Till/Buy Goods Payment</h4>
+                    <ol class="steps-list">
+                        <li>Customer opens M-Pesa on their phone</li>
+                        <li>Selects <strong>Lipa na M-Pesa → Buy Goods</strong></li>
+                        <li>Enters your Till Number</li>
+                        <li>Enters amount and M-Pesa PIN</li>
+                        <li>WAPOS receives confirmation automatically</li>
+                    </ol>
+
+                    <h3>Airtel Money Payments</h3>
+                    <p>Accept Airtel Money payments from customers in East Africa:</p>
+                    <ul>
+                        <li><strong>Kenya</strong> - Airtel Kenya subscribers</li>
+                        <li><strong>Uganda</strong> - Airtel Uganda subscribers</li>
+                        <li><strong>Rwanda</strong> - Airtel Rwanda subscribers</li>
+                        <li><strong>Tanzania</strong> - Airtel Tanzania subscribers</li>
+                    </ul>
+                    
+                    <h4>Processing Airtel Payments</h4>
+                    <ol class="steps-list">
+                        <li>Select <strong>Airtel Money</strong> as payment method</li>
+                        <li>Enter customer's Airtel phone number</li>
+                        <li>Customer receives payment prompt</li>
+                        <li>Customer enters PIN to confirm</li>
+                        <li>Payment confirmation received</li>
+                    </ol>
+
+                    <h3>MTN Mobile Money</h3>
+                    <p>Accept MTN MoMo payments from Uganda and Rwanda:</p>
+                    <ol class="steps-list">
+                        <li>Select <strong>MTN MoMo</strong> as payment method</li>
+                        <li>Enter customer's MTN phone number</li>
+                        <li>Customer receives payment prompt</li>
+                        <li>Customer enters PIN to confirm</li>
+                        <li>Payment confirmation received</li>
+                    </ol>
+
+                    <h3>Card Payments</h3>
+                    <p>Accept Visa and Mastercard payments:</p>
+                    <ul>
+                        <li>Integrated card terminal (if connected)</li>
+                        <li>Online card payment via PesaPal hosted page</li>
+                        <li>Manual card entry for phone orders</li>
+                    </ul>
+
+                    <h3>Payment Gateway Setup</h3>
+                    <div class="info-box warning">
+                        <p><strong>Admin Only:</strong> Payment gateway configuration requires Super Admin or Developer access. Go to <strong>Settings → Payment Gateways</strong> to configure.</p>
+                    </div>
+
+                    <h4>M-Pesa Daraja Setup</h4>
+                    <ol class="steps-list">
+                        <li>Register at <a href="https://developer.safaricom.co.ke" target="_blank">developer.safaricom.co.ke</a></li>
+                        <li>Create an app to get Consumer Key and Secret</li>
+                        <li>Request Passkey for STK Push</li>
+                        <li>Enter credentials in WAPOS Payment Gateways settings</li>
+                        <li>Test in Sandbox mode first</li>
+                        <li>Apply for Go-Live when ready for production</li>
+                    </ol>
+
+                    <h4>Relworx Setup</h4>
+                    <ol class="steps-list">
+                        <li>Register at <a href="https://relworx.com" target="_blank">relworx.com</a></li>
+                        <li>Get API Key and Secret from dashboard</li>
+                        <li>Enter credentials in WAPOS settings</li>
+                        <li>Configure callback URL</li>
+                        <li>Test and go live</li>
+                    </ol>
+
+                    <h4>PesaPal Setup</h4>
+                    <ol class="steps-list">
+                        <li>Register at <a href="https://www.pesapal.com" target="_blank">pesapal.com</a></li>
+                        <li>Get Consumer Key and Secret</li>
+                        <li>Configure IPN (Instant Payment Notification) URL</li>
+                        <li>Enter credentials in WAPOS settings</li>
+                        <li>Test in Sandbox, then switch to Live</li>
+                    </ol>
+
+                    <h3>Payment Troubleshooting</h3>
+                    
+                    <h4>STK Push not received</h4>
+                    <ul>
+                        <li>Verify phone number is correct and active</li>
+                        <li>Check customer has sufficient M-Pesa balance</li>
+                        <li>Ensure phone has network signal</li>
+                        <li>Try again after 30 seconds (M-Pesa timeout)</li>
+                    </ul>
+
+                    <h4>Payment confirmed but sale not updated</h4>
+                    <ul>
+                        <li>Check callback URL is correctly configured</li>
+                        <li>Verify server can receive external requests</li>
+                        <li>Check payment logs for errors</li>
+                        <li>Manually reconcile if needed</li>
+                    </ul>
+
+                    <h4>Wrong amount charged</h4>
+                    <ul>
+                        <li>Verify sale total before sending payment request</li>
+                        <li>Process refund through M-Pesa if needed</li>
+                        <li>Document discrepancy for reconciliation</li>
+                    </ul>
                 </section>
 
                 <!-- Reports -->

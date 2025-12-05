@@ -13,17 +13,31 @@ header("Pragma: no-cache");
 header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
 
 require_once 'includes/bootstrap.php';
+require_once 'app/Services/ContentManager.php';
+
+use App\Services\ContentManager;
 
 // If already logged in, redirect to appropriate dashboard
 if ($auth->isLoggedIn()) {
     redirectToDashboard($auth);
 }
 
-// SEO Meta Data
-$pageTitle = 'WAPOS - Unified Point of Sale System | Retail, Restaurant & Hospitality';
-$pageDescription = 'WAPOS is a comprehensive point of sale system for retail, restaurant, and hospitality businesses. Manage sales, inventory, deliveries, and accounting from one unified platform.';
-$pageKeywords = 'POS system, point of sale, retail POS, restaurant POS, hospitality management, inventory management, sales tracking, business software';
+// Get editable content
+$cm = ContentManager::getInstance();
+
+// SEO Meta Data (editable)
+$pageTitle = $cm->get('seo_title', 'WAPOS - Unified Point of Sale System | Retail, Restaurant & Hospitality');
+$pageDescription = $cm->get('seo_description', 'WAPOS is a comprehensive point of sale system for retail, restaurant, and hospitality businesses. Manage sales, inventory, deliveries, and accounting from one unified platform.');
+$pageKeywords = $cm->get('seo_keywords', 'POS system, point of sale, retail POS, restaurant POS, hospitality management, inventory management, sales tracking, business software');
 $canonicalUrl = rtrim(APP_URL, '/');
+
+// Editable content
+$companyName = $cm->get('company_name', 'WAPOS');
+$companyTagline = $cm->get('company_tagline', 'by Waesta Enterprises');
+$companyFullName = $cm->get('company_full_name', 'Waesta Enterprises U Ltd');
+$heroTitle = $cm->get('home_hero_title', 'Complete Business Management System');
+$heroSubtitle = $cm->get('home_hero_subtitle', 'Point of Sale, Restaurant Operations, Inventory, Deliveries, Housekeeping, Maintenance, and Accounting — all in one unified platform.');
+$ctaButton = $cm->get('home_cta_button', 'Sign In to Dashboard');
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -625,13 +639,14 @@ $canonicalUrl = rtrim(APP_URL, '/');
             <div class="brand-mark">
                 <div class="brand-icon"><i class="bi bi-shop"></i></div>
                 <div>
-                    <span class="brand-name">WAPOS</span>
-                    <small class="brand-tagline">by Waesta Enterprises</small>
+                    <span class="brand-name"><?= htmlspecialchars($companyName) ?></span>
+                    <small class="brand-tagline"><?= htmlspecialchars($companyTagline) ?></small>
                 </div>
             </div>
             <nav class="nav-actions" role="navigation" aria-label="Main navigation">
                 <a class="nav-link" href="about.php">About</a>
                 <a class="nav-link" href="resources.php">User Manual</a>
+                <a class="nav-link" href="guest-portal.php">Guest Portal</a>
                 <a class="nav-link" href="contact.php">Contact</a>
                 <a class="btn-primary" href="login.php"><i class="bi bi-box-arrow-in-right"></i> Sign In</a>
             </nav>
@@ -641,9 +656,9 @@ $canonicalUrl = rtrim(APP_URL, '/');
         <!-- Hero Section -->
         <section class="hero-panel" aria-labelledby="hero-heading">
             <div class="hero-content">
-                <h1 id="hero-heading">Complete Business Management System</h1>
-                <p class="hero-subtitle">Point of Sale, Restaurant Operations, Inventory, Deliveries, Housekeeping, Maintenance, and Accounting — all in one unified platform.</p>
-                <a class="btn-primary btn-lg" href="login.php"><i class="bi bi-box-arrow-in-right" aria-hidden="true"></i> Sign In to Dashboard</a>
+                <h1 id="hero-heading"><?= htmlspecialchars($heroTitle) ?></h1>
+                <p class="hero-subtitle"><?= htmlspecialchars($heroSubtitle) ?></p>
+                <a class="btn-primary btn-lg" href="login.php"><i class="bi bi-box-arrow-in-right" aria-hidden="true"></i> <?= htmlspecialchars($ctaButton) ?></a>
             </div>
         </section>
 
@@ -660,11 +675,11 @@ $canonicalUrl = rtrim(APP_URL, '/');
                     <h3>Point of Sale</h3>
                     <ul class="module-features">
                         <li>Fast checkout with barcode scanning</li>
-                        <li>Multiple payment methods (Cash, Card, Mobile Money, Bank Transfer)</li>
+                        <li>M-Pesa STK Push & mobile money payments</li>
+                        <li>Cash, Card, Split & multi-payment support</li>
                         <li>Customer loyalty & promotions</li>
-                        <li>Held orders & split payments</li>
-                        <li>Receipt printing & customization</li>
-                        <li>Register X/Y/Z reports</li>
+                        <li>Held orders & order management</li>
+                        <li>Receipt printing & email</li>
                     </ul>
                 </article>
 
@@ -752,6 +767,20 @@ $canonicalUrl = rtrim(APP_URL, '/');
                     </ul>
                 </article>
 
+                <!-- Payment Gateways -->
+                <article class="module-card">
+                    <div class="module-icon"><i class="bi bi-credit-card" aria-hidden="true"></i></div>
+                    <h3>Payment Gateways</h3>
+                    <ul class="module-features">
+                        <li>M-Pesa STK Push (Daraja API)</li>
+                        <li>M-Pesa Paybill & Till integration</li>
+                        <li>Airtel Money (KE, UG, RW, TZ)</li>
+                        <li>MTN Mobile Money (UG, RW)</li>
+                        <li>Card payments (Visa/Mastercard)</li>
+                        <li>PesaPal multi-method gateway</li>
+                    </ul>
+                </article>
+
                 <!-- Administration -->
                 <article class="module-card">
                     <div class="module-icon"><i class="bi bi-shield-lock" aria-hidden="true"></i></div>
@@ -789,10 +818,17 @@ $canonicalUrl = rtrim(APP_URL, '/');
                     </div>
                 </div>
                 <div class="capability">
-                    <i class="bi bi-phone" aria-hidden="true"></i>
+                    <i class="bi bi-laptop" aria-hidden="true"></i>
                     <div>
                         <strong>Responsive Design</strong>
                         <span>Works on desktop, tablet & mobile devices</span>
+                    </div>
+                </div>
+                <div class="capability">
+                    <i class="bi bi-credit-card-2-front" aria-hidden="true"></i>
+                    <div>
+                        <strong>Mobile Payments</strong>
+                        <span>M-Pesa STK Push, Airtel Money, MTN MoMo & Card payments</span>
                     </div>
                 </div>
                 <div class="capability">
@@ -825,7 +861,7 @@ $canonicalUrl = rtrim(APP_URL, '/');
                 <div class="footer-brand">
                     <div class="footer-logo">
                         <i class="bi bi-shop"></i>
-                        <span>WAPOS</span>
+                        <span><?= htmlspecialchars($companyName) ?></span>
                     </div>
                 </div>
                 <div class="footer-links">
@@ -837,7 +873,7 @@ $canonicalUrl = rtrim(APP_URL, '/');
                 </div>
             </div>
             <div class="footer-bottom">
-                <p>&copy; <?= date('Y') ?> <strong>Waesta Enterprises U Ltd</strong>. All rights reserved.</p>
+                <p>&copy; <?= date('Y') ?> <strong><?= htmlspecialchars($companyFullName) ?></strong>. All rights reserved.</p>
             </div>
         </footer>
     </div>

@@ -85,8 +85,8 @@ class RoomBookingService
         $recordedAt = $payload['date'] ?? null;
 
         $stmt = $this->db->prepare(
-            'INSERT INTO ' . self::PAYMENTS_TABLE . ' (booking_id, amount, method, reference, customer_phone, notes, gateway_reference, recorded_by, recorded_at)
-             VALUES (:booking_id, :amount, :method, :reference, :customer_phone, :notes, :gateway_reference, :recorded_by, COALESCE(:recorded_at, NOW()))'
+            'INSERT INTO ' . self::PAYMENTS_TABLE . ' (room_booking_id, amount, payment_method, reference_number, notes, received_by, received_at)
+             VALUES (:booking_id, :amount, :method, :reference, :notes, :recorded_by, COALESCE(:recorded_at, NOW()))'
         );
 
         $stmt->execute([
@@ -94,9 +94,7 @@ class RoomBookingService
             ':amount' => $amount,
             ':method' => $method,
             ':reference' => $reference,
-            ':customer_phone' => $customerPhone,
             ':notes' => $notes,
-            ':gateway_reference' => $gatewayReference,
             ':recorded_by' => $userId ?: null,
             ':recorded_at' => $recordedAt,
         ]);
@@ -119,7 +117,27 @@ class RoomBookingService
         if (!$this->tableExists(self::FOLIOS_TABLE)) {
             $this->createRoomFoliosTable();
         } else {
-            $this->syncRoomFoliosColumns();
+            // Check if booking_id column exists - if not, table has wrong schema
+            $columns = $this->getTableColumns(self::FOLIOS_TABLE);
+            if (!in_array('booking_id', $columns, true)) {
+                // Drop and recreate with correct schema (disable FK checks)
+                try {
+                    $this->db->exec("SET FOREIGN_KEY_CHECKS = 0");
+                    $this->db->exec("DROP TABLE IF EXISTS " . self::FOLIOS_TABLE);
+                    $this->db->exec("SET FOREIGN_KEY_CHECKS = 1");
+                    $this->createRoomFoliosTable();
+                } catch (\Exception $e) {
+                    error_log("Failed to recreate room_folios table: " . $e->getMessage());
+                    // Last resort - try to add the column
+                    try {
+                        $this->db->exec("ALTER TABLE " . self::FOLIOS_TABLE . " ADD COLUMN booking_id INT NOT NULL DEFAULT 0 FIRST");
+                    } catch (\Exception $e2) {
+                        error_log("Failed to add booking_id column: " . $e2->getMessage());
+                    }
+                }
+            } else {
+                $this->syncRoomFoliosColumns();
+            }
         }
 
         if (!$this->tableExists(self::PAYMENTS_TABLE)) {
@@ -407,7 +425,7 @@ class RoomBookingService
                 }
             }
         }
-        $paymentStatus = $deposit >= $totalAmount ? 'paid' : ($deposit > 0 ? 'partial' : 'pending');
+        $paymentStatus = $deposit >= $totalAmount ? 'paid' : ($deposit > 0 ? 'partial' : 'unpaid');
 
         $bookingNumber = $this->generateBookingNumber();
 
@@ -422,7 +440,16 @@ class RoomBookingService
         }
 
         $customerId = $payload['customer_id'] ?? null;
-        $customerId = $customerId !== '' ? (int)$customerId : null;
+        $customerId = ($customerId !== '' && $customerId !== null && $customerId !== 0) ? (int)$customerId : null;
+        
+        // Validate customer_id exists if provided
+        if ($customerId !== null) {
+            $checkCustomer = $this->db->prepare("SELECT id FROM customers WHERE id = ?");
+            $checkCustomer->execute([$customerId]);
+            if (!$checkCustomer->fetch()) {
+                $customerId = null; // Customer doesn't exist, set to null
+            }
+        }
 
         $adults = max(1, (int)($payload['adults'] ?? 1));
         $children = max(0, (int)($payload['children'] ?? 0));
@@ -560,8 +587,8 @@ class RoomBookingService
                 ]);
             }
 
-            // Reserve room
-            $roomStmt = $this->db->prepare("UPDATE rooms SET status = 'reserved' WHERE id = ?");
+            // Mark room as occupied (table ENUM: available, occupied, maintenance, out_of_service)
+            $roomStmt = $this->db->prepare("UPDATE rooms SET status = 'occupied' WHERE id = ?");
             $roomStmt->execute([$roomId]);
 
             $this->db->commit();
@@ -992,7 +1019,12 @@ class RoomBookingService
     {
         $columns = $this->getTableColumns($table);
         if (!in_array($column, $columns, true)) {
-            $this->db->exec("ALTER TABLE {$table} ADD COLUMN {$column} {$definition}");
+            try {
+                $this->db->exec("ALTER TABLE {$table} ADD COLUMN {$column} {$definition}");
+            } catch (Exception $e) {
+                // Column might already exist or other issue - log and continue
+                error_log("Failed to add column {$column} to {$table}: " . $e->getMessage());
+            }
         }
     }
 
@@ -1073,10 +1105,26 @@ class RoomBookingService
 
     private function syncRoomBookingsColumns(bool $hasCustomers): void
     {
+        // Core guest fields
+        $this->addColumnIfMissing(self::NEW_BOOKINGS_TABLE, 'guest_name', "VARCHAR(100) NOT NULL DEFAULT ''");
+        $this->addColumnIfMissing(self::NEW_BOOKINGS_TABLE, 'guest_phone', "VARCHAR(20) NOT NULL DEFAULT ''");
+        $this->addColumnIfMissing(self::NEW_BOOKINGS_TABLE, 'guest_email', 'VARCHAR(100) NULL');
+        $this->addColumnIfMissing(self::NEW_BOOKINGS_TABLE, 'guest_id_number', 'VARCHAR(50) NULL');
+        
+        // Booking details
         $this->addColumnIfMissing(self::NEW_BOOKINGS_TABLE, 'legacy_booking_id', 'INT NULL');
         $this->addColumnIfMissing(self::NEW_BOOKINGS_TABLE, 'total_nights', 'INT NOT NULL DEFAULT 1');
+        $this->addColumnIfMissing(self::NEW_BOOKINGS_TABLE, 'rate_per_night', 'DECIMAL(10,2) NOT NULL DEFAULT 0');
+        $this->addColumnIfMissing(self::NEW_BOOKINGS_TABLE, 'total_amount', 'DECIMAL(15,2) NOT NULL DEFAULT 0');
         $this->addColumnIfMissing(self::NEW_BOOKINGS_TABLE, 'amount_paid', 'DECIMAL(15,2) NOT NULL DEFAULT 0');
+        $this->addColumnIfMissing(self::NEW_BOOKINGS_TABLE, 'adults', 'INT DEFAULT 1');
+        $this->addColumnIfMissing(self::NEW_BOOKINGS_TABLE, 'children', 'INT DEFAULT 0');
         $this->addColumnIfMissing(self::NEW_BOOKINGS_TABLE, 'notes', 'TEXT NULL');
+        $this->addColumnIfMissing(self::NEW_BOOKINGS_TABLE, 'actual_check_in', 'DATETIME NULL');
+        $this->addColumnIfMissing(self::NEW_BOOKINGS_TABLE, 'actual_check_out', 'DATETIME NULL');
+        $this->addColumnIfMissing(self::NEW_BOOKINGS_TABLE, 'payment_status', "VARCHAR(20) NOT NULL DEFAULT 'pending'");
+        $this->addColumnIfMissing(self::NEW_BOOKINGS_TABLE, 'status', "VARCHAR(20) NOT NULL DEFAULT 'confirmed'");
+        $this->addColumnIfMissing(self::NEW_BOOKINGS_TABLE, 'booking_number', "VARCHAR(50) NOT NULL DEFAULT ''");
 
         if ($hasCustomers) {
             try {
@@ -1130,9 +1178,39 @@ class RoomBookingService
 
     private function syncRoomFoliosColumns(): void
     {
+        // Essential columns that MUST exist for the booking system to work
+        $this->addColumnIfMissing(self::FOLIOS_TABLE, 'booking_id', 'INT NOT NULL');
+        $this->addColumnIfMissing(self::FOLIOS_TABLE, 'item_type', "VARCHAR(20) NOT NULL DEFAULT 'service'");
+        $this->addColumnIfMissing(self::FOLIOS_TABLE, 'description', "VARCHAR(200) NOT NULL DEFAULT ''");
+        $this->addColumnIfMissing(self::FOLIOS_TABLE, 'amount', 'DECIMAL(12,2) NOT NULL DEFAULT 0');
+        $this->addColumnIfMissing(self::FOLIOS_TABLE, 'quantity', 'DECIMAL(10,2) DEFAULT 1');
+        $this->addColumnIfMissing(self::FOLIOS_TABLE, 'date_charged', 'DATE NULL');
         $this->addColumnIfMissing(self::FOLIOS_TABLE, 'reference_id', 'INT NULL');
         $this->addColumnIfMissing(self::FOLIOS_TABLE, 'reference_source', 'VARCHAR(60) NULL');
         $this->addColumnIfMissing(self::FOLIOS_TABLE, 'created_by', 'INT NULL');
+        $this->addColumnIfMissing(self::FOLIOS_TABLE, 'created_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP');
+        
+        // Fix columns that might exist without defaults from older schema
+        $columnsToFix = [
+            'folio_number' => 'VARCHAR(50) NULL DEFAULT NULL',
+            'total_amount' => 'DECIMAL(12,2) NULL DEFAULT NULL',
+            'tax_amount' => 'DECIMAL(12,2) NULL DEFAULT NULL',
+            'discount_amount' => 'DECIMAL(12,2) NULL DEFAULT NULL',
+            'net_amount' => 'DECIMAL(12,2) NULL DEFAULT NULL',
+            'status' => "VARCHAR(20) NULL DEFAULT 'active'",
+            'notes' => 'TEXT NULL',
+            'voided_at' => 'DATETIME NULL',
+            'voided_by' => 'INT NULL',
+            'void_reason' => 'TEXT NULL'
+        ];
+        
+        foreach ($columnsToFix as $column => $definition) {
+            try {
+                $this->db->exec("ALTER TABLE " . self::FOLIOS_TABLE . " MODIFY COLUMN {$column} {$definition}");
+            } catch (\Exception $e) {
+                // Column might not exist, that's fine
+            }
+        }
     }
 
     private function ensureMigrationTable(): void
@@ -1236,5 +1314,149 @@ class RoomBookingService
              ON DUPLICATE KEY UPDATE room_booking_id = VALUES(room_booking_id)'
         );
         $stmt->execute([$legacyBookingId, $newBookingId]);
+    }
+
+    /**
+     * Send WhatsApp booking confirmation
+     */
+    public function sendWhatsAppConfirmation(int $bookingId): bool
+    {
+        $stmt = $this->db->prepare(
+            "SELECT b.*, r.room_number, rt.name as room_type_name
+             FROM room_bookings b
+             JOIN rooms r ON b.room_id = r.id
+             JOIN room_types rt ON r.room_type_id = rt.id
+             WHERE b.id = ?"
+        );
+        $stmt->execute([$bookingId]);
+        $booking = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$booking || empty($booking['guest_phone'])) {
+            return false;
+        }
+
+        try {
+            $hospitalityService = new HospitalityWhatsAppService($this->db);
+            $message = $this->buildConfirmationMessage($booking);
+            $result = $hospitalityService->sendMessage($booking['guest_phone'], $message);
+            return $result['success'] ?? false;
+        } catch (Exception $e) {
+            error_log("WhatsApp confirmation error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Send WhatsApp check-in reminder (day before)
+     */
+    public function sendCheckInReminder(int $bookingId): bool
+    {
+        $stmt = $this->db->prepare(
+            "SELECT b.*, r.room_number, rt.name as room_type_name
+             FROM room_bookings b
+             JOIN rooms r ON b.room_id = r.id
+             JOIN room_types rt ON r.room_type_id = rt.id
+             WHERE b.id = ? AND b.status IN ('pending', 'confirmed')"
+        );
+        $stmt->execute([$bookingId]);
+        $booking = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$booking || empty($booking['guest_phone'])) {
+            return false;
+        }
+
+        try {
+            $hospitalityService = new HospitalityWhatsAppService($this->db);
+            $businessName = function_exists('settings') ? (settings('business_name') ?? 'Our Hotel') : 'Our Hotel';
+            
+            $message = "🏨 *Check-in Reminder*\n\n";
+            $message .= "Hi {$booking['guest_name']}!\n\n";
+            $message .= "This is a friendly reminder about your upcoming stay at {$businessName}.\n\n";
+            $message .= "📋 *Booking:* {$booking['booking_number']}\n";
+            $message .= "📅 *Check-in:* " . date('l, M j, Y', strtotime($booking['check_in_date'])) . "\n";
+            $message .= "⏰ *Time:* From 2:00 PM\n\n";
+            $message .= "We look forward to welcoming you!\n\n";
+            $message .= "Type *CONTACT* if you need assistance.";
+
+            $result = $hospitalityService->sendMessage($booking['guest_phone'], $message);
+            return $result['success'] ?? false;
+        } catch (Exception $e) {
+            error_log("WhatsApp reminder error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Send WhatsApp checkout reminder
+     */
+    public function sendCheckOutReminder(int $bookingId): bool
+    {
+        $stmt = $this->db->prepare(
+            "SELECT b.*, r.room_number, rt.name as room_type_name
+             FROM room_bookings b
+             JOIN rooms r ON b.room_id = r.id
+             JOIN room_types rt ON r.room_type_id = rt.id
+             WHERE b.id = ? AND b.status = 'checked_in'"
+        );
+        $stmt->execute([$bookingId]);
+        $booking = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$booking || empty($booking['guest_phone'])) {
+            return false;
+        }
+
+        try {
+            $hospitalityService = new HospitalityWhatsAppService($this->db);
+            
+            // Get folio balance
+            $balanceStmt = $this->db->prepare("SELECT COALESCE(SUM(amount), 0) as balance FROM room_folios WHERE booking_id = ?");
+            $balanceStmt->execute([$bookingId]);
+            $balance = (float)($balanceStmt->fetch(PDO::FETCH_ASSOC)['balance'] ?? 0);
+
+            $message = "🏨 *Check-out Reminder*\n\n";
+            $message .= "Good morning {$booking['guest_name']}!\n\n";
+            $message .= "This is a reminder that check-out is today.\n\n";
+            $message .= "🚪 *Room:* {$booking['room_number']}\n";
+            $message .= "⏰ *Check-out time:* Before 11:00 AM\n";
+            $message .= "💰 *Balance:* " . $this->formatCurrency($balance) . "\n\n";
+            $message .= "Need late check-out? Type *CONTACT* to request.\n\n";
+            $message .= "Thank you for staying with us! 🙏";
+
+            $result = $hospitalityService->sendMessage($booking['guest_phone'], $message);
+            return $result['success'] ?? false;
+        } catch (Exception $e) {
+            error_log("WhatsApp checkout reminder error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    private function buildConfirmationMessage(array $booking): string
+    {
+        $businessName = function_exists('settings') ? (settings('business_name') ?? 'Our Hotel') : 'Our Hotel';
+        
+        $message = "🎉 *Booking Confirmed!*\n\n";
+        $message .= "Thank you for choosing {$businessName}!\n\n";
+        $message .= "📋 *Booking Details*\n";
+        $message .= "━━━━━━━━━━━━━━━━━━\n";
+        $message .= "📋 *Booking #:* {$booking['booking_number']}\n";
+        $message .= "👤 *Guest:* {$booking['guest_name']}\n";
+        $message .= "🛏️ *Room:* {$booking['room_type_name']}\n";
+        $message .= "📅 *Check-in:* " . date('D, M j, Y', strtotime($booking['check_in_date'])) . "\n";
+        $message .= "📅 *Check-out:* " . date('D, M j, Y', strtotime($booking['check_out_date'])) . "\n";
+        $message .= "🌙 *Nights:* {$booking['total_nights']}\n";
+        $message .= "💰 *Total:* " . $this->formatCurrency($booking['total_amount']) . "\n";
+        $message .= "━━━━━━━━━━━━━━━━━━\n\n";
+        $message .= "⏰ *Check-in:* From 2:00 PM\n";
+        $message .= "⏰ *Check-out:* Before 11:00 AM\n\n";
+        $message .= "📱 Save this message for reference.\n\n";
+        $message .= "Type *MENU* for services during your stay.";
+
+        return $message;
+    }
+
+    private function formatCurrency(float $amount): string
+    {
+        $symbol = function_exists('settings') ? (settings('currency_symbol') ?? 'KES') : 'KES';
+        return $symbol . ' ' . number_format($amount, 2);
     }
 }

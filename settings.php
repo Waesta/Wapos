@@ -79,6 +79,9 @@ $fieldDefinitions = [
     'whatsapp_access_token' => ['type' => 'string'],
     'whatsapp_phone_number_id' => ['type' => 'string'],
     'whatsapp_business_account_id' => ['type' => 'string'],
+    'whatsapp_verify_token' => ['type' => 'string'],
+    'whatsapp_auto_replies' => ['type' => 'bool'],
+    'whatsapp_enabled' => ['type' => 'bool'],
     'notification_reply_to_email' => ['type' => 'string'],
 ];
 
@@ -624,6 +627,37 @@ $visibleSections = array_filter($sections, function ($section) use ($userRole) {
                             <div class="col-md-6">
                                 <label class="form-label">Business Account ID</label>
                                 <input type="text" class="form-control" name="whatsapp_business_account_id" value="<?= htmlspecialchars($settings['whatsapp_business_account_id'] ?? '') ?>" placeholder="123456">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Webhook Verify Token</label>
+                                <input type="text" class="form-control" name="whatsapp_verify_token" value="<?= htmlspecialchars($settings['whatsapp_verify_token'] ?? '') ?>" placeholder="your_secret_token">
+                                <div class="form-text">Secret token for webhook verification. Set the same value in Meta dashboard.</div>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Webhook URL</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control bg-light" id="webhookUrl" value="<?= rtrim(APP_URL, '/') ?>/api/whatsapp-webhook.php" readonly>
+                                    <button class="btn btn-outline-secondary" type="button" onclick="navigator.clipboard.writeText(document.getElementById('webhookUrl').value); this.innerHTML='<i class=\'bi bi-check\'></i> Copied'; setTimeout(() => this.innerHTML='<i class=\'bi bi-clipboard\'></i> Copy', 2000);">
+                                        <i class="bi bi-clipboard"></i> Copy
+                                    </button>
+                                </div>
+                                <div class="form-text">Use this URL in Meta's WhatsApp webhook configuration.</div>
+                            </div>
+                            <div class="col-md-6">
+                                <?php $autoReplies = !empty($settings['whatsapp_auto_replies']); ?>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="whatsappAutoReplies" name="whatsapp_auto_replies" <?= $autoReplies ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="whatsappAutoReplies">Enable Auto-Replies</label>
+                                </div>
+                                <div class="form-text">Automatically respond to guest messages (bookings, room service, etc.)</div>
+                            </div>
+                            <div class="col-md-6">
+                                <?php $whatsappEnabled = !empty($settings['whatsapp_enabled']); ?>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="whatsappEnabled" name="whatsapp_enabled" <?= $whatsappEnabled ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="whatsappEnabled">Enable WhatsApp Booking Confirmations</label>
+                                </div>
+                                <div class="form-text">Send automatic confirmations when bookings are created.</div>
                             </div>
                         </div>
                     <?php elseif ($key === 'data_protection'): ?>

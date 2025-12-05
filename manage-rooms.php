@@ -65,11 +65,25 @@ $pageTitle = 'Manage Rooms';
 include 'includes/header.php';
 ?>
 
-<?php if (isset($_SESSION['success_message'])): ?>
-    <div class="alert alert-success"><?= $_SESSION['success_message']; unset($_SESSION['success_message']); ?></div>
-<?php endif; ?>
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-1"><i class="bi bi-door-open me-2"></i>Manage Rooms</h1>
+            <p class="text-muted mb-0">Add, edit, and configure rooms and room types</p>
+        </div>
+        <a href="<?= APP_URL ?>/rooms.php" class="btn btn-outline-primary">
+            <i class="bi bi-calendar2-week me-1"></i> View Calendar
+        </a>
+    </div>
 
-<!-- Tabs -->
+    <?php if (isset($_SESSION['success_message'])): ?>
+        <div class="alert alert-success alert-dismissible fade show">
+            <i class="bi bi-check-circle me-2"></i><?= $_SESSION['success_message']; unset($_SESSION['success_message']); ?>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    <?php endif; ?>
+
+    <!-- Tabs -->
 <ul class="nav nav-tabs mb-3" role="tablist">
     <li class="nav-item" role="presentation">
         <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#rooms" type="button">
@@ -314,5 +328,7 @@ function editType(type) {
     new bootstrap.Modal(document.getElementById('typeModal')).show();
 }
 </script>
+
+</div><!-- End container-fluid -->
 
 <?php include 'includes/footer.php'; ?>

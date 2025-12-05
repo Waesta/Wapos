@@ -14,7 +14,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'email' => sanitizeInput($_POST['email']),
             'phone' => sanitizeInput($_POST['phone']),
             'address' => sanitizeInput($_POST['address']),
-            'delivery_notes' => sanitizeInput($_POST['notes']),
             'is_active' => isset($_POST['is_active']) ? 1 : 0
         ];
         

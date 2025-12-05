@@ -26,6 +26,8 @@ try {
 } catch (Exception $e) {
     $migrationSummary = ['error' => $e->getMessage()];
     $schemaReady = $bookingService->schemaReady();
+    // Debug: Log the actual error
+    error_log("Room booking error: " . $e->getMessage() . " | Trace: " . $e->getTraceAsString());
 }
 
 // Calendar range configuration

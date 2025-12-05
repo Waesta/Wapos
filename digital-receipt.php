@@ -212,6 +212,23 @@ $pageTitle = 'Digital Receipt - ' . $sale['sale_number'];
                     This digital receipt is valid for returns and exchanges.
                 </p>
             </div>
+
+            <?php 
+            // WhatsApp reorder button
+            $whatsappPhone = $settings['whatsapp_business_phone'] ?? $settings['business_phone'] ?? '';
+            if ($whatsappPhone): 
+                $whatsappPhone = preg_replace('/[^0-9]/', '', $whatsappPhone);
+                $reorderMsg = urlencode("Hi! I'd like to reorder from my previous purchase (Receipt #{$sale['sale_number']}).");
+            ?>
+            <div class="text-center mt-4 pt-3 border-top">
+                <p class="text-muted small mb-2">Need to reorder or have questions?</p>
+                <a href="https://wa.me/<?= $whatsappPhone ?>?text=<?= $reorderMsg ?>" 
+                   target="_blank" 
+                   class="btn btn-success">
+                    <i class="bi bi-whatsapp me-1"></i> Chat with us on WhatsApp
+                </a>
+            </div>
+            <?php endif; ?>
         </div>
     </div>
 

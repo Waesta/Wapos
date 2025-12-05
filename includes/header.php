@@ -519,186 +519,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'icon' => 'bi-cart-plus',
                                 'label' => 'Retail POS',
                                 'module' => 'pos'
-                            ]
-                        ]
-                    ],
-                    'restaurant' => [
-                        'label' => 'Restaurant',
-                        'items' => [
-                            [
-                                'roles' => ['admin','manager','waiter','cashier'],
-                                'href' => '/wapos/restaurant.php',
-                                'page' => 'restaurant.php',
-                                'icon' => 'bi-cup-hot',
-                                'label' => 'Orders',
-                                'module' => 'restaurant'
                             ],
-                            [
-                                'roles' => ['admin','manager'],
-                                'href' => '/wapos/manage-modifiers.php',
-                                'page' => 'manage-modifiers.php',
-                                'icon' => 'bi-sliders2',
-                                'label' => 'Modifiers',
-                                'module' => 'restaurant'
-                            ],
-                            [
-                                'roles' => ['admin','manager','waiter'],
-                                'href' => '/wapos/restaurant-reservations.php',
-                                'page' => 'restaurant-reservations.php',
-                                'icon' => 'bi-calendar-event',
-                                'label' => 'Reservations',
-                                'module' => 'restaurant'
-                            ],
-                            [
-                                'roles' => ['admin','manager'],
-                                'href' => '/wapos/kitchen-display.php',
-                                'page' => 'kitchen-display.php',
-                                'icon' => 'bi-fire',
-                                'label' => 'Kitchen Display',
-                                'module' => 'restaurant'
-                            ],
-                            [
-                                'roles' => ['admin','manager'],
-                                'href' => '/wapos/manage-tables.php',
-                                'page' => 'manage-tables.php',
-                                'icon' => 'bi-table',
-                                'label' => 'Manage Tables',
-                                'module' => 'restaurant'
-                            ]
-                        ]
-                    ],
-                    'delivery' => [
-                        'label' => 'Delivery',
-                        'items' => [
-                            [
-                                'roles' => ['admin','manager','rider'],
-                                'href' => '/wapos/delivery.php',
-                                'page' => 'delivery.php',
-                                'icon' => 'bi-truck',
-                                'label' => 'Deliveries',
-                                'module' => 'delivery'
-                            ],
-                            [
-                                'roles' => ['admin','manager','rider'],
-                                'href' => '/wapos/enhanced-delivery-tracking.php',
-                                'page' => 'enhanced-delivery-tracking.php',
-                                'icon' => 'bi-geo-alt',
-                                'label' => 'Tracking',
-                                'module' => 'delivery'
-                            ],
-                            [
-                                'roles' => ['admin','developer'],
-                                'href' => '/wapos/delivery-pricing.php',
-                                'page' => 'delivery-pricing.php',
-                                'icon' => 'bi-cash-coin',
-                                'label' => 'Pricing Rules',
-                                'module' => 'delivery'
-                            ]
-                        ]
-                    ],
-                    'management' => [
-                        'label' => 'Management',
-                        'items' => [
-                            [
-                                'roles' => ['admin','manager'],
-                                'href' => '/wapos/void-order-management.php',
-                                'page' => 'void-order-management.php',
-                                'icon' => 'bi-x-circle',
-                                'label' => 'Void Orders',
-                                'module' => 'sales'
-                            ],
-                            [
-                                'roles' => ['admin','manager'],
-                                'href' => '/wapos/void-reports.php',
-                                'page' => 'void-reports.php',
-                                'icon' => 'bi-file-bar-graph',
-                                'label' => 'Void Reports',
-                                'module' => 'sales'
-                            ],
-                            [
-                                'roles' => ['admin'],
-                                'href' => '/wapos/void-settings.php',
-                                'page' => 'void-settings.php',
-                                'icon' => 'bi-sliders',
-                                'label' => 'Void Settings',
-                                'module' => 'sales'
-                            ],
-                            [
-                                'roles' => ['admin','manager'],
-                                'href' => '/wapos/rooms.php',
-                                'page' => 'rooms.php',
-                                'icon' => 'bi-building',
-                                'label' => 'Rooms',
-                                'module' => 'rooms'
-                            ],
-                            [
-                                'roles' => ['admin','manager'],
-                                'href' => '/wapos/locations.php',
-                                'page' => 'locations.php',
-                                'icon' => 'bi-geo-alt',
-                                'label' => 'Locations',
-                                'module' => 'locations'
-                            ]
-                        ]
-                    ],
-                    'housekeeping' => [
-                        'label' => 'Housekeeping',
-                        'items' => [
-                            [
-                                'roles' => ['admin','manager','housekeeping_manager','housekeeping_staff','housekeeper','housekeeping','frontdesk'],
-                                'href' => '/wapos/housekeeping.php',
-                                'page' => 'housekeeping.php',
-                                'icon' => 'bi-broom',
-                                'label' => 'Housekeeping Board',
-                                'module' => 'housekeeping'
-                            ]
-                        ]
-                    ],
-                    'maintenance' => [
-                        'label' => 'Maintenance',
-                        'items' => [
-                            [
-                                'roles' => ['admin','manager','maintenance_manager','maintenance_staff','maintenance','technician','engineer','frontdesk'],
-                                'href' => '/wapos/maintenance.php',
-                                'page' => 'maintenance.php',
-                                'icon' => 'bi-tools',
-                                'label' => 'Maintenance Desk',
-                                'module' => 'maintenance'
-                            ]
-                        ]
-                    ],
-                    'inventory' => [
-                        'label' => 'Inventory',
-                        'items' => [
-                            [
-                                'roles' => ['admin','manager','inventory_manager','cashier'],
-                                'href' => '/wapos/products.php',
-                                'page' => 'products.php',
-                                'icon' => 'bi-box',
-                                'label' => 'Products',
-                                'module' => 'inventory'
-                            ],
-                            [
-                                'roles' => ['admin','manager','inventory_manager'],
-                                'href' => '/wapos/inventory.php',
-                                'page' => 'inventory.php',
-                                'icon' => 'bi-boxes',
-                                'label' => 'Inventory',
-                                'module' => 'inventory'
-                            ],
-                            [
-                                'roles' => ['admin','manager','inventory_manager'],
-                                'href' => '/wapos/goods-received.php',
-                                'page' => 'goods-received.php',
-                                'icon' => 'bi-truck',
-                                'label' => 'Goods Received',
-                                'module' => 'inventory'
-                            ]
-                        ]
-                    ],
-                    'sales' => [
-                        'label' => 'Sales Ops',
-                        'items' => [
                             [
                                 'roles' => ['admin','manager','cashier'],
                                 'href' => '/wapos/customers.php',
@@ -738,6 +559,186 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'icon' => 'bi-receipt-cutoff',
                                 'label' => 'Receipt Settings',
                                 'module' => 'sales'
+                            ]
+                        ]
+                    ],
+                    'restaurant' => [
+                        'label' => 'Restaurant',
+                        'items' => [
+                            [
+                                'roles' => ['admin','manager','waiter','cashier'],
+                                'href' => '/wapos/restaurant.php',
+                                'page' => 'restaurant.php',
+                                'icon' => 'bi-cup-hot',
+                                'label' => 'Orders',
+                                'module' => 'restaurant'
+                            ],
+                            [
+                                'roles' => ['admin','manager'],
+                                'href' => '/wapos/kitchen-display.php',
+                                'page' => 'kitchen-display.php',
+                                'icon' => 'bi-fire',
+                                'label' => 'Kitchen Display',
+                                'module' => 'restaurant'
+                            ],
+                            [
+                                'roles' => ['admin','manager'],
+                                'href' => '/wapos/manage-tables.php',
+                                'page' => 'manage-tables.php',
+                                'icon' => 'bi-grid-3x3',
+                                'label' => 'Tables',
+                                'module' => 'restaurant'
+                            ],
+                            [
+                                'roles' => ['admin','manager','waiter'],
+                                'href' => '/wapos/restaurant-reservations.php',
+                                'page' => 'restaurant-reservations.php',
+                                'icon' => 'bi-calendar-event',
+                                'label' => 'Reservations',
+                                'module' => 'restaurant'
+                            ],
+                            [
+                                'roles' => ['admin','manager'],
+                                'href' => '/wapos/manage-modifiers.php',
+                                'page' => 'manage-modifiers.php',
+                                'icon' => 'bi-sliders2',
+                                'label' => 'Modifiers',
+                                'module' => 'restaurant'
+                            ],
+                            [
+                                'roles' => ['admin','manager'],
+                                'href' => '/wapos/void-order-management.php',
+                                'page' => 'void-order-management.php',
+                                'icon' => 'bi-x-circle',
+                                'label' => 'Void Orders',
+                                'module' => 'restaurant'
+                            ],
+                            [
+                                'roles' => ['admin','manager'],
+                                'href' => '/wapos/void-reports.php',
+                                'page' => 'void-reports.php',
+                                'icon' => 'bi-file-bar-graph',
+                                'label' => 'Void Reports',
+                                'module' => 'restaurant'
+                            ],
+                            [
+                                'roles' => ['admin'],
+                                'href' => '/wapos/void-settings.php',
+                                'page' => 'void-settings.php',
+                                'icon' => 'bi-sliders',
+                                'label' => 'Void Settings',
+                                'module' => 'restaurant'
+                            ]
+                        ]
+                    ],
+                    'property' => [
+                        'label' => 'Property',
+                        'items' => [
+                            [
+                                'roles' => ['admin','manager','frontdesk'],
+                                'href' => '/wapos/rooms.php',
+                                'page' => 'rooms.php',
+                                'icon' => 'bi-calendar2-week',
+                                'label' => 'Room Calendar',
+                                'module' => 'rooms'
+                            ],
+                            [
+                                'roles' => ['admin','manager'],
+                                'href' => '/wapos/manage-rooms.php',
+                                'page' => 'manage-rooms.php',
+                                'icon' => 'bi-door-open',
+                                'label' => 'Manage Rooms',
+                                'module' => 'rooms'
+                            ],
+                            [
+                                'roles' => ['admin','manager','housekeeping_manager','housekeeping_staff','housekeeper','housekeeping','frontdesk'],
+                                'href' => '/wapos/housekeeping.php',
+                                'page' => 'housekeeping.php',
+                                'icon' => 'bi-stars',
+                                'label' => 'Housekeeping',
+                                'module' => 'housekeeping'
+                            ],
+                            [
+                                'roles' => ['admin','manager','maintenance_manager','maintenance_staff','maintenance','technician','engineer','frontdesk'],
+                                'href' => '/wapos/maintenance.php',
+                                'page' => 'maintenance.php',
+                                'icon' => 'bi-tools',
+                                'label' => 'Maintenance',
+                                'module' => 'maintenance'
+                            ],
+                            [
+                                'roles' => ['super_admin', 'developer', 'admin', 'manager', 'frontdesk'],
+                                'href' => '/wapos/guest-portal-settings.php',
+                                'page' => 'guest-portal-settings.php',
+                                'icon' => 'bi-shield-lock',
+                                'label' => 'Guest Portal',
+                                'module' => 'rooms'
+                            ],
+                            [
+                                'roles' => ['super_admin', 'developer', 'admin', 'manager', 'frontdesk', 'receptionist', 'cashier'],
+                                'href' => '/wapos/whatsapp-inbox.php',
+                                'page' => 'whatsapp-inbox.php',
+                                'icon' => 'bi-whatsapp',
+                                'label' => 'WhatsApp Inbox',
+                                'module' => 'rooms'
+                            ]
+                        ]
+                    ],
+                    'delivery' => [
+                        'label' => 'Delivery',
+                        'items' => [
+                            [
+                                'roles' => ['admin','manager','rider'],
+                                'href' => '/wapos/delivery.php',
+                                'page' => 'delivery.php',
+                                'icon' => 'bi-truck',
+                                'label' => 'Deliveries',
+                                'module' => 'delivery'
+                            ],
+                            [
+                                'roles' => ['admin','manager','rider'],
+                                'href' => '/wapos/enhanced-delivery-tracking.php',
+                                'page' => 'enhanced-delivery-tracking.php',
+                                'icon' => 'bi-geo-alt',
+                                'label' => 'Tracking',
+                                'module' => 'delivery'
+                            ],
+                            [
+                                'roles' => ['admin','developer'],
+                                'href' => '/wapos/delivery-pricing.php',
+                                'page' => 'delivery-pricing.php',
+                                'icon' => 'bi-cash-coin',
+                                'label' => 'Pricing Rules',
+                                'module' => 'delivery'
+                            ]
+                        ]
+                    ],
+                    'inventory' => [
+                        'label' => 'Inventory',
+                        'items' => [
+                            [
+                                'roles' => ['admin','manager','inventory_manager','cashier'],
+                                'href' => '/wapos/products.php',
+                                'page' => 'products.php',
+                                'icon' => 'bi-box',
+                                'label' => 'Products',
+                                'module' => 'inventory'
+                            ],
+                            [
+                                'roles' => ['admin','manager','inventory_manager'],
+                                'href' => '/wapos/inventory.php',
+                                'page' => 'inventory.php',
+                                'icon' => 'bi-boxes',
+                                'label' => 'Stock Levels',
+                                'module' => 'inventory'
+                            ],
+                            [
+                                'roles' => ['admin','manager','inventory_manager'],
+                                'href' => '/wapos/goods-received.php',
+                                'page' => 'goods-received.php',
+                                'icon' => 'bi-box-arrow-in-down',
+                                'label' => 'Goods Received',
+                                'module' => 'inventory'
                             ]
                         ]
                     ],
@@ -806,6 +807,14 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'module' => 'users'
                             ],
                             [
+                                'roles' => ['admin','manager'],
+                                'href' => '/wapos/locations.php',
+                                'page' => 'locations.php',
+                                'icon' => 'bi-geo-alt',
+                                'label' => 'Locations',
+                                'module' => 'locations'
+                            ],
+                            [
                                 'roles' => ['developer', 'super_admin'],
                                 'href' => '/wapos/system-health.php',
                                 'page' => 'system-health.php',
@@ -851,6 +860,13 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'page' => 'payment-gateways.php',
                                 'icon' => 'bi-credit-card',
                                 'label' => 'Payment Gateways'
+                            ],
+                            [
+                                'roles' => ['super_admin', 'developer'],
+                                'href' => '/wapos/site-editor.php',
+                                'page' => 'site-editor.php',
+                                'icon' => 'bi-pencil-square',
+                                'label' => 'Site Editor'
                             ]
                         ]
                     ]

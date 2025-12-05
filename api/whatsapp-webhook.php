@@ -131,11 +131,111 @@ function processWhatsAppMessage($messageData, $db, $settings) {
 }
 
 function processMessageContent($messageText, $customerPhone, $db, $settings) {
-    $messageText = strtolower(trim($messageText));
+    $messageTextLower = strtolower(trim($messageText));
+    $pdo = $db->getConnection();
+    $phone = preg_replace('/[^0-9+]/', '', $customerPhone);
     
-    // Menu keywords
-    if (in_array($messageText, ['menu', 'catalog', 'food', 'order', 'hi', 'hello', 'hey'])) {
-        return generateMenuResponse($db);
+    // Check if user has active conversation state
+    $stateCheck = $pdo->prepare("SELECT state_data FROM whatsapp_conversation_states WHERE phone = ? AND expires_at > NOW()");
+    $stateCheck->execute([$phone]);
+    $stateRow = $stateCheck->fetch(PDO::FETCH_ASSOC);
+    $hasActiveState = (bool)$stateRow;
+    $stateData = $stateRow ? json_decode($stateRow['state_data'], true) : null;
+    
+    // Determine which service to use based on state or keywords
+    $hospitalityKeywords = ['book', 'reserve', 'room', 'stay', 'accommodation', 'housekeeping', 
+        'clean', 'towel', 'maintenance', 'repair', 'broken', 'check in', 'check out', 
+        'checkout', 'checkin', 'room service'];
+    
+    $restaurantKeywords = ['menu', 'food', 'order', 'eat', 'hungry', 'cart', 'basket', 
+        'reorder', 'pickup', 'delivery', 'hours', 'location'];
+    
+    $commonKeywords = ['cancel', 'stop', 'reset', 'help', 'yes', 'no', 'hi', 'hello', 'hey', 'status'];
+    
+    // Check if in active conversation - route to appropriate service
+    if ($hasActiveState && $stateData) {
+        $currentState = $stateData['state'] ?? 'idle';
+        
+        // Hospitality states start with 'booking_', 'room_service_', 'housekeeping_', 'maintenance_'
+        if (strpos($currentState, 'booking_') === 0 || strpos($currentState, 'room_') === 0 || 
+            strpos($currentState, 'housekeeping') === 0 || strpos($currentState, 'maintenance') === 0) {
+            try {
+                $hospitalityService = new \App\Services\HospitalityWhatsAppService($pdo);
+                $result = $hospitalityService->processMessage($customerPhone, $messageText, '');
+                return $result['response'] ?? null;
+            } catch (Exception $e) {
+                error_log('Hospitality WhatsApp error: ' . $e->getMessage());
+            }
+        }
+        
+        // Restaurant states: menu_category, adding_items, cart_review, order_type, etc.
+        if (strpos($currentState, 'menu') === 0 || strpos($currentState, 'adding') === 0 || 
+            strpos($currentState, 'cart') === 0 || strpos($currentState, 'order') === 0 ||
+            strpos($currentState, 'delivery') === 0 || strpos($currentState, 'customer') === 0 ||
+            strpos($currentState, 'confirm') === 0) {
+            try {
+                $restaurantService = new \App\Services\RestaurantWhatsAppService($pdo);
+                $result = $restaurantService->processMessage($customerPhone, $messageText);
+                return $result['response'] ?? null;
+            } catch (Exception $e) {
+                error_log('Restaurant WhatsApp error: ' . $e->getMessage());
+            }
+        }
+    }
+    
+    // No active state - detect intent from keywords
+    $isHospitality = false;
+    $isRestaurant = false;
+    
+    foreach ($hospitalityKeywords as $keyword) {
+        if (strpos($messageTextLower, $keyword) !== false) {
+            $isHospitality = true;
+            break;
+        }
+    }
+    
+    foreach ($restaurantKeywords as $keyword) {
+        if (strpos($messageTextLower, $keyword) !== false) {
+            $isRestaurant = true;
+            break;
+        }
+    }
+    
+    // Route to appropriate service
+    if ($isHospitality && !$isRestaurant) {
+        try {
+            $hospitalityService = new \App\Services\HospitalityWhatsAppService($pdo);
+            $result = $hospitalityService->processMessage($customerPhone, $messageText, '');
+            return $result['response'] ?? null;
+        } catch (Exception $e) {
+            error_log('Hospitality WhatsApp error: ' . $e->getMessage());
+        }
+    }
+    
+    if ($isRestaurant) {
+        try {
+            $restaurantService = new \App\Services\RestaurantWhatsAppService($pdo);
+            $result = $restaurantService->processMessage($customerPhone, $messageText);
+            return $result['response'] ?? null;
+        } catch (Exception $e) {
+            error_log('Restaurant WhatsApp error: ' . $e->getMessage());
+        }
+    }
+    
+    // Default: Show combined menu for greetings
+    if (in_array($messageTextLower, ['hi', 'hello', 'hey', 'help'])) {
+        return getWelcomeMenu($db);
+    }
+    
+    // Legacy menu keywords - route to restaurant
+    if (in_array($messageTextLower, ['menu', 'catalog', 'food', 'order'])) {
+        try {
+            $restaurantService = new \App\Services\RestaurantWhatsAppService($pdo);
+            $result = $restaurantService->processMessage($customerPhone, $messageText);
+            return $result['response'] ?? null;
+        } catch (Exception $e) {
+            error_log('Restaurant WhatsApp error: ' . $e->getMessage());
+        }
     }
     
     // Order status inquiry
@@ -366,6 +466,25 @@ function processOrderMessage($messageText, $customerPhone, $db) {
     // 2. Calculate total amount
     // 3. Create order in database
     // 4. Send confirmation with payment link
+    
+    return $response;
+}
+
+function getWelcomeMenu($db) {
+    $businessInfo = $db->fetchAll("SELECT setting_key, setting_value FROM settings WHERE setting_key = 'business_name'");
+    $businessName = $businessInfo[0]['setting_value'] ?? 'Our Business';
+    
+    $response = "Welcome to {$businessName}! 👋\n\n";
+    $response .= "How can we help you today?\n\n";
+    $response .= "🍽️ *MENU* - Browse & order food\n";
+    $response .= "🛒 *CART* - View your cart\n";
+    $response .= "📋 *STATUS* - Track your order\n\n";
+    $response .= "🏨 *BOOK* - Reserve a room\n";
+    $response .= "🧹 *HOUSEKEEPING* - Request service\n";
+    $response .= "🔧 *MAINTENANCE* - Report an issue\n\n";
+    $response .= "📞 *CONTACT* - Speak to us\n";
+    $response .= "📍 *LOCATION* - Find us\n\n";
+    $response .= "Type a keyword to get started!";
     
     return $response;
 }

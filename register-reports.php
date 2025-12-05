@@ -3,9 +3,14 @@ require_once 'includes/bootstrap.php';
 
 use App\Services\RegisterReportService;
 
-$allowedRoles = ['admin', 'manager', 'cashier', 'developer'];
-if (!$auth->isLoggedIn() || !in_array(strtolower($auth->getRole() ?? ''), $allowedRoles, true)) {
-    header('Location: ' . APP_URL . '/index.php?error=access_denied');
+$allowedRoles = ['admin', 'manager', 'cashier', 'developer', 'super_admin'];
+if (!$auth->isLoggedIn()) {
+    header('Location: ' . APP_URL . '/login.php');
+    exit;
+}
+if (!in_array(strtolower($auth->getRole() ?? ''), $allowedRoles, true)) {
+    $_SESSION['error_message'] = 'You do not have permission to access Register Reports.';
+    header('Location: ' . APP_URL . '/dashboards/admin.php');
     exit;
 }
 

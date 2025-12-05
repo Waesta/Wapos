@@ -41,13 +41,24 @@ $payload = [
 try {
     $result = $bookingService->createBooking($payload, (int)$auth->getUserId());
 
+    // Send WhatsApp confirmation if phone provided and WhatsApp enabled
+    $whatsappSent = false;
+    if (!empty($payload['guest_phone']) && (settings('whatsapp_enabled') ?? '0') === '1') {
+        try {
+            $whatsappSent = $bookingService->sendWhatsAppConfirmation($result['booking_id']);
+        } catch (Exception $e) {
+            error_log("WhatsApp confirmation failed: " . $e->getMessage());
+        }
+    }
+
     echo json_encode([
         'success' => true,
         'booking_id' => $result['booking_id'],
         'booking_number' => $result['booking_number'],
         'total_amount' => $result['total_amount'],
         'total_nights' => $result['total_nights'],
-        'message' => 'Booking created successfully'
+        'whatsapp_sent' => $whatsappSent,
+        'message' => 'Booking created successfully' . ($whatsappSent ? ' - WhatsApp confirmation sent' : '')
     ]);
 } catch (Exception $e) {
     echo json_encode([
