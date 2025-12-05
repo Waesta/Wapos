@@ -16,6 +16,25 @@ $pdo = $db->getConnection();
 $accountingService = new AccountingService($pdo);
 $ledgerDataService = new LedgerDataService($pdo, $accountingService);
 
+// Generate personalized greeting
+$hour = (int)date('H');
+$userName = $_SESSION['full_name'] ?? $_SESSION['username'] ?? 'Accountant';
+$firstName = explode(' ', $userName)[0];
+
+if ($hour >= 5 && $hour < 12) {
+    $greeting = "Good morning";
+    $greetingIcon = "bi-sunrise";
+} elseif ($hour >= 12 && $hour < 17) {
+    $greeting = "Good afternoon";
+    $greetingIcon = "bi-sun";
+} else {
+    $greeting = "Good evening";
+    $greetingIcon = "bi-moon-stars";
+}
+
+$lastLogin = $_SESSION['last_login'] ?? null;
+$welcomeMessage = $lastLogin ? "Welcome back" : "Welcome";
+
 $pageTitle = 'Accountant Dashboard';
 include '../includes/header.php';
 
@@ -124,6 +143,19 @@ $accountingLiveConfig = [
 </style>
 
 <div class="container-fluid py-4">
+    <!-- Personalized Greeting -->
+    <div class="alert alert-light border-0 shadow-sm mb-4" style="background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);">
+        <div class="d-flex align-items-center gap-3">
+            <div class="rounded-circle bg-success bg-opacity-10 p-3">
+                <i class="bi <?= $greetingIcon ?> text-success fs-4"></i>
+            </div>
+            <div>
+                <h4 class="mb-1"><?= $greeting ?>, <?= htmlspecialchars($firstName) ?>! 👋</h4>
+                <p class="mb-0 text-muted"><?= $welcomeMessage ?> to your dashboard. Today is <?= date('l, F j, Y') ?>.</p>
+            </div>
+        </div>
+    </div>
+
     <!-- Page Header -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>

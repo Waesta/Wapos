@@ -10,6 +10,7 @@ class OfflineManager {
         this.db = null;
         this.isOnline = navigator.onLine;
         this.syncInProgress = false;
+        this.checkInterval = null;
         
         this.init();
     }
@@ -24,12 +25,102 @@ class OfflineManager {
         // Register service worker
         await this.registerServiceWorker();
         
+        // Check actual connectivity (not just network adapter)
+        await this.checkRealConnectivity();
+        
+        // Update status indicator immediately
+        this.updateOnlineStatus();
+        
+        // Start periodic connectivity check
+        this.startConnectivityCheck();
+        
         // Initial sync if online
         if (this.isOnline) {
             this.syncWhenOnline();
         }
         
-        console.log('[OfflineManager] Initialized');
+        console.log('[OfflineManager] Initialized, online:', this.isOnline);
+    }
+    
+    /**
+     * Check real internet connectivity
+     * For localhost: checks external connectivity
+     * For production: pings the server
+     */
+    async checkRealConnectivity() {
+        const isLocalhost = window.location.hostname === 'localhost' || 
+                           window.location.hostname === '127.0.0.1';
+        
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+            
+            if (isLocalhost) {
+                // On localhost, check external internet connectivity
+                // Try multiple reliable endpoints
+                const checks = [
+                    this.checkEndpoint('https://www.google.com/generate_204', controller.signal),
+                    this.checkEndpoint('https://connectivitycheck.gstatic.com/generate_204', controller.signal),
+                    this.checkEndpoint('https://clients3.google.com/generate_204', controller.signal)
+                ];
+                
+                // If any check succeeds, we're online
+                const results = await Promise.allSettled(checks);
+                this.isOnline = results.some(r => r.status === 'fulfilled' && r.value === true);
+            } else {
+                // On production server, ping our own endpoint
+                const response = await fetch('/wapos/api/ping.php?t=' + Date.now(), {
+                    method: 'HEAD',
+                    cache: 'no-store',
+                    signal: controller.signal
+                });
+                this.isOnline = response.ok;
+            }
+            
+            clearTimeout(timeoutId);
+        } catch (error) {
+            // Network error or timeout - we're offline
+            this.isOnline = false;
+        }
+        return this.isOnline;
+    }
+    
+    /**
+     * Check a single endpoint for connectivity
+     */
+    async checkEndpoint(url, signal) {
+        try {
+            const response = await fetch(url, {
+                method: 'HEAD',
+                mode: 'no-cors', // Allows checking external URLs
+                cache: 'no-store',
+                signal: signal
+            });
+            // With no-cors, we can't read response but if fetch succeeds, we're online
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+    
+    /**
+     * Start periodic connectivity check
+     */
+    startConnectivityCheck() {
+        // Check every 10 seconds
+        this.checkInterval = setInterval(async () => {
+            const wasOnline = this.isOnline;
+            await this.checkRealConnectivity();
+            
+            if (wasOnline !== this.isOnline) {
+                console.log('[OfflineManager] Connectivity changed:', this.isOnline ? 'Online' : 'Offline');
+                this.updateOnlineStatus();
+                
+                if (this.isOnline) {
+                    this.syncWhenOnline();
+                }
+            }
+        }, 10000);
     }
     
     async openDatabase() {
@@ -73,14 +164,19 @@ class OfflineManager {
     }
     
     setupEventListeners() {
-        // Online/offline events
-        window.addEventListener('online', () => {
-            this.isOnline = true;
+        // Online/offline events from browser
+        window.addEventListener('online', async () => {
+            console.log('[OfflineManager] Browser reports online');
+            // Verify with actual ping
+            await this.checkRealConnectivity();
             this.updateOnlineStatus();
-            this.syncWhenOnline();
+            if (this.isOnline) {
+                this.syncWhenOnline();
+            }
         });
         
         window.addEventListener('offline', () => {
+            console.log('[OfflineManager] Browser reports offline');
             this.isOnline = false;
             this.updateOnlineStatus();
         });
@@ -120,9 +216,13 @@ class OfflineManager {
         const syncButton = document.getElementById('sync-button');
         
         if (statusElement) {
-            statusElement.innerHTML = this.isOnline 
-                ? '<i class="bi bi-wifi text-success"></i> Online'
-                : '<i class="bi bi-wifi-off text-danger"></i> Offline';
+            if (this.isOnline) {
+                statusElement.innerHTML = '<i class="bi bi-wifi"></i> <span>Online</span>';
+                statusElement.className = 'badge bg-success d-flex align-items-center gap-1';
+            } else {
+                statusElement.innerHTML = '<i class="bi bi-wifi-off"></i> <span>Offline</span>';
+                statusElement.className = 'badge bg-warning text-dark d-flex align-items-center gap-1';
+            }
         }
         
         if (syncButton) {
@@ -320,12 +420,27 @@ class OfflineManager {
             const pendingOrders = await this.getCachedData('pending-orders');
             const pendingCustomers = await this.getCachedData('pending-customers');
             
-            const totalPending = pendingSales.length + pendingOrders.length + pendingCustomers.length;
+            // Also count localStorage backup sales
+            const localStorageSales = JSON.parse(localStorage.getItem('wapos_pending_sales') || '[]');
+            
+            const totalPending = pendingSales.length + pendingOrders.length + pendingCustomers.length + localStorageSales.length;
             
             const countElement = document.getElementById('pending-count');
             if (countElement) {
                 countElement.textContent = totalPending;
                 countElement.style.display = totalPending > 0 ? 'inline' : 'none';
+            }
+            
+            // Update sync button state
+            const syncButton = document.getElementById('sync-button');
+            if (syncButton) {
+                if (totalPending > 0) {
+                    syncButton.classList.remove('btn-outline-secondary');
+                    syncButton.classList.add('btn-outline-warning');
+                } else {
+                    syncButton.classList.remove('btn-outline-warning');
+                    syncButton.classList.add('btn-outline-secondary');
+                }
             }
             
         } catch (error) {
@@ -334,9 +449,201 @@ class OfflineManager {
     }
     
     // UI Methods
-    showOfflineQueue() {
-        // This would show a modal with pending transactions
-        alert('Offline queue viewer - to be implemented');
+    async showOfflineQueue() {
+        // Get all pending transactions
+        const pendingSales = await this.getCachedData('pending-sales');
+        const pendingOrders = await this.getCachedData('pending-orders');
+        const pendingCustomers = await this.getCachedData('pending-customers');
+        
+        // Also get localStorage backup
+        const localStorageSales = JSON.parse(localStorage.getItem('wapos_pending_sales') || '[]');
+        
+        const totalPending = pendingSales.length + pendingOrders.length + pendingCustomers.length + localStorageSales.length;
+        
+        // Create modal
+        let modal = document.getElementById('offlineQueueModal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'offlineQueueModal';
+            modal.className = 'modal fade';
+            modal.setAttribute('tabindex', '-1');
+            document.body.appendChild(modal);
+        }
+        
+        modal.innerHTML = `
+            <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header bg-warning text-dark">
+                        <h5 class="modal-title">
+                            <i class="bi bi-cloud-arrow-up me-2"></i>Offline Queue
+                            <span class="badge bg-dark ms-2">${totalPending} pending</span>
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        ${totalPending === 0 ? `
+                            <div class="text-center py-5">
+                                <i class="bi bi-check-circle text-success" style="font-size: 4rem;"></i>
+                                <h4 class="mt-3">All Synced!</h4>
+                                <p class="text-muted">No pending transactions to sync.</p>
+                            </div>
+                        ` : `
+                            <div class="alert alert-info">
+                                <i class="bi bi-info-circle me-2"></i>
+                                These transactions will sync automatically when internet is restored.
+                            </div>
+                            
+                            ${pendingSales.length > 0 || localStorageSales.length > 0 ? `
+                                <h6 class="border-bottom pb-2 mb-3">
+                                    <i class="bi bi-cart me-2"></i>Pending Sales 
+                                    <span class="badge bg-primary">${pendingSales.length + localStorageSales.length}</span>
+                                </h6>
+                                <div class="list-group mb-4">
+                                    ${[...pendingSales, ...localStorageSales.map(s => ({data: s, timestamp: new Date(s.created_at).getTime()}))].map((sale, i) => `
+                                        <div class="list-group-item d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <strong>${sale.data.offline_id || 'Sale #' + (i + 1)}</strong>
+                                                <br>
+                                                <small class="text-muted">
+                                                    ${sale.data.items?.length || 0} items • 
+                                                    ${this.formatCurrency(sale.data.total || 0)} • 
+                                                    ${this.formatTimeAgo(sale.timestamp || sale.data.timestamp)}
+                                                </small>
+                                            </div>
+                                            <span class="badge bg-warning text-dark">Pending</span>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            ` : ''}
+                            
+                            ${pendingOrders.length > 0 ? `
+                                <h6 class="border-bottom pb-2 mb-3">
+                                    <i class="bi bi-receipt me-2"></i>Pending Orders 
+                                    <span class="badge bg-info">${pendingOrders.length}</span>
+                                </h6>
+                                <div class="list-group mb-4">
+                                    ${pendingOrders.map((order, i) => `
+                                        <div class="list-group-item d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <strong>Order #${i + 1}</strong>
+                                                <br>
+                                                <small class="text-muted">${this.formatTimeAgo(order.timestamp)}</small>
+                                            </div>
+                                            <span class="badge bg-warning text-dark">Pending</span>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            ` : ''}
+                            
+                            ${pendingCustomers.length > 0 ? `
+                                <h6 class="border-bottom pb-2 mb-3">
+                                    <i class="bi bi-people me-2"></i>Pending Customers 
+                                    <span class="badge bg-secondary">${pendingCustomers.length}</span>
+                                </h6>
+                                <div class="list-group">
+                                    ${pendingCustomers.map((customer, i) => `
+                                        <div class="list-group-item d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <strong>${customer.data.name || 'Customer #' + (i + 1)}</strong>
+                                                <br>
+                                                <small class="text-muted">${this.formatTimeAgo(customer.timestamp)}</small>
+                                            </div>
+                                            <span class="badge bg-warning text-dark">Pending</span>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            ` : ''}
+                        `}
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        ${totalPending > 0 && navigator.onLine ? `
+                            <button type="button" class="btn btn-primary" onclick="offlineManager.forceSyncAll()">
+                                <i class="bi bi-arrow-repeat me-2"></i>Sync Now
+                            </button>
+                        ` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        const bsModal = new bootstrap.Modal(modal);
+        bsModal.show();
+    }
+    
+    formatCurrency(amount) {
+        return new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0
+        }).format(amount);
+    }
+    
+    formatTimeAgo(timestamp) {
+        const now = Date.now();
+        const diff = now - timestamp;
+        const minutes = Math.floor(diff / 60000);
+        const hours = Math.floor(minutes / 60);
+        const days = Math.floor(hours / 24);
+        
+        if (minutes < 1) return 'Just now';
+        if (minutes < 60) return `${minutes} min ago`;
+        if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+        return `${days} day${days > 1 ? 's' : ''} ago`;
+    }
+    
+    async forceSyncAll() {
+        if (!navigator.onLine) {
+            this.showToast('Cannot sync while offline', 'warning');
+            return;
+        }
+        
+        // Close modal
+        const modal = document.getElementById('offlineQueueModal');
+        if (modal) {
+            bootstrap.Modal.getInstance(modal)?.hide();
+        }
+        
+        this.showToast('Syncing...', 'info');
+        await this.syncWhenOnline();
+        
+        // Also sync localStorage sales
+        await this.syncLocalStorageSales();
+    }
+    
+    async syncLocalStorageSales() {
+        const pendingSales = JSON.parse(localStorage.getItem('wapos_pending_sales') || '[]');
+        if (pendingSales.length === 0) return;
+        
+        const synced = [];
+        const failed = [];
+        
+        for (const sale of pendingSales) {
+            try {
+                const response = await fetch('/wapos/api/complete-sale.php', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'X-Sync-Request': 'true'
+                    },
+                    body: JSON.stringify(sale)
+                });
+                
+                if (response.ok) {
+                    synced.push(sale);
+                } else {
+                    failed.push(sale);
+                }
+            } catch (error) {
+                failed.push(sale);
+            }
+        }
+        
+        localStorage.setItem('wapos_pending_sales', JSON.stringify(failed));
+        this.updatePendingCount();
+        
+        if (synced.length > 0) {
+            this.showSyncSuccess(synced.length, failed.length);
+        }
     }
     
     showUpdateAvailable() {

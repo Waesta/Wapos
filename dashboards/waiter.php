@@ -9,6 +9,25 @@ $auth->requireRole('waiter');
 
 $db = Database::getInstance();
 
+// Generate personalized greeting
+$hour = (int)date('H');
+$userName = $_SESSION['full_name'] ?? $_SESSION['username'] ?? 'Waiter';
+$firstName = explode(' ', $userName)[0];
+
+if ($hour >= 5 && $hour < 12) {
+    $greeting = "Good morning";
+    $greetingIcon = "bi-sunrise";
+} elseif ($hour >= 12 && $hour < 17) {
+    $greeting = "Good afternoon";
+    $greetingIcon = "bi-sun";
+} else {
+    $greeting = "Good evening";
+    $greetingIcon = "bi-moon-stars";
+}
+
+$lastLogin = $_SESSION['last_login'] ?? null;
+$welcomeMessage = $lastLogin ? "Welcome back" : "Welcome";
+
 $pageTitle = 'Waiter Dashboard';
 include '../includes/header.php';
 
@@ -209,10 +228,23 @@ $shiftOrders = $db->fetchOne("
 </style>
 
 <div class="waiter-shell container-fluid py-4">
+    <!-- Personalized Greeting -->
+    <div class="alert alert-light border-0 shadow-sm mb-4" style="background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);">
+        <div class="d-flex align-items-center gap-3">
+            <div class="rounded-circle bg-warning bg-opacity-25 p-3">
+                <i class="bi <?= $greetingIcon ?> text-warning fs-4"></i>
+            </div>
+            <div>
+                <h4 class="mb-1"><?= $greeting ?>, <?= htmlspecialchars($firstName) ?>! 👋</h4>
+                <p class="mb-0 text-muted"><?= $welcomeMessage ?>! Today is <?= date('l, F j, Y') ?>. Ready to serve!</p>
+            </div>
+        </div>
+    </div>
+
     <section class="waiter-toolbar">
         <div class="stack-sm">
             <h1><i class="bi bi-person-badge me-2"></i>Waiter Dashboard</h1>
-            <p>Welcome back, <?= htmlspecialchars($auth->getUser()['full_name'] ?? 'User') ?>! Your shift insights are below.</p>
+            <p>Your shift insights and active orders</p>
         </div>
         <div class="d-flex flex-wrap gap-2">
             <a href="../restaurant.php" class="btn btn-primary btn-icon btn-lg">

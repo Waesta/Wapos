@@ -2512,11 +2512,62 @@ async function finalizePayment(autoConfirmed = false) {
             if (confirm('Print receipt?')) {
                 window.open('print-receipt.php?id=' + result.sale_id, '_blank');
             }
+        } else if (result.offline) {
+            // Sale was queued for offline sync
+            bootstrap.Modal.getInstance(document.getElementById('paymentConfirmationModal')).hide();
+            
+            let successMessage = `📴 Sale saved offline!\n\nOffline ID: ${Date.now()}`;
+            if (payment.paymentMethod === 'cash' && payment.changeAmount > 0) {
+                successMessage += `\n\n💰 Change Due: ${formatCurrency(payment.changeAmount)}`;
+            }
+            successMessage += `\n\n⚠️ This sale will sync automatically when internet is restored.`;
+            
+            alert(successMessage);
+            
+            // Reset form
+            cart = [];
+            updateCart();
+            document.getElementById('customerName').value = '';
+            document.getElementById('amountTendered').value = '';
+            calculateChange();
+            clearMobileMoneyStatus();
+            window.pendingPayment = null;
         } else {
             alert('Error: ' + (result.message || 'Failed to complete sale'));
         }
     } catch (error) {
-        alert('Error completing sale: ' + error.message);
+        // Network error - save offline
+        if (!navigator.onLine || error.message.includes('Failed to fetch')) {
+            try {
+                const offlineSaved = await saveOfflineSale(saleData, payment);
+                if (offlineSaved) {
+                    bootstrap.Modal.getInstance(document.getElementById('paymentConfirmationModal')).hide();
+                    
+                    let successMessage = `📴 Sale saved offline!\n\nOffline ID: OFF-${Date.now()}`;
+                    if (payment.paymentMethod === 'cash' && payment.changeAmount > 0) {
+                        successMessage += `\n\n💰 Change Due: ${formatCurrency(payment.changeAmount)}`;
+                    }
+                    successMessage += `\n\n⚠️ This sale will sync automatically when internet is restored.`;
+                    
+                    alert(successMessage);
+                    
+                    // Reset form
+                    cart = [];
+                    updateCart();
+                    document.getElementById('customerName').value = '';
+                    document.getElementById('amountTendered').value = '';
+                    calculateChange();
+                    clearMobileMoneyStatus();
+                    window.pendingPayment = null;
+                } else {
+                    alert('Error: Failed to save sale offline. Please try again.');
+                }
+            } catch (offlineError) {
+                alert('Error saving offline: ' + offlineError.message);
+            }
+        } else {
+            alert('Error completing sale: ' + error.message);
+        }
     } finally {
         // Re-enable button
         setFinalizeButton(originalText, false);
@@ -2858,6 +2909,177 @@ document.addEventListener('keydown', function(event) {
 
     event.preventDefault();
     applyQuickTender(mapping[event.key]);
+});
+
+// ============================================================
+// OFFLINE SALES FUNCTIONALITY
+// ============================================================
+
+/**
+ * Save a sale to IndexedDB for offline sync
+ */
+async function saveOfflineSale(saleData, payment) {
+    try {
+        // Use the global offlineManager if available
+        if (window.offlineManager && window.offlineManager.db) {
+            const offlineData = {
+                ...saleData,
+                offline_id: 'OFF-' + Date.now(),
+                created_at: new Date().toISOString(),
+                synced: false
+            };
+            
+            const saved = await window.offlineManager.saveOfflineTransaction('sales', offlineData);
+            
+            // Also save to localStorage as backup
+            saveToLocalStorageBackup(offlineData);
+            
+            // Update pending count in UI
+            updateOfflinePendingBadge();
+            
+            return saved;
+        } else {
+            // Fallback to localStorage if IndexedDB not available
+            return saveToLocalStorageBackup({
+                ...saleData,
+                offline_id: 'OFF-' + Date.now(),
+                created_at: new Date().toISOString(),
+                synced: false
+            });
+        }
+    } catch (error) {
+        console.error('[POS Offline] Failed to save offline sale:', error);
+        // Try localStorage as last resort
+        return saveToLocalStorageBackup({
+            ...saleData,
+            offline_id: 'OFF-' + Date.now(),
+            created_at: new Date().toISOString(),
+            synced: false
+        });
+    }
+}
+
+/**
+ * Backup save to localStorage
+ */
+function saveToLocalStorageBackup(saleData) {
+    try {
+        const pendingSales = JSON.parse(localStorage.getItem('wapos_pending_sales') || '[]');
+        pendingSales.push(saleData);
+        localStorage.setItem('wapos_pending_sales', JSON.stringify(pendingSales));
+        console.log('[POS Offline] Sale saved to localStorage backup');
+        return true;
+    } catch (error) {
+        console.error('[POS Offline] localStorage backup failed:', error);
+        return false;
+    }
+}
+
+/**
+ * Update the pending badge in the header
+ */
+function updateOfflinePendingBadge() {
+    const badge = document.getElementById('pending-count');
+    if (badge) {
+        const pendingSales = JSON.parse(localStorage.getItem('wapos_pending_sales') || '[]');
+        let count = pendingSales.length;
+        
+        // Also count from IndexedDB if available
+        if (window.offlineManager) {
+            window.offlineManager.updatePendingCount();
+        } else {
+            badge.textContent = count;
+            badge.style.display = count > 0 ? 'inline' : 'none';
+        }
+    }
+}
+
+/**
+ * Sync pending sales from localStorage when online
+ */
+async function syncLocalStorageSales() {
+    if (!navigator.onLine) return;
+    
+    const pendingSales = JSON.parse(localStorage.getItem('wapos_pending_sales') || '[]');
+    if (pendingSales.length === 0) return;
+    
+    console.log(`[POS Offline] Syncing ${pendingSales.length} sales from localStorage...`);
+    
+    const synced = [];
+    const failed = [];
+    
+    for (const sale of pendingSales) {
+        try {
+            const response = await fetch('api/complete-sale.php', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-Sync-Request': 'true',
+                    'X-Offline-ID': sale.offline_id
+                },
+                body: JSON.stringify(sale)
+            });
+            
+            if (response.ok) {
+                synced.push(sale.offline_id);
+                console.log(`[POS Offline] Synced sale: ${sale.offline_id}`);
+            } else {
+                failed.push(sale);
+            }
+        } catch (error) {
+            failed.push(sale);
+            console.error(`[POS Offline] Failed to sync sale: ${sale.offline_id}`, error);
+        }
+    }
+    
+    // Update localStorage with only failed sales
+    localStorage.setItem('wapos_pending_sales', JSON.stringify(failed));
+    
+    // Update badge
+    updateOfflinePendingBadge();
+    
+    // Show notification
+    if (synced.length > 0) {
+        showSyncNotification(synced.length, failed.length);
+    }
+}
+
+/**
+ * Show sync notification
+ */
+function showSyncNotification(synced, failed) {
+    const toast = document.createElement('div');
+    toast.className = `alert alert-${failed > 0 ? 'warning' : 'success'} position-fixed shadow`;
+    toast.style.cssText = 'top: 80px; right: 20px; z-index: 9999; min-width: 300px;';
+    toast.innerHTML = `
+        <div class="d-flex align-items-center">
+            <i class="bi bi-${failed > 0 ? 'exclamation-triangle' : 'check-circle'} me-2 fs-4"></i>
+            <div>
+                <strong>Sync Complete</strong><br>
+                <small>${synced} sale(s) synced${failed > 0 ? `, ${failed} failed` : ''}</small>
+            </div>
+            <button type="button" class="btn-close ms-auto" onclick="this.parentElement.parentElement.remove()"></button>
+        </div>
+    `;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => toast.remove(), 5000);
+}
+
+// Listen for online event to sync
+window.addEventListener('online', function() {
+    console.log('[POS Offline] Back online - syncing pending sales...');
+    setTimeout(syncLocalStorageSales, 2000); // Wait 2 seconds for stable connection
+});
+
+// Check for pending sales on page load
+document.addEventListener('DOMContentLoaded', function() {
+    updateOfflinePendingBadge();
+    
+    // If online, try to sync any pending sales
+    if (navigator.onLine) {
+        setTimeout(syncLocalStorageSales, 3000);
+    }
 });
 </script>
 

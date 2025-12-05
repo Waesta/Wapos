@@ -9,6 +9,25 @@ $auth->requireRole('manager');
 
 $db = Database::getInstance();
 
+// Generate personalized greeting
+$hour = (int)date('H');
+$userName = $_SESSION['full_name'] ?? $_SESSION['username'] ?? 'Manager';
+$firstName = explode(' ', $userName)[0];
+
+if ($hour >= 5 && $hour < 12) {
+    $greeting = "Good morning";
+    $greetingIcon = "bi-sunrise";
+} elseif ($hour >= 12 && $hour < 17) {
+    $greeting = "Good afternoon";
+    $greetingIcon = "bi-sun";
+} else {
+    $greeting = "Good evening";
+    $greetingIcon = "bi-moon-stars";
+}
+
+$lastLogin = $_SESSION['last_login'] ?? null;
+$welcomeMessage = $lastLogin ? "Welcome back" : "Welcome";
+
 // Manager-specific metrics
 $today = date('Y-m-d');
 $monthStart = date('Y-m-01');
@@ -206,6 +225,19 @@ include '../includes/header.php';
 </style>
 
 <div class="manager-shell container-fluid py-4">
+    <!-- Personalized Greeting -->
+    <div class="alert alert-light border-0 shadow-sm mb-4" style="background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);">
+        <div class="d-flex align-items-center gap-3">
+            <div class="rounded-circle bg-success bg-opacity-10 p-3">
+                <i class="bi <?= $greetingIcon ?> text-success fs-4"></i>
+            </div>
+            <div>
+                <h4 class="mb-1"><?= $greeting ?>, <?= htmlspecialchars($firstName) ?>! 👋</h4>
+                <p class="mb-0 text-muted"><?= $welcomeMessage ?> to your dashboard. Today is <?= date('l, F j, Y') ?>.</p>
+            </div>
+        </div>
+    </div>
+
     <section class="manager-toolbar">
         <div class="stack-sm">
             <h1><i class="bi bi-briefcase-fill text-success me-2"></i>Manager Dashboard</h1>

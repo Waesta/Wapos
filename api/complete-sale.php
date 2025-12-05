@@ -79,12 +79,20 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $data = json_decode(file_get_contents('php://input'), true);
 
+// Check if this is an offline sync request
+$isSyncRequest = isset($_SERVER['HTTP_X_SYNC_REQUEST']) && $_SERVER['HTTP_X_SYNC_REQUEST'] === 'true';
+$offlineId = $_SERVER['HTTP_X_OFFLINE_ID'] ?? ($data['offline_id'] ?? null);
+
 if (!$data || empty($data['items']) || !is_array($data['items'])) {
     respondJson(400, ['success' => false, 'message' => 'Invalid sale payload'], ob_get_clean());
 }
 
-if (empty($data['csrf_token']) || !validateCSRFToken($data['csrf_token'])) {
-    respondJson(419, ['success' => false, 'message' => 'Invalid CSRF token'], ob_get_clean());
+// For sync requests, we may not have a valid CSRF token (it could have expired)
+// But we still require authentication (checked above)
+if (!$isSyncRequest) {
+    if (empty($data['csrf_token']) || !validateCSRFToken($data['csrf_token'])) {
+        respondJson(419, ['success' => false, 'message' => 'Invalid CSRF token'], ob_get_clean());
+    }
 }
 
 $items = [];
@@ -258,6 +266,16 @@ try {
             error_log('loyalty application failed: ' . $loyaltyError->getMessage());
             $result['loyalty_warning'] = $loyaltyError->getMessage();
         }
+    }
+
+    // Log offline sync if applicable
+    if ($isSyncRequest && $offlineId) {
+        logCompleteSaleError('Offline sale synced', [
+            'offline_id' => $offlineId,
+            'sale_id' => $result['sale_id'] ?? null,
+            'sale_number' => $result['sale_number'] ?? null
+        ]);
+        $result['synced_offline_id'] = $offlineId;
     }
 
     $buffer = ob_get_clean();

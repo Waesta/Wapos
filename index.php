@@ -781,17 +781,45 @@ $ctaButton = $cm->get('home_cta_button', 'Sign In to Dashboard');
                     </ul>
                 </article>
 
-                <!-- WhatsApp Integration -->
+                <!-- Notifications & Marketing -->
                 <article class="module-card">
-                    <div class="module-icon" style="background: rgba(37,211,102,0.12); color: #25D366;"><i class="bi bi-whatsapp" aria-hidden="true"></i></div>
-                    <h3>WhatsApp Business</h3>
+                    <div class="module-icon" style="background: rgba(37,211,102,0.12); color: #25D366;"><i class="bi bi-bell" aria-hidden="true"></i></div>
+                    <h3>Notifications & Marketing</h3>
                     <ul class="module-features">
-                        <li>Customer ordering via WhatsApp</li>
-                        <li>Room booking conversations</li>
-                        <li>Room service & housekeeping requests</li>
-                        <li>Order status notifications</li>
-                        <li>Staff inbox for message management</li>
-                        <li>QR codes for tables & rooms</li>
+                        <li>SMS via EgoSMS, SMSLeopard, Africa's Talking</li>
+                        <li>WhatsApp via AiSensy or Meta API</li>
+                        <li>Email campaigns & templates</li>
+                        <li>Birthday wishes & thank you messages</li>
+                        <li>Marketing campaigns & segmentation</li>
+                        <li>Usage billing for resellers</li>
+                    </ul>
+                </article>
+
+                <!-- Register & Till Management -->
+                <article class="module-card">
+                    <div class="module-icon" style="background: rgba(16,185,129,0.12); color: #10b981;"><i class="bi bi-cash-stack" aria-hidden="true"></i></div>
+                    <h3>Register & Till Management</h3>
+                    <ul class="module-features">
+                        <li>Multi-register support per location</li>
+                        <li>Cash drawer tracking & reconciliation</li>
+                        <li>X, Y, Z register reports</li>
+                        <li>Session-based cash management</li>
+                        <li>Register performance analytics</li>
+                        <li>Variance tracking & approval</li>
+                    </ul>
+                </article>
+
+                <!-- Location Analytics -->
+                <article class="module-card">
+                    <div class="module-icon" style="background: rgba(59,130,246,0.12); color: #3b82f6;"><i class="bi bi-geo-alt" aria-hidden="true"></i></div>
+                    <h3>Location Analytics</h3>
+                    <ul class="module-features">
+                        <li>Multi-location performance comparison</li>
+                        <li>Revenue & transaction trends</li>
+                        <li>Staff performance by location</li>
+                        <li>Top products per location</li>
+                        <li>Payment method breakdown</li>
+                        <li>Month-over-month growth tracking</li>
                     </ul>
                 </article>
 
@@ -864,6 +892,20 @@ $ctaButton = $cm->get('home_cta_button', 'Sign In to Dashboard');
                     <div>
                         <strong>Secure & Compliant</strong>
                         <span>GDPR ready, rate limiting, audit trails & encrypted sessions</span>
+                    </div>
+                </div>
+                <div class="capability">
+                    <i class="bi bi-chat-dots" aria-hidden="true"></i>
+                    <div>
+                        <strong>Multi-Channel Notifications</strong>
+                        <span>SMS, WhatsApp, Email — EgoSMS, SMSLeopard, AiSensy & more</span>
+                    </div>
+                </div>
+                <div class="capability">
+                    <i class="bi bi-cash-stack" aria-hidden="true"></i>
+                    <div>
+                        <strong>Register Management</strong>
+                        <span>Multi-register, session tracking, X/Y/Z reports & variance control</span>
                     </div>
                 </div>
             </div>

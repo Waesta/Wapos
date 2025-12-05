@@ -991,10 +991,13 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                         <i class="bi bi-wifi-off"></i>
                         <span>Offline</span>
                     </span>
-                    <button class="btn btn-sm btn-outline-secondary d-flex align-items-center" type="button" id="sync-button">
+                    <button class="btn btn-sm btn-outline-secondary d-flex align-items-center" type="button" id="sync-button" onclick="if(window.offlineManager) offlineManager.forceSyncAll(); else alert('Sync manager not ready');" title="Sync pending transactions">
                         <i class="bi bi-arrow-repeat me-1"></i>
                         Sync
-                        <span id="pending-count" class="badge bg-danger ms-2 d-none">0</span>
+                        <span id="pending-count" class="badge bg-danger ms-2" style="display: none;">0</span>
+                    </button>
+                    <button class="btn btn-sm btn-outline-warning d-flex align-items-center" type="button" onclick="if(window.offlineManager) offlineManager.showOfflineQueue(); else alert('Offline manager not ready');" title="View offline queue">
+                        <i class="bi bi-cloud-arrow-up"></i>
                     </button>
                 </div>
                 <div class="dropdown">

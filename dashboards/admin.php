@@ -9,6 +9,26 @@ $auth->requireRole('admin');
 
 $db = Database::getInstance();
 
+// Generate personalized greeting
+$hour = (int)date('H');
+$userName = $_SESSION['full_name'] ?? $_SESSION['username'] ?? 'Admin';
+$firstName = explode(' ', $userName)[0]; // Get first name
+
+if ($hour >= 5 && $hour < 12) {
+    $greeting = "Good morning";
+    $greetingIcon = "bi-sunrise";
+} elseif ($hour >= 12 && $hour < 17) {
+    $greeting = "Good afternoon";
+    $greetingIcon = "bi-sun";
+} else {
+    $greeting = "Good evening";
+    $greetingIcon = "bi-moon-stars";
+}
+
+// Check if returning user (has previous login)
+$lastLogin = $_SESSION['last_login'] ?? null;
+$welcomeMessage = $lastLogin ? "Welcome back" : "Welcome";
+
 // Admin-specific metrics
 $systemStats = [
     'users' => ($db->fetchOne("SELECT COUNT(*) as count FROM users WHERE is_active = 1") ?: ['count' => 0])['count'],
@@ -246,6 +266,19 @@ include '../includes/header.php';
 </style>
 
 <div class="admin-shell container-fluid py-4">
+    <!-- Personalized Greeting -->
+    <div class="alert alert-light border-0 shadow-sm mb-4" style="background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);">
+        <div class="d-flex align-items-center gap-3">
+            <div class="rounded-circle bg-primary bg-opacity-10 p-3">
+                <i class="bi <?= $greetingIcon ?> text-primary fs-4"></i>
+            </div>
+            <div>
+                <h4 class="mb-1"><?= $greeting ?>, <?= htmlspecialchars($firstName) ?>! 👋</h4>
+                <p class="mb-0 text-muted"><?= $welcomeMessage ?> to your dashboard. Today is <?= date('l, F j, Y') ?>.</p>
+            </div>
+        </div>
+    </div>
+
     <section class="admin-toolbar">
         <div class="stack-sm">
             <h1><i class="bi bi-shield-lock-fill text-primary me-2"></i>Administrative Dashboard</h1>
