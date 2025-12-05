@@ -781,6 +781,20 @@ $ctaButton = $cm->get('home_cta_button', 'Sign In to Dashboard');
                     </ul>
                 </article>
 
+                <!-- WhatsApp Integration -->
+                <article class="module-card">
+                    <div class="module-icon" style="background: rgba(37,211,102,0.12); color: #25D366;"><i class="bi bi-whatsapp" aria-hidden="true"></i></div>
+                    <h3>WhatsApp Business</h3>
+                    <ul class="module-features">
+                        <li>Customer ordering via WhatsApp</li>
+                        <li>Room booking conversations</li>
+                        <li>Room service & housekeeping requests</li>
+                        <li>Order status notifications</li>
+                        <li>Staff inbox for message management</li>
+                        <li>QR codes for tables & rooms</li>
+                    </ul>
+                </article>
+
                 <!-- Administration -->
                 <article class="module-card">
                     <div class="module-icon"><i class="bi bi-shield-lock" aria-hidden="true"></i></div>

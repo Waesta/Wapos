@@ -345,6 +345,7 @@ $pageDescription = 'Complete user manual and documentation for WAPOS - Point of 
                         <li><a href="#guest-portal"><i class="bi bi-shield-lock"></i> Guest Portal</a></li>
                         <li><a href="#accounting"><i class="bi bi-calculator"></i> Accounting</a></li>
                         <li><a href="#payments"><i class="bi bi-credit-card"></i> Payment Gateways</a></li>
+                        <li><a href="#whatsapp"><i class="bi bi-whatsapp" style="color:#25D366;"></i> WhatsApp</a></li>
                         <li><a href="#reports"><i class="bi bi-graph-up"></i> Reports</a></li>
                         <li><a href="#administration"><i class="bi bi-gear"></i> Administration</a></li>
                         <li><a href="#shortcuts"><i class="bi bi-keyboard"></i> Keyboard Shortcuts</a></li>
@@ -942,6 +943,113 @@ $pageDescription = 'Complete user manual and documentation for WAPOS - Point of 
                         <li>Process refund through M-Pesa if needed</li>
                         <li>Document discrepancy for reconciliation</li>
                     </ul>
+                </section>
+
+                <!-- WhatsApp Integration -->
+                <section id="whatsapp">
+                    <h2><i class="bi bi-whatsapp me-2" style="color: #25D366;"></i>WhatsApp Business Integration</h2>
+                    <p>Enable customers to interact with your business via WhatsApp for orders, bookings, and service requests.</p>
+
+                    <h3>Features Overview</h3>
+                    <ul>
+                        <li><strong>Restaurant Ordering</strong> - Customers browse menu, add to cart, and place orders</li>
+                        <li><strong>Room Bookings</strong> - Conversational booking flow for hospitality</li>
+                        <li><strong>Room Service</strong> - Guests order food to their room via WhatsApp</li>
+                        <li><strong>Housekeeping Requests</strong> - Request cleaning, towels, toiletries</li>
+                        <li><strong>Maintenance Reports</strong> - Report issues directly via chat</li>
+                        <li><strong>Order Status</strong> - Automatic notifications for order progress</li>
+                        <li><strong>Staff Inbox</strong> - View and respond to all WhatsApp messages</li>
+                    </ul>
+
+                    <h3>Setting Up WhatsApp</h3>
+                    <ol class="steps-list">
+                        <li>Go to <strong>Settings → Integrations & Notifications</strong></li>
+                        <li>Enable <strong>WhatsApp Notifications</strong></li>
+                        <li>Enter your Meta Business API credentials:
+                            <ul>
+                                <li><strong>Phone Number ID</strong> - From Meta Business dashboard</li>
+                                <li><strong>Access Token</strong> - Permanent token from System Users</li>
+                                <li><strong>Business Account ID</strong> - Your WhatsApp Business Account ID</li>
+                                <li><strong>Verify Token</strong> - Any secret string (set same in Meta)</li>
+                            </ul>
+                        </li>
+                        <li>Copy the <strong>Webhook URL</strong> shown in settings</li>
+                        <li>In Meta Business dashboard, configure webhook with this URL</li>
+                        <li>Enable <strong>Auto-Replies</strong> and <strong>Booking Confirmations</strong></li>
+                    </ol>
+
+                    <h3>Customer Commands</h3>
+                    <p>Customers can text these keywords to interact:</p>
+                    <table class="table table-bordered">
+                        <thead>
+                            <tr><th>Command</th><th>Action</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>MENU</code></td><td>Browse food menu and order</td></tr>
+                            <tr><td><code>CART</code></td><td>View shopping cart</td></tr>
+                            <tr><td><code>CHECKOUT</code></td><td>Place order (pickup or delivery)</td></tr>
+                            <tr><td><code>STATUS</code></td><td>Check order status</td></tr>
+                            <tr><td><code>REORDER</code></td><td>Repeat a previous order</td></tr>
+                            <tr><td><code>BOOK</code></td><td>Start room reservation</td></tr>
+                            <tr><td><code>ROOM SERVICE</code></td><td>Order food to room</td></tr>
+                            <tr><td><code>HOUSEKEEPING</code></td><td>Request cleaning service</td></tr>
+                            <tr><td><code>MAINTENANCE</code></td><td>Report an issue</td></tr>
+                            <tr><td><code>CONTACT</code></td><td>Get reception phone number</td></tr>
+                            <tr><td><code>CANCEL</code></td><td>Cancel current action</td></tr>
+                        </tbody>
+                    </table>
+
+                    <h3>WhatsApp Inbox (Staff)</h3>
+                    <p>Access via <strong>Property → WhatsApp Inbox</strong> in the sidebar.</p>
+                    <ul>
+                        <li><strong>Conversation List</strong> - All WhatsApp chats with unread badges</li>
+                        <li><strong>Message History</strong> - Full chat history per customer</li>
+                        <li><strong>Manual Replies</strong> - Respond directly to customers</li>
+                        <li><strong>Quick Replies</strong> - Pre-set responses for common scenarios</li>
+                        <li><strong>Customer Context</strong> - Shows booking info and customer details</li>
+                    </ul>
+
+                    <h3>QR Codes for Rooms & Tables</h3>
+                    <p>Generate QR codes that customers scan to start a WhatsApp conversation:</p>
+                    <ul>
+                        <li><strong>Room Cards</strong> - Place in hotel rooms for room service/housekeeping</li>
+                        <li><strong>Table Tents</strong> - Place on restaurant tables for ordering</li>
+                        <li><strong>Receipts</strong> - Digital receipts include WhatsApp reorder button</li>
+                    </ul>
+                    <p>Use the <code>WhatsAppHelper</code> class to generate QR codes programmatically.</p>
+
+                    <h3>Order Flow (Restaurant)</h3>
+                    <ol class="steps-list">
+                        <li>Customer texts <strong>MENU</strong></li>
+                        <li>System shows categories → customer selects one</li>
+                        <li>System shows items with prices</li>
+                        <li>Customer adds items: <code>1 x 2</code> (2 of item 1)</li>
+                        <li>Customer types <strong>CHECKOUT</strong></li>
+                        <li>System asks: Pickup or Delivery?</li>
+                        <li>For delivery: customer provides address</li>
+                        <li>Customer provides name</li>
+                        <li>System shows order summary → customer confirms</li>
+                        <li>Order created → customer receives confirmation</li>
+                        <li>Status updates sent: Preparing → Ready → Delivered</li>
+                    </ol>
+
+                    <h3>Booking Flow (Hospitality)</h3>
+                    <ol class="steps-list">
+                        <li>Customer texts <strong>BOOK</strong></li>
+                        <li>System shows available room types</li>
+                        <li>Customer selects room type</li>
+                        <li>Customer provides check-in date</li>
+                        <li>Customer provides check-out date</li>
+                        <li>Customer provides number of guests</li>
+                        <li>Customer provides name</li>
+                        <li>System shows booking summary with price</li>
+                        <li>Customer confirms → booking created</li>
+                        <li>WhatsApp confirmation sent with booking details</li>
+                    </ol>
+
+                    <div class="info-box success">
+                        <p><strong>Automatic Notifications:</strong> When bookings are created through the system (not just WhatsApp), customers with phone numbers automatically receive WhatsApp confirmations if enabled in settings.</p>
+                    </div>
                 </section>
 
                 <!-- Reports -->
