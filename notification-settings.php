@@ -24,7 +24,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['csrf_token']) && veri
         // SMS Settings
         'sms_provider', 'sms_api_key', 'sms_api_secret', 'sms_sender_id',
         // WhatsApp Settings
-        'whatsapp_access_token', 'whatsapp_phone_number_id', 'whatsapp_business_account_id',
+        'whatsapp_provider', 'whatsapp_access_token', 'whatsapp_phone_number_id', 'whatsapp_business_account_id',
+        // AiSensy Settings
+        'aisensy_api_key', 'aisensy_default_campaign',
         // General Settings
         'default_country_code', 'notification_admin_email',
         'auto_send_receipts', 'auto_birthday_wishes', 'auto_daily_summary'
@@ -33,8 +35,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['csrf_token']) && veri
     foreach ($settingsToSave as $key) {
         $value = $_POST[$key] ?? '';
         
-        // Don't overwrite password if empty (keep existing)
-        if (in_array($key, ['smtp_password', 'sms_api_secret', 'whatsapp_access_token']) && empty($value)) {
+        // Don't overwrite password/secrets if empty (keep existing)
+        if (in_array($key, ['smtp_password', 'sms_api_secret', 'whatsapp_access_token', 'aisensy_api_key']) && empty($value)) {
             continue;
         }
         
@@ -210,25 +212,70 @@ require_once 'includes/header.php';
                     <div class="card-body">
                         <div class="row g-3">
                             <div class="col-12">
-                                <label class="form-label">Access Token</label>
-                                <input type="password" class="form-control" name="whatsapp_access_token" 
-                                       placeholder="<?= !empty($settings['whatsapp_access_token']) ? '••••••••' : 'Enter access token' ?>">
+                                <label class="form-label">WhatsApp Provider</label>
+                                <select class="form-select" name="whatsapp_provider" id="whatsappProvider">
+                                    <option value="aisensy" <?= ($settings['whatsapp_provider'] ?? '') === 'aisensy' ? 'selected' : '' ?>>AiSensy (Recommended - Easy Setup)</option>
+                                    <option value="meta" <?= ($settings['whatsapp_provider'] ?? 'meta') === 'meta' ? 'selected' : '' ?>>Meta Direct API (Advanced)</option>
+                                </select>
                             </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Phone Number ID</label>
-                                <input type="text" class="form-control" name="whatsapp_phone_number_id" 
-                                       value="<?= htmlspecialchars($settings['whatsapp_phone_number_id'] ?? '') ?>">
+                            
+                            <!-- AiSensy Settings -->
+                            <div id="aisensySettings" class="col-12">
+                                <div class="card bg-light">
+                                    <div class="card-body">
+                                        <h6 class="card-title"><i class="bi bi-lightning me-1"></i>AiSensy Configuration</h6>
+                                        <div class="row g-3">
+                                            <div class="col-12">
+                                                <label class="form-label">API Key</label>
+                                                <input type="password" class="form-control" name="aisensy_api_key" 
+                                                       placeholder="<?= !empty($settings['aisensy_api_key']) ? '••••••••' : 'Enter AiSensy API key' ?>">
+                                                <small class="text-muted">Get from AiSensy Dashboard → Manage → API Key</small>
+                                            </div>
+                                            <div class="col-12">
+                                                <label class="form-label">Default Campaign Name</label>
+                                                <input type="text" class="form-control" name="aisensy_default_campaign" 
+                                                       value="<?= htmlspecialchars($settings['aisensy_default_campaign'] ?? '') ?>"
+                                                       placeholder="e.g., order_notification">
+                                                <small class="text-muted">Create an API Campaign in AiSensy first, then enter its name here</small>
+                                            </div>
+                                        </div>
+                                        <div class="alert alert-success mt-3 mb-0">
+                                            <i class="bi bi-check-circle me-2"></i>
+                                            <strong>AiSensy Benefits:</strong> Easy setup, no Meta verification needed, pre-built templates.
+                                            <a href="https://aisensy.com/" target="_blank">Sign up at aisensy.com</a>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Business Account ID</label>
-                                <input type="text" class="form-control" name="whatsapp_business_account_id" 
-                                       value="<?= htmlspecialchars($settings['whatsapp_business_account_id'] ?? '') ?>">
-                            </div>
-                            <div class="col-12">
-                                <div class="alert alert-info mb-0">
-                                    <i class="bi bi-info-circle me-2"></i>
-                                    WhatsApp Business API requires a Meta Business account. 
-                                    <a href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started" target="_blank">Learn more</a>
+                            
+                            <!-- Meta Direct Settings -->
+                            <div id="metaSettings" class="col-12 d-none">
+                                <div class="card bg-light">
+                                    <div class="card-body">
+                                        <h6 class="card-title"><i class="bi bi-meta me-1"></i>Meta Direct API</h6>
+                                        <div class="row g-3">
+                                            <div class="col-12">
+                                                <label class="form-label">Access Token</label>
+                                                <input type="password" class="form-control" name="whatsapp_access_token" 
+                                                       placeholder="<?= !empty($settings['whatsapp_access_token']) ? '••••••••' : 'Enter access token' ?>">
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label">Phone Number ID</label>
+                                                <input type="text" class="form-control" name="whatsapp_phone_number_id" 
+                                                       value="<?= htmlspecialchars($settings['whatsapp_phone_number_id'] ?? '') ?>">
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label">Business Account ID</label>
+                                                <input type="text" class="form-control" name="whatsapp_business_account_id" 
+                                                       value="<?= htmlspecialchars($settings['whatsapp_business_account_id'] ?? '') ?>">
+                                            </div>
+                                        </div>
+                                        <div class="alert alert-warning mt-3 mb-0">
+                                            <i class="bi bi-exclamation-triangle me-2"></i>
+                                            Requires Meta Business verification. 
+                                            <a href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started" target="_blank">Setup guide</a>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -364,6 +411,24 @@ document.getElementById('smsProvider').addEventListener('change', function() {
 
 // Trigger on page load
 document.getElementById('smsProvider').dispatchEvent(new Event('change'));
+
+// WhatsApp provider toggle
+document.getElementById('whatsappProvider').addEventListener('change', function() {
+    const provider = this.value;
+    const aisensySettings = document.getElementById('aisensySettings');
+    const metaSettings = document.getElementById('metaSettings');
+    
+    if (provider === 'aisensy') {
+        aisensySettings.classList.remove('d-none');
+        metaSettings.classList.add('d-none');
+    } else {
+        aisensySettings.classList.add('d-none');
+        metaSettings.classList.remove('d-none');
+    }
+});
+
+// Trigger WhatsApp provider on page load
+document.getElementById('whatsappProvider').dispatchEvent(new Event('change'));
 </script>
 
 <?php require_once 'includes/footer.php'; ?>

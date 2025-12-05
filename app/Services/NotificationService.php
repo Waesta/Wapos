@@ -440,11 +440,27 @@ class NotificationService
      */
     private function sendWhatsApp(string $phone, string $message, array $options = []): array
     {
+        $provider = $this->settings['whatsapp_provider'] ?? 'meta';
+        
+        switch ($provider) {
+            case 'aisensy':
+                return $this->sendAiSensyWhatsApp($phone, $message, $options);
+            case 'meta':
+            default:
+                return $this->sendMetaWhatsApp($phone, $message, $options);
+        }
+    }
+
+    /**
+     * Send WhatsApp via Meta Business API (Direct)
+     */
+    private function sendMetaWhatsApp(string $phone, string $message, array $options = []): array
+    {
         $accessToken = $this->settings['whatsapp_access_token'] ?? '';
         $phoneNumberId = $this->settings['whatsapp_phone_number_id'] ?? '';
 
         if (empty($accessToken) || empty($phoneNumberId)) {
-            return ['success' => false, 'message' => 'WhatsApp not configured'];
+            return ['success' => false, 'message' => 'Meta WhatsApp not configured'];
         }
 
         $phone = $this->normalizePhoneNumber($phone, false);
@@ -488,10 +504,89 @@ class NotificationService
         curl_close($ch);
 
         if ($httpCode === 200) {
-            return ['success' => true, 'message' => 'WhatsApp message sent'];
+            return ['success' => true, 'message' => 'WhatsApp message sent via Meta'];
         }
 
-        return ['success' => false, 'message' => "WhatsApp failed: $response"];
+        return ['success' => false, 'message' => "Meta WhatsApp failed: $response"];
+    }
+
+    /**
+     * Send WhatsApp via AiSensy
+     * https://aisensy.com/
+     * API Docs: https://wiki.aisensy.com/en/articles/11501889-api-reference-docs
+     */
+    private function sendAiSensyWhatsApp(string $phone, string $message, array $options = []): array
+    {
+        $apiKey = $this->settings['aisensy_api_key'] ?? '';
+        $campaignName = $options['campaign'] ?? ($this->settings['aisensy_default_campaign'] ?? '');
+
+        if (empty($apiKey)) {
+            return ['success' => false, 'message' => 'AiSensy API key not configured'];
+        }
+
+        if (empty($campaignName)) {
+            return ['success' => false, 'message' => 'AiSensy campaign name not configured'];
+        }
+
+        $phone = $this->normalizePhoneNumber($phone, true);
+        $url = 'https://backend.aisensy.com/campaign/t1/api/v2';
+
+        $payload = [
+            'apiKey' => $apiKey,
+            'campaignName' => $campaignName,
+            'destination' => $phone,
+            'userName' => $options['user_name'] ?? ($options['recipient_name'] ?? 'Customer'),
+            'source' => $options['source'] ?? 'WAPOS'
+        ];
+
+        // Add template parameters if provided
+        if (!empty($options['template_params'])) {
+            $payload['templateParams'] = (array)$options['template_params'];
+        }
+
+        // Add media if provided
+        if (!empty($options['media_url'])) {
+            $payload['media'] = [
+                'url' => $options['media_url'],
+                'filename' => $options['media_filename'] ?? 'file'
+            ];
+        }
+
+        // Add tags if provided
+        if (!empty($options['tags'])) {
+            $payload['tags'] = (array)$options['tags'];
+        }
+
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode($payload),
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/json',
+                'Accept: application/json'
+            ],
+            CURLOPT_TIMEOUT => 30
+        ]);
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+
+        if ($curlError) {
+            return ['success' => false, 'message' => "AiSensy connection error: $curlError"];
+        }
+
+        $result = json_decode($response, true);
+
+        // AiSensy returns success status
+        if ($httpCode === 200 && isset($result['status']) && strtolower($result['status']) === 'success') {
+            return ['success' => true, 'message' => 'WhatsApp sent via AiSensy', 'provider_response' => $result];
+        }
+
+        $errorMsg = $result['message'] ?? $result['error'] ?? $response;
+        return ['success' => false, 'message' => "AiSensy failed: $errorMsg"];
     }
 
     /**
