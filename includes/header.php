@@ -537,6 +537,14 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'module' => 'customers'
                             ],
                             [
+                                'roles' => ['super_admin','developer'],
+                                'href' => '/wapos/notification-usage.php',
+                                'page' => 'notification-usage.php',
+                                'icon' => 'bi-bar-chart-line',
+                                'label' => 'Notification Billing',
+                                'module' => 'customers'
+                            ],
+                            [
                                 'roles' => ['admin','manager','cashier','accountant'],
                                 'href' => '/wapos/sales.php',
                                 'page' => 'sales.php',

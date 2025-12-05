@@ -195,5 +195,20 @@ INSERT INTO settings (setting_key, setting_value) VALUES
 ('notification_admin_email', ''),
 ('auto_send_receipts', '0'),
 ('auto_birthday_wishes', '1'),
-('auto_daily_summary', '0')
+('auto_daily_summary', '0'),
+-- WhatsApp settings
+('whatsapp_provider', 'aisensy'),
+('whatsapp_access_token', ''),
+('whatsapp_phone_number_id', ''),
+('whatsapp_business_account_id', ''),
+('aisensy_api_key', ''),
+('aisensy_default_campaign', ''),
+-- Billing/Pricing settings (for super_admin)
+('billing_enabled', '1'),
+('sms_cost_per_message', '0.50'),
+('sms_provider_cost', '0.30'),
+('whatsapp_cost_per_message', '0.30'),
+('whatsapp_provider_cost', '0.15'),
+('email_cost_per_message', '0.05'),
+('email_provider_cost', '0.01')
 ON DUPLICATE KEY UPDATE setting_key = setting_key;
