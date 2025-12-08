@@ -22,30 +22,30 @@ ON DUPLICATE KEY UPDATE name = VALUES(name), address = VALUES(address);
 -- ============================================================
 -- 2. USERS (Various roles)
 -- ============================================================
--- Password for all test users: password123 (hashed)
+-- Password for all test users: Thepurpose@2025 (hashed)
 INSERT INTO users (username, password, full_name, email, phone, role, location_id, is_active, created_at) VALUES
 -- Super Admin
-('superadmin', '$2y$10$7Y8Eq7nZQJv6pE1S90L1ge0P5wIvmDbCT4ZjS9ME1lPivc8eGDS5a', 'Super Administrator', 'admin@waesta.com', '+256-700-000-001', 'developer', 1, 1, NOW()),
+('superadmin', '$2y$10$eHysVRSbGvkHpPg4.PxdPOQ4T1QekzEshLz4DoxexnctyNnZo0zsG', 'Super Administrator', 'admin@waesta.com', '+256-700-000-001', 'developer', 1, 1, NOW()),
 -- Admins
-('admin_kampala', '$2y$10$7Y8Eq7nZQJv6pE1S90L1ge0P5wIvmDbCT4ZjS9ME1lPivc8eGDS5a', 'John Mukasa', 'john@waesta.com', '+256-700-000-002', 'admin', 1, 1, NOW()),
-('admin_nairobi', '$2y$10$7Y8Eq7nZQJv6pE1S90L1ge0P5wIvmDbCT4ZjS9ME1lPivc8eGDS5a', 'Mary Wanjiku', 'mary@waesta.com', '+254-700-000-003', 'admin', 2, 1, NOW()),
+('admin_kampala', '$2y$10$eHysVRSbGvkHpPg4.PxdPOQ4T1QekzEshLz4DoxexnctyNnZo0zsG', 'John Mukasa', 'john@waesta.com', '+256-700-000-002', 'admin', 1, 1, NOW()),
+('admin_nairobi', '$2y$10$eHysVRSbGvkHpPg4.PxdPOQ4T1QekzEshLz4DoxexnctyNnZo0zsG', 'Mary Wanjiku', 'mary@waesta.com', '+254-700-000-003', 'admin', 2, 1, NOW()),
 -- Managers
-('manager_kampala', '$2y$10$7Y8Eq7nZQJv6pE1S90L1ge0P5wIvmDbCT4ZjS9ME1lPivc8eGDS5a', 'Peter Okello', 'peter@waesta.com', '+256-700-000-004', 'manager', 1, 1, NOW()),
-('manager_nairobi', '$2y$10$7Y8Eq7nZQJv6pE1S90L1ge0P5wIvmDbCT4ZjS9ME1lPivc8eGDS5a', 'Grace Muthoni', 'grace@waesta.com', '+254-700-000-005', 'manager', 2, 1, NOW()),
-('manager_kigali', '$2y$10$7Y8Eq7nZQJv6pE1S90L1ge0P5wIvmDbCT4ZjS9ME1lPivc8eGDS5a', 'Jean Baptiste', 'jean@waesta.com', '+250-788-000-006', 'manager', 3, 1, NOW()),
+('manager_kampala', '$2y$10$eHysVRSbGvkHpPg4.PxdPOQ4T1QekzEshLz4DoxexnctyNnZo0zsG', 'Peter Okello', 'peter@waesta.com', '+256-700-000-004', 'manager', 1, 1, NOW()),
+('manager_nairobi', '$2y$10$eHysVRSbGvkHpPg4.PxdPOQ4T1QekzEshLz4DoxexnctyNnZo0zsG', 'Grace Muthoni', 'grace@waesta.com', '+254-700-000-005', 'manager', 2, 1, NOW()),
+('manager_kigali', '$2y$10$eHysVRSbGvkHpPg4.PxdPOQ4T1QekzEshLz4DoxexnctyNnZo0zsG', 'Jean Baptiste', 'jean@waesta.com', '+250-788-000-006', 'manager', 3, 1, NOW()),
 -- Cashiers
-('cashier1', '$2y$10$7Y8Eq7nZQJv6pE1S90L1ge0P5wIvmDbCT4ZjS9ME1lPivc8eGDS5a', 'Sarah Nambi', 'sarah@waesta.com', '+256-700-000-007', 'cashier', 1, 1, NOW()),
-('cashier2', '$2y$10$7Y8Eq7nZQJv6pE1S90L1ge0P5wIvmDbCT4ZjS9ME1lPivc8eGDS5a', 'David Ochieng', 'david@waesta.com', '+254-700-000-008', 'cashier', 2, 1, NOW()),
-('cashier3', '$2y$10$7Y8Eq7nZQJv6pE1S90L1ge0P5wIvmDbCT4ZjS9ME1lPivc8eGDS5a', 'Alice Uwimana', 'alice@waesta.com', '+250-788-000-009', 'cashier', 3, 1, NOW()),
-('cashier4', '$2y$10$7Y8Eq7nZQJv6pE1S90L1ge0P5wIvmDbCT4ZjS9ME1lPivc8eGDS5a', 'James Kamau', 'james@waesta.com', '+254-700-000-010', 'cashier', 4, 1, NOW()),
+('cashier1', '$2y$10$eHysVRSbGvkHpPg4.PxdPOQ4T1QekzEshLz4DoxexnctyNnZo0zsG', 'Sarah Nambi', 'sarah@waesta.com', '+256-700-000-007', 'cashier', 1, 1, NOW()),
+('cashier2', '$2y$10$eHysVRSbGvkHpPg4.PxdPOQ4T1QekzEshLz4DoxexnctyNnZo0zsG', 'David Ochieng', 'david@waesta.com', '+254-700-000-008', 'cashier', 2, 1, NOW()),
+('cashier3', '$2y$10$eHysVRSbGvkHpPg4.PxdPOQ4T1QekzEshLz4DoxexnctyNnZo0zsG', 'Alice Uwimana', 'alice@waesta.com', '+250-788-000-009', 'cashier', 3, 1, NOW()),
+('cashier4', '$2y$10$eHysVRSbGvkHpPg4.PxdPOQ4T1QekzEshLz4DoxexnctyNnZo0zsG', 'James Kamau', 'james@waesta.com', '+254-700-000-010', 'cashier', 4, 1, NOW()),
 -- Waiters
-('waiter1', '$2y$10$7Y8Eq7nZQJv6pE1S90L1ge0P5wIvmDbCT4ZjS9ME1lPivc8eGDS5a', 'Moses Ssemakula', 'moses@waesta.com', '+256-700-000-011', 'waiter', 1, 1, NOW()),
-('waiter2', '$2y$10$7Y8Eq7nZQJv6pE1S90L1ge0P5wIvmDbCT4ZjS9ME1lPivc8eGDS5a', 'Faith Njeri', 'faith@waesta.com', '+254-700-000-012', 'waiter', 2, 1, NOW()),
+('waiter1', '$2y$10$eHysVRSbGvkHpPg4.PxdPOQ4T1QekzEshLz4DoxexnctyNnZo0zsG', 'Moses Ssemakula', 'moses@waesta.com', '+256-700-000-011', 'waiter', 1, 1, NOW()),
+('waiter2', '$2y$10$eHysVRSbGvkHpPg4.PxdPOQ4T1QekzEshLz4DoxexnctyNnZo0zsG', 'Faith Njeri', 'faith@waesta.com', '+254-700-000-012', 'waiter', 2, 1, NOW()),
 -- Accountant
-('accountant', '$2y$10$7Y8Eq7nZQJv6pE1S90L1ge0P5wIvmDbCT4ZjS9ME1lPivc8eGDS5a', 'Robert Kato', 'robert@waesta.com', '+256-700-000-013', 'accountant', 1, 1, NOW()),
+('accountant', '$2y$10$eHysVRSbGvkHpPg4.PxdPOQ4T1QekzEshLz4DoxexnctyNnZo0zsG', 'Robert Kato', 'robert@waesta.com', '+256-700-000-013', 'accountant', 1, 1, NOW()),
 -- Riders
-('rider1', '$2y$10$7Y8Eq7nZQJv6pE1S90L1ge0P5wIvmDbCT4ZjS9ME1lPivc8eGDS5a', 'Emmanuel Mugisha', 'emmanuel@waesta.com', '+256-700-000-014', 'rider', 1, 1, NOW()),
-('rider2', '$2y$10$7Y8Eq7nZQJv6pE1S90L1ge0P5wIvmDbCT4ZjS9ME1lPivc8eGDS5a', 'Joseph Otieno', 'joseph@waesta.com', '+254-700-000-015', 'rider', 2, 1, NOW())
+('rider1', '$2y$10$eHysVRSbGvkHpPg4.PxdPOQ4T1QekzEshLz4DoxexnctyNnZo0zsG', 'Emmanuel Mugisha', 'emmanuel@waesta.com', '+256-700-000-014', 'rider', 1, 1, NOW()),
+('rider2', '$2y$10$eHysVRSbGvkHpPg4.PxdPOQ4T1QekzEshLz4DoxexnctyNnZo0zsG', 'Joseph Otieno', 'joseph@waesta.com', '+254-700-000-015', 'rider', 2, 1, NOW())
 ON DUPLICATE KEY UPDATE full_name = VALUES(full_name), role = VALUES(role);
 
 -- ============================================================
@@ -302,8 +302,8 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- Sample Notification Logs: 100+
 -- 
 -- Test Login Credentials:
--- Username: superadmin | Password: password123 | Role: developer
--- Username: admin_kampala | Password: password123 | Role: admin
--- Username: manager_kampala | Password: password123 | Role: manager
--- Username: cashier1 | Password: password123 | Role: cashier
+-- Username: superadmin | Password: Thepurpose@2025 | Role: developer
+-- Username: admin_kampala | Password: Thepurpose@2025 | Role: admin
+-- Username: manager_kampala | Password: Thepurpose@2025 | Role: manager
+-- Username: cashier1 | Password: Thepurpose@2025 | Role: cashier
 -- ============================================================

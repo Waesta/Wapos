@@ -32,7 +32,7 @@ ON DUPLICATE KEY UPDATE
 -- 3. Super Admin User
 INSERT INTO users (username, password, full_name, email, phone, role, is_active, created_at)
 VALUES
-    ('superadmin', '$2y$10$7Y8Eq7nZQJv6pE1S90L1ge0P5wIvmDbCT4ZjS9ME1lPivc8eGDS5a', 'Super Administrator', 'admin@waesta.com', '+254701111111', 'developer', 1, NOW())
+    ('superadmin', '$2y$10$eHysVRSbGvkHpPg4.PxdPOQ4T1QekzEshLz4DoxexnctyNnZo0zsG', 'Super Administrator', 'admin@waesta.com', '+254701111111', 'developer', 1, NOW())
 ON DUPLICATE KEY UPDATE
     full_name = VALUES(full_name),
     email = VALUES(email),

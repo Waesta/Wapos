@@ -13,8 +13,7 @@ This guide covers deploying WAPOS on **cPanel/Shared Hosting** and **Cloud Platf
 ```
 URL: https://yourdomain.com
 Username: superadmin
-Password: admin123
-⚠️ CHANGE IMMEDIATELY AFTER FIRST LOGIN!
+Password: Thepurpose@2025
 ```
 
 ---

@@ -59,14 +59,13 @@ $pageTitle = 'Sample Test Data & Testing Guide - WAPOS';
                 <table class="data-table">
                     <thead><tr><th>Username</th><th>Password</th><th>Role</th><th>Full Name</th></tr></thead>
                     <tbody>
-                        <tr><td><code>admin</code></td><td><code>Admin@123</code></td><td><span class="badge-role badge-admin">Admin</span></td><td>John Administrator</td></tr>
-                        <tr><td><code>manager1</code></td><td><code>Manager@123</code></td><td><span class="badge-role badge-manager">Manager</span></td><td>Sarah Manager</td></tr>
-                        <tr><td><code>cashier1</code></td><td><code>Cashier@123</code></td><td><span class="badge-role badge-cashier">Cashier</span></td><td>Mike Cashier</td></tr>
-                        <tr><td><code>waiter1</code></td><td><code>Waiter@123</code></td><td><span class="badge-role" style="background:#ca8a04;color:#fff;">Waiter</span></td><td>Grace Waiter</td></tr>
-                        <tr><td><code>rider1</code></td><td><code>Rider@123</code></td><td><span class="badge-role" style="background:#7c3aed;color:#fff;">Rider</span></td><td>Peter Rider</td></tr>
-                        <tr><td><code>frontdesk</code></td><td><code>Front@123</code></td><td><span class="badge-role" style="background:#0891b2;color:#fff;">Frontdesk</span></td><td>Alice Reception</td></tr>
-                        <tr><td><code>housekeeper1</code></td><td><code>House@123</code></td><td><span class="badge-role" style="background:#ec4899;color:#fff;">Housekeeper</span></td><td>Mary Cleaner</td></tr>
-                        <tr><td><code>technician1</code></td><td><code>Tech@123</code></td><td><span class="badge-role" style="background:#f97316;color:#fff;">Technician</span></td><td>James Fixer</td></tr>
+                        <tr><td><code>superadmin</code></td><td><code>Thepurpose@2025</code></td><td><span class="badge-role" style="background:#000;color:#fff;">Developer</span></td><td>Super Administrator</td></tr>
+                        <tr><td><code>admin_kampala</code></td><td><code>Thepurpose@2025</code></td><td><span class="badge-role badge-admin">Admin</span></td><td>John Mukasa</td></tr>
+                        <tr><td><code>manager_kampala</code></td><td><code>Thepurpose@2025</code></td><td><span class="badge-role badge-manager">Manager</span></td><td>Peter Okello</td></tr>
+                        <tr><td><code>cashier1</code></td><td><code>Thepurpose@2025</code></td><td><span class="badge-role badge-cashier">Cashier</span></td><td>Sarah Nambi</td></tr>
+                        <tr><td><code>waiter1</code></td><td><code>Thepurpose@2025</code></td><td><span class="badge-role" style="background:#ca8a04;color:#fff;">Waiter</span></td><td>Moses Ssemakula</td></tr>
+                        <tr><td><code>accountant</code></td><td><code>Thepurpose@2025</code></td><td><span class="badge-role" style="background:#0891b2;color:#fff;">Accountant</span></td><td>Robert Kato</td></tr>
+                        <tr><td><code>rider1</code></td><td><code>Thepurpose@2025</code></td><td><span class="badge-role" style="background:#7c3aed;color:#fff;">Rider</span></td><td>Emmanuel Mugisha</td></tr>
                     </tbody>
                 </table>
             </div>

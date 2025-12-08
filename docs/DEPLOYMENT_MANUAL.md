@@ -286,9 +286,8 @@ RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 3. Default login:
    ```
    Username: superadmin
-   Password: admin123
+   Password: Thepurpose@2025
    ```
-4. **IMMEDIATELY change the password!**
 
 ---
 
@@ -1015,9 +1014,7 @@ Use free monitoring services:
 ```
 URL: https://yourdomain.com
 Username: superadmin
-Password: admin123
-
-⚠️ CHANGE IMMEDIATELY AFTER FIRST LOGIN!
+Password: Thepurpose@2025
 ```
 
 ### Support Contacts
