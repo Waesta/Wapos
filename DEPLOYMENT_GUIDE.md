@@ -2,6 +2,21 @@
 
 This guide covers deploying WAPOS on **cPanel/Shared Hosting** and **Cloud Platforms**.
 
+> 📚 **For a comprehensive deployment manual with detailed instructions, see:**  
+> **[docs/DEPLOYMENT_MANUAL.md](docs/DEPLOYMENT_MANUAL.md)**
+
+---
+
+## Quick Start
+
+### Default Login Credentials
+```
+URL: https://yourdomain.com
+Username: superadmin
+Password: admin123
+⚠️ CHANGE IMMEDIATELY AFTER FIRST LOGIN!
+```
+
 ---
 
 ## System Requirements
