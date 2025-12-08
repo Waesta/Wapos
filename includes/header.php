@@ -498,7 +498,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'href' => '/wapos/feedback.php',
                                 'page' => 'feedback.php',
                                 'icon' => 'bi-chat-dots',
-                                'label' => 'Demo Feedback'
+                                'label' => 'User Feedback'
                             ],
                             [
                                 'roles' => ['admin','manager','super_admin','developer'],

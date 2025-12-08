@@ -2,7 +2,7 @@
 require_once 'includes/bootstrap.php';
 $auth->requireLogin();
 
-$pageTitle = 'Feedback';
+$pageTitle = 'User Feedback';
 include 'includes/header.php';
 ?>
 
