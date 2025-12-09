@@ -3,8 +3,8 @@ require_once 'includes/bootstrap.php';
 $auth->requireLogin();
 
 // Check permission
-$user = $auth->getUser();
-if (!$user || !in_array($user['role'], ['admin', 'manager', 'accountant', 'developer', 'super_admin'])) {
+$userRole = $auth->getRole();
+if (!$userRole || !in_array($userRole, ['admin', 'manager', 'accountant', 'developer', 'super_admin'])) {
     $_SESSION['error_message'] = 'You do not have permission to view void reports.';
     redirectToDashboard($auth);
 }

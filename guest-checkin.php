@@ -213,7 +213,7 @@ $pageTitle = 'Guest Self-Service';
                 </div>
             </div>
             
-            <a href="index.php" class="btn btn-link mt-3">
+            <a href="<?= APP_URL ?>/" class="btn btn-link mt-3">
                 <i class="bi bi-arrow-left me-1"></i>Back to Home
             </a>
         </div>

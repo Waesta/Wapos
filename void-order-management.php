@@ -3,8 +3,8 @@ require_once 'includes/bootstrap.php';
 $auth->requireLogin();
 
 // Check void permission - simplified for now
-$user = $auth->getUser();
-if (!$user || !in_array($user['role'], ['admin', 'manager', 'developer', 'super_admin'])) {
+$userRole = $auth->getRole();
+if (!$userRole || !in_array($userRole, ['admin', 'manager', 'developer', 'super_admin'])) {
     $_SESSION['error_message'] = 'You do not have permission to void orders. Manager or Admin role required.';
     redirectToDashboard($auth);
 }

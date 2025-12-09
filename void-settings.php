@@ -3,8 +3,8 @@ require_once 'includes/bootstrap.php';
 $auth->requireLogin();
 
 // Check admin permission - simplified for now
-$user = $auth->getUser();
-if (!$user || !in_array($user['role'], ['admin', 'developer', 'super_admin'])) {
+$userRole = $auth->getRole();
+if (!$userRole || !in_array($userRole, ['admin', 'developer', 'super_admin'])) {
     $_SESSION['error_message'] = 'You do not have permission to manage void settings. Admin role required.';
     redirectToDashboard($auth);
 }
