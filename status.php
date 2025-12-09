@@ -198,11 +198,13 @@ $pageTitle = 'System Status';
                                         <ul class="list-unstyled mb-0">
                                             <li>✅ Restaurant Orders & KDS</li>
                                             <li>✅ Bar & Beverage (Portions/Tots)</li>
+                                            <li>✅ Bar Tabs & BOT System</li>
+                                            <li>✅ Bar KDS & Floor Plan</li>
+                                            <li>✅ Happy Hour Automation</li>
                                             <li>✅ Digital Menu & QR Codes</li>
                                             <li>✅ Room Booking & Folios</li>
-                                            <li>✅ Housekeeping Tasks</li>
                                             <li>✅ Housekeeping Inventory</li>
-                                            <li>✅ Maintenance Requests</li>
+                                            <li>✅ Employee Time Clock</li>
                                             <li>✅ Delivery & Tracking</li>
                                         </ul>
                                     </div>

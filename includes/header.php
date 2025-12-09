@@ -688,12 +688,60 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'module' => 'bar'
                             ],
                             [
+                                'roles' => ['admin','manager','bartender','waiter','cashier'],
+                                'href' => '/wapos/bar-pos.php',
+                                'page' => 'bar-pos.php',
+                                'icon' => 'bi-wallet2',
+                                'label' => 'Bar POS & Tabs',
+                                'module' => 'bar'
+                            ],
+                            [
+                                'roles' => ['admin','manager','bartender'],
+                                'href' => '/wapos/bar-kds.php',
+                                'page' => 'bar-kds.php',
+                                'icon' => 'bi-display',
+                                'label' => 'Bar Display (KDS)',
+                                'module' => 'bar'
+                            ],
+                            [
+                                'roles' => ['admin','manager','bartender'],
+                                'href' => '/wapos/bartender-dashboard.php',
+                                'page' => 'bartender-dashboard.php',
+                                'icon' => 'bi-speedometer2',
+                                'label' => 'Bartender Stats',
+                                'module' => 'bar'
+                            ],
+                            [
                                 'roles' => ['admin','manager'],
-                                'href' => '/wapos/generate-table-qr.php',
-                                'page' => 'generate-table-qr.php',
+                                'href' => '/wapos/happy-hour.php',
+                                'page' => 'happy-hour.php',
+                                'icon' => 'bi-clock-history',
+                                'label' => 'Happy Hour',
+                                'module' => 'bar'
+                            ],
+                            [
+                                'roles' => ['admin','manager'],
+                                'href' => '/wapos/bar-floor-plan.php',
+                                'page' => 'bar-floor-plan.php',
+                                'icon' => 'bi-grid-3x3',
+                                'label' => 'Floor Plan',
+                                'module' => 'bar'
+                            ],
+                            [
+                                'roles' => ['admin','manager','frontdesk','waiter','bartender'],
+                                'href' => '/wapos/qr-generator.php',
+                                'page' => 'qr-generator.php',
                                 'icon' => 'bi-qr-code',
-                                'label' => 'Digital Menu QR',
+                                'label' => 'QR Code Generator',
                                 'module' => 'restaurant'
+                            ],
+                            [
+                                'roles' => ['admin','manager','frontdesk'],
+                                'href' => '/wapos/guest-checkin.php',
+                                'page' => 'guest-checkin.php',
+                                'icon' => 'bi-door-open',
+                                'label' => 'Guest Self Check-in',
+                                'module' => 'rooms'
                             ]
                         ]
                     ],
@@ -870,6 +918,14 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'page' => 'users.php',
                                 'icon' => 'bi-person-gear',
                                 'label' => 'Users',
+                                'module' => 'users'
+                            ],
+                            [
+                                'roles' => ['admin','manager','cashier','waiter','bartender','housekeeping_staff','maintenance_staff','frontdesk'],
+                                'href' => '/wapos/time-clock.php',
+                                'page' => 'time-clock.php',
+                                'icon' => 'bi-clock-history',
+                                'label' => 'Time Clock',
                                 'module' => 'users'
                             ],
                             [

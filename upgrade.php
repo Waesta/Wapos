@@ -79,6 +79,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'path' => __DIR__ . '/database/migrations/011_housekeeping_inventory.sql',
                 'optional' => false,
             ],
+            [
+                'label' => 'Bar tabs, BOT system, and time clock',
+                'path' => __DIR__ . '/database/migrations/012_bar_tabs_bot.sql',
+                'optional' => false,
+            ],
+            [
+                'label' => 'Happy hour and time-based pricing',
+                'path' => __DIR__ . '/database/migrations/013_happy_hour.sql',
+                'optional' => false,
+            ],
         ];
 
         $totalExecuted = 0;

@@ -38,26 +38,49 @@
             const sidebarCloseBtn = document.getElementById('sidebarCloseBtn');
             const mainContent = document.getElementById('mainContent');
             const navGroups = Array.from(document.querySelectorAll('.nav-group'));
+            
+            // Check if we're on mobile/tablet
+            const isMobile = () => window.innerWidth <= 1024;
 
             function openSidebar() {
                 sidebar?.classList.add('show');
                 sidebarOverlay?.classList.add('show');
                 document.body.classList.add('sidebar-open');
+                // Remember sidebar is open
+                localStorage.setItem('sidebarOpen', 'true');
             }
 
             function closeSidebar() {
                 sidebar?.classList.remove('show');
                 sidebarOverlay?.classList.remove('show');
                 document.body.classList.remove('sidebar-open');
+                // Remember sidebar is closed
+                localStorage.setItem('sidebarOpen', 'false');
+            }
+            
+            // Restore sidebar state on mobile/tablet
+            if (isMobile()) {
+                // On mobile, restore previous state
+                if (localStorage.getItem('sidebarOpen') === 'true') {
+                    openSidebar();
+                }
+            } else {
+                // On desktop, sidebar is always visible, clear mobile state
+                localStorage.removeItem('sidebarOpen');
             }
 
             sidebarToggleBtn?.addEventListener('click', openSidebar);
             sidebarCloseBtn?.addEventListener('click', closeSidebar);
             sidebarOverlay?.addEventListener('click', closeSidebar);
-
-            mainContent?.addEventListener('click', event => {
-                if (window.innerWidth <= 768 && sidebar?.classList.contains('show') && !sidebar.contains(event.target)) {
-                    closeSidebar();
+            
+            // Handle window resize - if going from mobile to desktop, ensure proper state
+            window.addEventListener('resize', () => {
+                if (!isMobile()) {
+                    // Desktop - sidebar always visible via CSS, remove mobile classes
+                    sidebar?.classList.remove('show');
+                    sidebarOverlay?.classList.remove('show');
+                    document.body.classList.remove('sidebar-open');
+                    localStorage.removeItem('sidebarOpen');
                 }
             });
 
