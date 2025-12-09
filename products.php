@@ -27,7 +27,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'min_stock_level' => $_POST['min_stock_level'] ?: 10,
             'unit' => sanitizeInput($_POST['unit']) ?: 'pcs',
             'tax_rate' => $_POST['tax_rate'] ?: 0,
-            'is_active' => isset($_POST['is_active']) ? 1 : 0
+            'is_active' => isset($_POST['is_active']) ? 1 : 0,
+            'image' => sanitizeInput($_POST['image']) ?: null
         ];
         
         if ($action === 'add') {
@@ -354,7 +355,16 @@ include 'includes/header.php';
                     ?>
                     <tr data-category="<?= htmlspecialchars($product['category_name'] ?? '') ?>" data-status="<?= $rowStatus ?>" data-search="<?= htmlspecialchars(strtolower($product['name'] . ' ' . $product['sku'])) ?>">
                         <td><?= htmlspecialchars($product['sku']) ?></td>
-                        <td><strong><?= htmlspecialchars($product['name']) ?></strong></td>
+                        <td>
+                            <div class="d-flex align-items-center gap-2">
+                                <?php if (!empty($product['image'])): ?>
+                                    <img src="<?= htmlspecialchars($product['image']) ?>" alt="" 
+                                         style="width: 36px; height: 36px; object-fit: cover; border-radius: 6px;"
+                                         onerror="this.style.display='none'">
+                                <?php endif; ?>
+                                <strong><?= htmlspecialchars($product['name']) ?></strong>
+                            </div>
+                        </td>
                         <td><?= htmlspecialchars($product['category_name'] ?? '-') ?></td>
                         <td><?= formatMoney($product['cost_price']) ?></td>
                         <td class="fw-bold"><?= formatMoney($product['selling_price']) ?></td>
@@ -461,6 +471,24 @@ include 'includes/header.php';
                         
                         
                         <div class="col-12">
+                            <label class="form-label">Product Image</label>
+                            <div class="d-flex align-items-start gap-3">
+                                <div id="productImagePreview" class="border rounded bg-light d-flex align-items-center justify-content-center" 
+                                     style="width: 100px; height: 100px; overflow: hidden;">
+                                    <i class="bi bi-image text-muted" style="font-size: 2rem;"></i>
+                                </div>
+                                <div class="flex-grow-1">
+                                    <input type="file" class="form-control" id="productImageInput" accept="image/*">
+                                    <input type="hidden" name="image" id="productImageUrl">
+                                    <div class="form-text">JPG, PNG, GIF, WebP. Max 5MB. Recommended: 400x400px</div>
+                                    <button type="button" class="btn btn-sm btn-outline-danger mt-2 d-none" id="removeImageBtn" onclick="removeProductImage()">
+                                        <i class="bi bi-trash me-1"></i>Remove Image
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-12">
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" name="is_active" id="is_active" checked>
                                 <label class="form-check-label" for="is_active">Active</label>
@@ -489,7 +517,70 @@ function resetForm() {
     document.getElementById('formAction').value = 'add';
     document.getElementById('modalTitle').textContent = 'Add Product';
     document.getElementById('productId').value = '';
+    resetProductImage();
 }
+
+// Product Image Upload Functions
+function resetProductImage() {
+    document.getElementById('productImagePreview').innerHTML = '<i class="bi bi-image text-muted" style="font-size: 2rem;"></i>';
+    document.getElementById('productImageUrl').value = '';
+    document.getElementById('productImageInput').value = '';
+    document.getElementById('removeImageBtn').classList.add('d-none');
+}
+
+function setProductImage(url) {
+    if (url) {
+        document.getElementById('productImagePreview').innerHTML = `<img src="${url}" style="width: 100%; height: 100%; object-fit: cover;">`;
+        document.getElementById('productImageUrl').value = url;
+        document.getElementById('removeImageBtn').classList.remove('d-none');
+    } else {
+        resetProductImage();
+    }
+}
+
+function removeProductImage() {
+    resetProductImage();
+}
+
+// Handle image file selection
+document.getElementById('productImageInput')?.addEventListener('change', async function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    // Validate file size
+    if (file.size > 5 * 1024 * 1024) {
+        alert('File too large. Maximum size is 5MB.');
+        this.value = '';
+        return;
+    }
+    
+    // Show loading state
+    document.getElementById('productImagePreview').innerHTML = '<div class="spinner-border spinner-border-sm text-primary"></div>';
+    
+    // Upload file
+    const formData = new FormData();
+    formData.append('image', file);
+    formData.append('type', 'products');
+    
+    try {
+        const response = await fetch('/wapos/api/upload-image.php', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            setProductImage(result.url);
+        } else {
+            alert('Upload failed: ' + result.error);
+            resetProductImage();
+        }
+    } catch (error) {
+        alert('Upload failed: ' + error.message);
+        resetProductImage();
+    }
+});
 
 function editProduct(product) {
     document.getElementById('formAction').value = 'edit';
@@ -507,6 +598,9 @@ function editProduct(product) {
     document.getElementById('min_stock_level').value = product.min_stock_level;
     document.getElementById('unit').value = product.unit;
     document.getElementById('is_active').checked = product.is_active == 1;
+    
+    // Load product image
+    setProductImage(product.image || '');
 
     new bootstrap.Modal(document.getElementById('productModal')).show();
 }

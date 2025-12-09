@@ -19,10 +19,21 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
     
-    <!-- PWA Manifest -->
+    <!-- PWA Manifest & Meta -->
     <link rel="manifest" href="<?= APP_URL ?>/manifest.json">
-    <meta name="theme-color" content="#2c3e50">
+    <meta name="theme-color" content="#2563eb">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="WAPOS">
+    <link rel="apple-touch-icon" href="<?= APP_URL ?>/assets/images/icons/icon-192.png">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="application-name" content="WAPOS">
+    <meta name="msapplication-TileColor" content="#2563eb">
+    <meta name="msapplication-TileImage" content="<?= APP_URL ?>/assets/images/icons/icon-144.png">
+    
+    <!-- PWA Scripts -->
     <script defer src="<?= APP_URL ?>/assets/js/offline-manager.js"></script>
+    <script defer src="<?= APP_URL ?>/assets/js/pwa-install.js"></script>
     
     <style>
         :root {
@@ -501,6 +512,13 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'label' => 'User Feedback'
                             ],
                             [
+                                'roles' => 'all',
+                                'href' => '/wapos/user-manual.php',
+                                'page' => 'user-manual.php',
+                                'icon' => 'bi-book',
+                                'label' => 'User Manual'
+                            ],
+                            [
                                 'roles' => ['admin','manager','super_admin','developer'],
                                 'href' => '/wapos/executive-dashboard.php',
                                 'page' => 'executive-dashboard.php',
@@ -660,6 +678,22 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'icon' => 'bi-sliders',
                                 'label' => 'Void Settings',
                                 'module' => 'restaurant'
+                            ],
+                            [
+                                'roles' => ['admin','manager','bartender','cashier'],
+                                'href' => '/wapos/bar-management.php',
+                                'page' => 'bar-management.php',
+                                'icon' => 'bi-cup-straw',
+                                'label' => 'Bar & Beverage',
+                                'module' => 'bar'
+                            ],
+                            [
+                                'roles' => ['admin','manager'],
+                                'href' => '/wapos/generate-table-qr.php',
+                                'page' => 'generate-table-qr.php',
+                                'icon' => 'bi-qr-code',
+                                'label' => 'Digital Menu QR',
+                                'module' => 'restaurant'
                             ]
                         ]
                     ],
@@ -687,7 +721,15 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'href' => '/wapos/housekeeping.php',
                                 'page' => 'housekeeping.php',
                                 'icon' => 'bi-stars',
-                                'label' => 'Housekeeping',
+                                'label' => 'Housekeeping Tasks',
+                                'module' => 'housekeeping'
+                            ],
+                            [
+                                'roles' => ['admin','manager','housekeeping_manager','housekeeping_staff'],
+                                'href' => '/wapos/housekeeping-inventory.php',
+                                'page' => 'housekeeping-inventory.php',
+                                'icon' => 'bi-box-seam',
+                                'label' => 'HK Inventory',
                                 'module' => 'housekeeping'
                             ],
                             [

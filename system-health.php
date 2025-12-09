@@ -104,7 +104,16 @@ $tableDescriptions = [
     'settings' => 'System Settings',
     'permission_modules' => 'Permission System',
     'stock_movements' => 'Inventory Management',
-    'suppliers' => 'Supplier Management'
+    'suppliers' => 'Supplier Management',
+    'orders' => 'Restaurant Orders',
+    'rooms' => 'Room Management',
+    'deliveries' => 'Delivery System',
+    'accounts' => 'IFRS Accounting',
+    'notification_logs' => 'Notifications',
+    'bar_recipes' => 'Bar & Beverage',
+    'housekeeping_tasks' => 'Housekeeping Tasks',
+    'housekeeping_inventory' => 'HK Inventory',
+    'marketing_campaigns' => 'Marketing'
 ];
 
 $health['tables'] = [];

@@ -1,18 +1,31 @@
 <?php
+/**
+ * Kitchen Order Ticket (KOT) Printer
+ * Generates formal KOT tickets for kitchen display and printing
+ */
 require_once 'includes/bootstrap.php';
 $auth->requireLogin();
 
 $db = Database::getInstance();
 $orderId = $_GET['id'] ?? 0;
+$autoPrint = ($_GET['auto_print'] ?? '1') === '1';
+$kotNumber = $_GET['kot_number'] ?? null;
 
 // Get order details
 $order = $db->fetchOne("
-    SELECT o.*, rt.table_number, u.full_name as waiter_name
+    SELECT o.*, rt.table_number, rt.table_name, u.full_name as waiter_name,
+           c.name as customer_name_from_customer
     FROM orders o
     LEFT JOIN restaurant_tables rt ON o.table_id = rt.id
     LEFT JOIN users u ON o.user_id = u.id
+    LEFT JOIN customers c ON o.customer_id = c.id
     WHERE o.id = ?
 ", [$orderId]);
+
+// Generate KOT number if not provided
+if (!$kotNumber) {
+    $kotNumber = 'KOT-' . date('ymd') . '-' . str_pad($orderId, 4, '0', STR_PAD_LEFT);
+}
 
 if (!$order) {
     die('Order not found');
@@ -47,7 +60,7 @@ function productColumnExists(Database $db, string $column): bool {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kitchen Order - <?= htmlspecialchars($order['order_number']) ?></title>
+    <title>KOT <?= htmlspecialchars($kotNumber) ?> - <?= htmlspecialchars($order['order_number']) ?></title>
     <style>
         body {
             font-family: 'Courier New', monospace;
@@ -200,7 +213,8 @@ function productColumnExists(Database $db, string $column): bool {
         $isPriority = $timeDiff > 900 || $order['order_type'] === 'delivery'; // 15+ minutes or delivery
     ?>
     <div class="header <?= $isPriority ? 'priority-high' : '' ?>">
-        <h1><?= $isPriority ? '🔥 URGENT 🔥' : '' ?> KITCHEN ORDER</h1>
+        <div style="font-size: 10px; margin-bottom: 2px;"><?= htmlspecialchars($kotNumber) ?></div>
+        <h1><?= $isPriority ? '🔥 URGENT 🔥' : '' ?> KITCHEN ORDER TICKET</h1>
         <?php if ($isPriority): ?>
         <div style="font-size: 12px;">⚠️ PRIORITY ORDER ⚠️</div>
         <?php endif; ?>
@@ -332,12 +346,14 @@ function productColumnExists(Database $db, string $column): bool {
     </div>
 
     <script>
-        // Auto print when page loads
+        // Auto print when page loads (if enabled)
+        <?php if ($autoPrint): ?>
         window.onload = function() {
             setTimeout(function() {
                 window.print();
             }, 500);
         };
+        <?php endif; ?>
     </script>
 </body>
 </html>

@@ -1,91 +1,92 @@
 <?php
+/**
+ * WAPOS System Status Dashboard
+ * Shows current system state, installed modules, and database statistics
+ * 
+ * Version: 3.0 Enterprise Suite
+ */
 require_once __DIR__ . '/includes/bootstrap.php';
 
-// System status is restricted to super admin only
-if (!$auth->isLoggedIn() || !in_array($auth->getRole(), ['developer', 'super_admin'])) {
-    $_SESSION['error_message'] = 'Access denied. Super admin privileges required.';
+// System status is restricted to admin roles
+if (!$auth->isLoggedIn() || !in_array($auth->getRole(), ['developer', 'super_admin', 'admin'])) {
+    $_SESSION['error_message'] = 'Access denied. Admin privileges required.';
     redirect('index.php');
 }
 
 $db = Database::getInstance();
 
-function waposTableExists(Database $db, string $table): bool
-{
-    $row = $db->fetchOne(
-        'SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
-        [$table]
-    );
+// Count total tables
+$tableCount = (int)($db->fetchOne("SELECT COUNT(*) as cnt FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE()")['cnt'] ?? 0);
 
-    return !empty($row);
-}
-
-$dynamicPricingTables = [
-    'delivery_pricing_rules',
-    'delivery_distance_cache',
-    'delivery_pricing_audit',
+// Get key module table counts
+$moduleTables = [
+    'Core' => ['users', 'settings', 'products', 'categories', 'sales', 'customers'],
+    'Restaurant' => ['orders', 'order_items', 'restaurant_tables', 'modifiers', 'table_reservations'],
+    'Rooms' => ['rooms', 'room_types', 'room_bookings', 'room_folios'],
+    'Delivery' => ['deliveries', 'riders', 'delivery_pricing_rules', 'delivery_zones'],
+    'Inventory' => ['inventory_items', 'stock_movements', 'purchase_orders', 'goods_received_notes'],
+    'Accounting' => ['accounts', 'journal_entries', 'journal_entry_lines', 'expense_categories'],
+    'Notifications' => ['notification_logs', 'email_templates', 'sms_templates', 'marketing_campaigns'],
+    'Bar' => ['bar_recipes', 'bar_open_stock', 'bar_pour_log', 'product_portions'],
+    'Housekeeping' => ['housekeeping_tasks', 'housekeeping_inventory', 'housekeeping_linen', 'housekeeping_laundry_batches'],
 ];
 
-$missingTables = [];
-foreach ($dynamicPricingTables as $tableName) {
-    if (!waposTableExists($db, $tableName)) {
-        $missingTables[] = $tableName;
+$moduleStatus = [];
+foreach ($moduleTables as $module => $tables) {
+    $installed = 0;
+    foreach ($tables as $table) {
+        $exists = $db->fetchOne("SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?", [$table]);
+        if ($exists) $installed++;
     }
+    $moduleStatus[$module] = [
+        'installed' => $installed,
+        'total' => count($tables),
+        'complete' => $installed === count($tables)
+    ];
 }
 
-$dynamicPricingInstalled = count($missingTables) === 0;
-$pricingRuleCount = 0;
-$lastAuditAt = null;
-$trackedRequests = 0;
-$trackedFallbacks = 0;
-$trackedCacheHits = 0;
+// Get record counts for key tables
+$stats = [
+    'users' => (int)($db->fetchOne("SELECT COUNT(*) as cnt FROM users")['cnt'] ?? 0),
+    'products' => (int)($db->fetchOne("SELECT COUNT(*) as cnt FROM products")['cnt'] ?? 0),
+    'sales' => (int)($db->fetchOne("SELECT COUNT(*) as cnt FROM sales")['cnt'] ?? 0),
+    'customers' => (int)($db->fetchOne("SELECT COUNT(*) as cnt FROM customers")['cnt'] ?? 0),
+    'orders' => (int)($db->fetchOne("SELECT COUNT(*) as cnt FROM orders")['cnt'] ?? 0),
+];
 
-if ($dynamicPricingInstalled) {
-    $ruleRow = $db->fetchOne('SELECT COUNT(*) AS total FROM delivery_pricing_rules');
-    if ($ruleRow && isset($ruleRow['total'])) {
-        $pricingRuleCount = (int)$ruleRow['total'];
-    }
+// Check for housekeeping inventory tables
+$hkInventoryExists = $db->fetchOne("SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'housekeeping_inventory'");
 
-    $auditRow = $db->fetchOne('SELECT created_at FROM delivery_pricing_audit ORDER BY created_at DESC LIMIT 1');
-    if ($auditRow && !empty($auditRow['created_at'])) {
-        $lastAuditAt = $auditRow['created_at'];
-    }
-
-    $trackedRequests = (int)($db->fetchOne('SELECT COUNT(*) AS total FROM delivery_pricing_audit')['total'] ?? 0);
-    $trackedFallbacks = (int)($db->fetchOne('SELECT COUNT(*) AS total FROM delivery_pricing_audit WHERE fallback_used = 1')['total'] ?? 0);
-    $trackedCacheHits = (int)($db->fetchOne('SELECT COUNT(*) AS total FROM delivery_pricing_audit WHERE cache_hit = 1')['total'] ?? 0);
-}
-
-$statusCopy = $dynamicPricingInstalled
-    ? 'Dynamic delivery pricing is fully installed.'
-    : 'Pending upgrade: dynamic delivery pricing tables not found.';
-
+$pageTitle = 'System Status';
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WAPOS - System Status</title>
+    <title><?= APP_NAME ?> - System Status</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
     <style>
         body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
             min-height: 100vh;
             padding: 30px 0;
         }
         .status-card {
             border-radius: 15px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
         }
-        .feature-check {
-            font-size: 1.1rem;
-            margin: 8px 0;
+        .module-badge {
+            font-size: 0.75rem;
+            padding: 0.35rem 0.65rem;
         }
-        .btn-giant {
-            padding: 20px 40px;
-            font-size: 1.3rem;
+        .stat-card {
             border-radius: 10px;
+            transition: transform 0.2s;
+        }
+        .stat-card:hover {
+            transform: translateY(-3px);
         }
     </style>
 </head>
@@ -94,176 +95,171 @@ $statusCopy = $dynamicPricingInstalled
         <div class="row justify-content-center">
             <div class="col-lg-10">
                 <div class="card status-card">
-                    <div class="card-body p-5">
+                    <div class="card-body p-4">
                         <!-- Header -->
                         <div class="text-center mb-4">
-                            <i class="bi bi-check-circle-fill text-success" style="font-size: 5rem;"></i>
-                            <h1 class="mt-3 fw-bold">WAPOS System Ready!</h1>
-                            <p class="lead text-muted">Your complete POS system is 100% built</p>
+                            <i class="bi bi-shield-check text-success" style="font-size: 4rem;"></i>
+                            <h1 class="mt-3 fw-bold"><?= APP_NAME ?> System Status</h1>
+                            <p class="text-muted mb-2">Enterprise Suite v3.0</p>
+                            <span class="badge bg-success fs-6">
+                                <i class="bi bi-database me-1"></i><?= number_format($tableCount) ?> Database Tables
+                            </span>
                         </div>
 
-                        <!-- Next Step -->
-                        <?php if (!$dynamicPricingInstalled): ?>
-                        <div class="alert alert-primary alert-dismissible fade show mb-4" role="alert">
-                            <h5 class="alert-heading"><i class="bi bi-exclamation-triangle-fill me-2"></i>Action Required!</h5>
-                            <p class="mb-3">Run the upgrade to activate dynamic delivery pricing and complete the module setup.</p>
-                            <?php if (!empty($missingTables)): ?>
-                                <p class="small text-muted mb-3">Missing tables: <code><?= htmlspecialchars(implode(', ', $missingTables)) ?></code></p>
-                            <?php endif; ?>
-                            <div class="d-grid">
-                                <a href="upgrade.php" class="btn btn-primary btn-giant">
-                                    <i class="bi bi-rocket-takeoff me-2"></i>Run Upgrade Now
-                                </a>
+                        <!-- Quick Stats -->
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-2 col-4">
+                                <div class="card stat-card bg-primary text-white text-center p-3">
+                                    <div class="fs-3 fw-bold"><?= number_format($stats['users']) ?></div>
+                                    <small>Users</small>
+                                </div>
                             </div>
-                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                        </div>
-                        <?php else: ?>
-                        <div class="alert alert-success alert-dismissible fade show mb-4" role="alert">
-                            <h5 class="alert-heading"><i class="bi bi-check-circle-fill me-2"></i>Upgrade Complete</h5>
-                            <p class="mb-1">Dynamic delivery pricing tables are installed and ready.</p>
-                            <ul class="mb-3 small">
-                                <li><strong><?= number_format($pricingRuleCount) ?></strong> pricing rule<?= $pricingRuleCount === 1 ? '' : 's' ?> configured.</li>
-                                <li>Recent audit entry<?= $lastAuditAt ? ': ' . htmlspecialchars((new DateTime($lastAuditAt))->format('M d, Y g:i A')) : 's pending first usage.' ?></li>
-                            </ul>
-                            <div class="d-flex gap-2">
-                                <a href="delivery-pricing.php" class="btn btn-success">
-                                    <i class="bi bi-cash-coin me-2"></i>Manage Pricing Rules
-                                </a>
-                                <a href="upgrade.php" class="btn btn-outline-secondary">
-                                    <i class="bi bi-journal-check me-2"></i>View Upgrade Log
-                                </a>
+                            <div class="col-md-2 col-4">
+                                <div class="card stat-card bg-success text-white text-center p-3">
+                                    <div class="fs-3 fw-bold"><?= number_format($stats['products']) ?></div>
+                                    <small>Products</small>
+                                </div>
                             </div>
-                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                            <div class="col-md-2 col-4">
+                                <div class="card stat-card bg-info text-white text-center p-3">
+                                    <div class="fs-3 fw-bold"><?= number_format($stats['customers']) ?></div>
+                                    <small>Customers</small>
+                                </div>
+                            </div>
+                            <div class="col-md-2 col-4">
+                                <div class="card stat-card bg-warning text-dark text-center p-3">
+                                    <div class="fs-3 fw-bold"><?= number_format($stats['sales']) ?></div>
+                                    <small>Sales</small>
+                                </div>
+                            </div>
+                            <div class="col-md-2 col-4">
+                                <div class="card stat-card bg-danger text-white text-center p-3">
+                                    <div class="fs-3 fw-bold"><?= number_format($stats['orders']) ?></div>
+                                    <small>Orders</small>
+                                </div>
+                            </div>
+                            <div class="col-md-2 col-4">
+                                <div class="card stat-card bg-dark text-white text-center p-3">
+                                    <div class="fs-3 fw-bold"><?= number_format($tableCount) ?></div>
+                                    <small>Tables</small>
+                                </div>
+                            </div>
                         </div>
-                        <?php endif; ?>
 
                         <!-- Module Status -->
-                        <div class="row g-3 mb-4">
-                            <div class="col-md-6">
-                                <div class="card bg-light h-100">
-                                    <div class="card-body">
-                                        <h5 class="card-title"><i class="bi bi-list-check text-success me-2"></i>15 Modules Built</h5>
-                                        <div class="feature-check">✅ User Login & Roles (14 types)</div>
-                                        <div class="feature-check">✅ Product & Inventory (SKU, Suppliers, Expiry)</div>
-                                        <div class="feature-check">✅ Retail Sales</div>
-                                        <div class="feature-check">✅ Restaurant Orders (Modifiers, Kitchen)</div>
-                                        <div class="feature-check">✅ Room Management</div>
-                                        <div class="feature-check">✅ Ordering & Delivery</div>
-                                        <div class="feature-check">✅ Inventory Management</div>
-                                        <div class="feature-check">✅ Payment Processing</div>
-                                        <div class="feature-check">✅ Accounting & Reporting</div>
-                                        <div class="feature-check">✅ Offline Mode (PWA)</div>
-                                        <div class="feature-check">✅ Security & Backup</div>
-                                        <div class="feature-check">✅ Multi-location Support</div>
-                                    </div>
-                                </div>
+                        <div class="card bg-light mb-4">
+                            <div class="card-header">
+                                <h5 class="mb-0"><i class="bi bi-grid-3x3-gap me-2"></i>Module Status</h5>
                             </div>
-                            <div class="col-md-6">
-                                <div class="card bg-light h-100">
-                                    <div class="card-body">
-                                        <h5 class="card-title"><i class="bi bi-trophy text-warning me-2"></i>System Features</h5>
-                                        <div class="feature-check">📄 <strong>45+</strong> Pages Built</div>
-                                        <div class="feature-check">🗄️ <strong>45+</strong> Database Tables</div>
-                                        <div class="feature-check">👥 <strong>14</strong> User Roles</div>
-                                        <div class="feature-check">🎨 <strong>Professional</strong> UI/UX</div>
-                                        <div class="feature-check">📱 <strong>Mobile</strong> Responsive</div>
-                                        <div class="feature-check">🌐 <strong>Offline</strong> PWA Mode</div>
-                                        <div class="feature-check">💰 <strong>Currency</strong> Neutral</div>
-                                        <div class="feature-check">🔒 <strong>Secure</strong> Authentication</div>
-                                        <div class="feature-check">📊 <strong>Reports</strong> with Charts</div>
-                                        <div class="feature-check">🖨️ <strong>Print</strong> System (3 types)</div>
-                                        <div class="feature-check">🏢 <strong>Multi-location</strong> Ready</div>
-                                        <div class="feature-check">🔄 <strong>Auto-sync</strong> Offline Data</div>
+                            <div class="card-body">
+                                <div class="row g-3">
+                                    <?php foreach ($moduleStatus as $module => $status): ?>
+                                    <div class="col-md-4 col-6">
+                                        <div class="d-flex align-items-center justify-content-between p-2 border rounded <?= $status['complete'] ? 'border-success bg-success bg-opacity-10' : 'border-warning bg-warning bg-opacity-10' ?>">
+                                            <span class="fw-semibold"><?= htmlspecialchars($module) ?></span>
+                                            <span class="badge <?= $status['complete'] ? 'bg-success' : 'bg-warning text-dark' ?> module-badge">
+                                                <?= $status['installed'] ?>/<?= $status['total'] ?>
+                                                <?= $status['complete'] ? '✓' : '' ?>
+                                            </span>
+                                        </div>
                                     </div>
+                                    <?php endforeach; ?>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Currency Fixed -->
-                        <div class="alert alert-success mb-4">
-                            <h6 class="alert-heading"><i class="bi bi-currency-exchange me-2"></i>Currency System Updated</h6>
-                            <p class="mb-0">✅ All hard-coded "KES" removed<br>
-                            ✅ Dynamic currency from settings<br>
-                            ✅ Change currency symbol anytime in Settings</p>
+                        <!-- System Features -->
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-6">
+                                <div class="card h-100">
+                                    <div class="card-header bg-primary text-white">
+                                        <h6 class="mb-0"><i class="bi bi-check2-all me-2"></i>Core Features</h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <ul class="list-unstyled mb-0">
+                                            <li>✅ Point of Sale (POS)</li>
+                                            <li>✅ Inventory Management</li>
+                                            <li>✅ Customer & Loyalty Programs</li>
+                                            <li>✅ IFRS Accounting</li>
+                                            <li>✅ Multi-location Support</li>
+                                            <li>✅ Role-based Access Control</li>
+                                            <li>✅ Audit Logging</li>
+                                            <li>✅ Backup & Restore</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="card h-100">
+                                    <div class="card-header bg-success text-white">
+                                        <h6 class="mb-0"><i class="bi bi-building me-2"></i>Hospitality Suite</h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <ul class="list-unstyled mb-0">
+                                            <li>✅ Restaurant Orders & KDS</li>
+                                            <li>✅ Bar & Beverage (Portions/Tots)</li>
+                                            <li>✅ Digital Menu & QR Codes</li>
+                                            <li>✅ Room Booking & Folios</li>
+                                            <li>✅ Housekeeping Tasks</li>
+                                            <li>✅ Housekeeping Inventory</li>
+                                            <li>✅ Maintenance Requests</li>
+                                            <li>✅ Delivery & Tracking</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <!-- Quick Links -->
                         <div class="card bg-light mb-4">
                             <div class="card-body">
-                                <h5 class="card-title"><i class="bi bi-link-45deg me-2"></i>Quick Access</h5>
+                                <h6 class="card-title"><i class="bi bi-link-45deg me-2"></i>Quick Access</h6>
                                 <div class="row g-2">
-                                    <div class="col-md-3">
+                                    <div class="col-md-3 col-6">
                                         <a href="upgrade.php" class="btn btn-primary w-100">
-                                            <i class="bi bi-rocket me-1"></i> Upgrade
+                                            <i class="bi bi-database-gear me-1"></i> Migrations
                                         </a>
                                     </div>
-                                    <div class="col-md-3">
-                                        <a href="login.php" class="btn btn-success w-100">
-                                            <i class="bi bi-box-arrow-in-right me-1"></i> Login
+                                    <div class="col-md-3 col-6">
+                                        <a href="system-health.php" class="btn btn-info w-100">
+                                            <i class="bi bi-heart-pulse me-1"></i> Health Check
                                         </a>
                                     </div>
-                                    <div class="col-md-3">
-                                        <a href="100_PERCENT_COMPLETE.md" class="btn btn-info w-100" target="_blank">
-                                            <i class="bi bi-file-text me-1"></i> Docs
+                                    <div class="col-md-3 col-6">
+                                        <a href="settings.php" class="btn btn-secondary w-100">
+                                            <i class="bi bi-gear me-1"></i> Settings
                                         </a>
                                     </div>
-                                    <div class="col-md-3">
-                                        <a href="delivery-pricing.php" class="btn btn-warning w-100<?= $dynamicPricingInstalled ? '' : ' disabled' ?>" <?= $dynamicPricingInstalled ? '' : 'tabindex="-1" aria-disabled="true"' ?> >
-                                            <i class="bi bi-cash-coin me-1"></i> Pricing Dashboard
+                                    <div class="col-md-3 col-6">
+                                        <a href="dashboards/admin.php" class="btn btn-success w-100">
+                                            <i class="bi bi-house me-1"></i> Dashboard
                                         </a>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        <div class="card border-<?= $dynamicPricingInstalled ? 'success' : 'warning' ?> mb-4">
+                        <!-- Server Info -->
+                        <div class="card border-secondary">
                             <div class="card-body">
-                                <h5 class="card-title"><i class="bi bi-geo-fill me-2"></i>Dynamic Delivery Pricing Status</h5>
-                                <p class="mb-2"><?= htmlspecialchars($statusCopy) ?></p>
-                                <?php if ($dynamicPricingInstalled): ?>
-                                <ul class="small mb-0">
-                                    <li>Pricing rules available: <strong><?= number_format($pricingRuleCount) ?></strong></li>
-                                    <li>Audit logging: <?= $lastAuditAt ? 'Active (last entry ' . htmlspecialchars((new DateTime($lastAuditAt))->format('M d, Y g:i A')) . ')' : 'Awaiting first calculation' ?></li>
-                                    <li>Requests tracked: <strong><?= number_format($trackedRequests) ?></strong> (cache hits <?= number_format($trackedCacheHits) ?> / fallbacks <?= number_format($trackedFallbacks) ?>)</li>
-                                    <li>POS map picker & API integrations ready after upgrade.</li>
-                                </ul>
-                                <?php else: ?>
-                                <p class="small mb-2">Run the upgrade to install required tables and enable rule management.</p>
-                                <?php if (!empty($missingTables)): ?>
-                                <p class="small text-muted mb-0">Pending tables: <code><?= htmlspecialchars(implode(', ', $missingTables)) ?></code></p>
-                                <?php endif; ?>
-                                <?php endif; ?>
+                                <h6 class="card-title"><i class="bi bi-server me-2"></i>Server Information</h6>
+                                <div class="row small">
+                                    <div class="col-md-6">
+                                        <p class="mb-1"><strong>PHP Version:</strong> <?= phpversion() ?></p>
+                                        <p class="mb-1"><strong>Server:</strong> <?= $_SERVER['SERVER_SOFTWARE'] ?? 'Unknown' ?></p>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <p class="mb-1"><strong>Database:</strong> <?= DB_NAME ?></p>
+                                        <p class="mb-1"><strong>Timezone:</strong> <?= date_default_timezone_get() ?></p>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-
-                        <!-- Instructions -->
-                        <div class="card border-warning mb-4">
-                            <div class="card-body">
-                                <h5 class="card-title text-warning"><i class="bi bi-info-circle-fill me-2"></i>Next Steps</h5>
-                                <ol class="mb-0">
-                                    <li><strong><?= $dynamicPricingInstalled ? 'Review upgrade log in upgrade.php' : 'Click "Run Upgrade Now" above (or go to upgrade.php)' ?></strong></li>
-                                    <li><strong>Wait</strong> for upgrade to complete (adds 35+ tables)</li>
-                                    <li><strong>Go to Settings</strong> and change currency if needed</li>
-                                    <li><strong>Login</strong> with: admin / admin123</li>
-                                    <li><strong><?= $dynamicPricingInstalled ? 'Manage dynamic delivery pricing from the dashboard' : 'Upgrade to enable dynamic delivery pricing' ?></strong></li>
-                                </ol>
-                            </div>
-                        </div>
-
-                        <!-- Action Button -->
-                        <div class="d-grid gap-2">
-                            <a href="upgrade.php" class="btn btn-primary btn-lg">
-                                <i class="bi bi-rocket-takeoff me-2"></i>Start Upgrade Process
-                            </a>
-                            <a href="login.php" class="btn btn-outline-success btn-lg">
-                                <i class="bi bi-box-arrow-in-right me-2"></i>Go to Login (After Upgrade)
-                            </a>
                         </div>
                     </div>
                 </div>
 
                 <div class="text-center mt-3 text-white">
-                    <small>&copy; <?= date('Y') ?> WAPOS - 100% Complete System</small>
+                    <small>&copy; <?= date('Y') ?> <?= APP_NAME ?> - Enterprise Suite v3.0</small>
                 </div>
             </div>
         </div>

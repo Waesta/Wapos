@@ -1,7 +1,9 @@
 <?php
 /**
- * WAPOS Phase 2 Upgrade
- * Adds Restaurant, Room Booking, Delivery features
+ * WAPOS System Upgrade & Database Migration
+ * Comprehensive upgrade tool for all system modules
+ * 
+ * Current Version: 3.0 (Full Enterprise Suite)
  */
 
 require_once 'config.php';
@@ -60,6 +62,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             [
                 'label' => 'Restaurant billing enhancements',
                 'path' => __DIR__ . '/database/migrations/004_restaurant_billing.sql',
+                'optional' => false,
+            ],
+            [
+                'label' => 'Notification system tables',
+                'path' => __DIR__ . '/database/migrations/004_add_notifications.sql',
+                'optional' => false,
+            ],
+            [
+                'label' => 'Bar management and portion tracking',
+                'path' => __DIR__ . '/database/migrations/010_bar_management.sql',
+                'optional' => false,
+            ],
+            [
+                'label' => 'Housekeeping inventory management',
+                'path' => __DIR__ . '/database/migrations/011_housekeeping_inventory.sql',
                 'optional' => false,
             ],
         ];
@@ -169,9 +186,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="card upgrade-card">
                     <div class="card-body p-5">
                         <div class="text-center mb-4">
-                            <i class="bi bi-rocket-takeoff-fill text-primary" style="font-size: 4rem;"></i>
-                            <h2 class="mt-3 fw-bold"><?= APP_NAME ?> Phase 2 Upgrade</h2>
-                            <p class="text-muted">Add Restaurant, Rooms, Delivery & Advanced Features</p>
+                            <i class="bi bi-gear-wide-connected text-primary" style="font-size: 4rem;"></i>
+                            <h2 class="mt-3 fw-bold"><?= APP_NAME ?> System Upgrade</h2>
+                            <p class="text-muted">Database Migration & Module Installation Tool</p>
+                            <span class="badge bg-success">Version 3.0 - Enterprise Suite</span>
                         </div>
 
                         <?php if ($message): ?>
@@ -185,22 +203,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <?php if ($success): ?>
                             <div class="card bg-light mb-4">
                                 <div class="card-body">
-                                    <h5 class="card-title"><i class="bi bi-check-circle text-success me-2"></i>System 100% Complete!</h5>
-                                    <ul class="mb-0">
-                                        <li>✅ User Roles (Admin, Manager, Accountant, Cashier, Waiter, Inventory Manager, Front Desk, Housekeeping, Maintenance, Technician, Engineer, Rider, Developer)</li>
-                                        <li>✅ Product Inventory (SKU, Suppliers, Batches, Expiry Tracking)</li>
-                                        <li>✅ Retail Sales (Real-time inventory updates)</li>
-                                        <li>✅ Restaurant Orders (Modifiers, Kitchen printing)</li>
-                                        <li>✅ Room Management (Bookings, Check-in/out, Invoicing)</li>
-                                        <li>✅ Delivery System (Addresses, Scheduling, Tracking)</li>
-                                        <li>✅ Inventory Management (Reorder alerts, Stock transfers)</li>
-                                        <li>✅ Payment Processing (Multiple methods, Partial payments)</li>
-                                        <li>✅ Accounting & Reports (Export ready, Financial analysis)</li>
-                                        <li>✅ IFRS for SMEs Accounting Schema & Chart of Accounts</li>
-                                        <li>✅ Offline Mode (PWA with auto-sync)</li>
-                                        <li>✅ Security & Backup (Audit trails, Automated backups)</li>
-                                        <li>✅ Multi-location (Stock transfers, Consolidated reporting)</li>
-                                    </ul>
+                                    <h5 class="card-title"><i class="bi bi-check-circle text-success me-2"></i>System Fully Upgraded!</h5>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <h6 class="text-primary mt-2">Core Modules</h6>
+                                            <ul class="small mb-0">
+                                                <li>✅ Point of Sale (POS)</li>
+                                                <li>✅ Inventory Management</li>
+                                                <li>✅ Customer & Loyalty</li>
+                                                <li>✅ IFRS Accounting</li>
+                                                <li>✅ Reports & Analytics</li>
+                                            </ul>
+                                            <h6 class="text-primary mt-3">Hospitality</h6>
+                                            <ul class="small mb-0">
+                                                <li>✅ Restaurant Orders & KDS</li>
+                                                <li>✅ Bar & Beverage (Portions)</li>
+                                                <li>✅ Digital Menu & QR Codes</li>
+                                                <li>✅ Room Booking & Folios</li>
+                                                <li>✅ Housekeeping Tasks</li>
+                                                <li>✅ Housekeeping Inventory</li>
+                                                <li>✅ Maintenance Requests</li>
+                                            </ul>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <h6 class="text-primary mt-2">Operations</h6>
+                                            <ul class="small mb-0">
+                                                <li>✅ Delivery & Tracking</li>
+                                                <li>✅ Dynamic Delivery Pricing</li>
+                                                <li>✅ Multi-location Support</li>
+                                                <li>✅ Supplier Management</li>
+                                                <li>✅ Purchase Orders & GRN</li>
+                                            </ul>
+                                            <h6 class="text-primary mt-3">Communication</h6>
+                                            <ul class="small mb-0">
+                                                <li>✅ Email Notifications</li>
+                                                <li>✅ SMS Marketing</li>
+                                                <li>✅ WhatsApp Integration</li>
+                                                <li>✅ Marketing Campaigns</li>
+                                            </ul>
+                                            <h6 class="text-primary mt-3">Security</h6>
+                                            <ul class="small mb-0">
+                                                <li>✅ Role-based Access</li>
+                                                <li>✅ Granular Permissions</li>
+                                                <li>✅ Audit Logging</li>
+                                                <li>✅ Backup & Restore</li>
+                                            </ul>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
@@ -235,28 +284,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <?php else: ?>
                             <div class="card bg-light mb-4">
                                 <div class="card-body">
-                                    <h5 class="card-title"><i class="bi bi-info-circle text-info me-2"></i>What will be upgraded:</h5>
-                                    <ul class="mb-0">
-                                        <li><strong>15+ new database tables</strong></li>
-                                        <li>Restaurant tables & modifiers</li>
-                                        <li>Room types, rooms & bookings</li>
-                                        <li>Delivery riders & tracking</li>
-                                        <li>Multi-location support</li>
-                                        <li>Enhanced order management</li>
-                                        <li>Audit logs & security</li>
-                                        <li>Sample data for testing</li>
-                                    </ul>
+                                    <h5 class="card-title"><i class="bi bi-database-gear text-info me-2"></i>Database Migrations</h5>
+                                    <p class="small text-muted mb-2">This will apply all pending database migrations:</p>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <ul class="small mb-0">
+                                                <li>Core system schema</li>
+                                                <li>IFRS accounting tables</li>
+                                                <li>Granular permissions</li>
+                                                <li>Restaurant & modifiers</li>
+                                                <li>Room booking system</li>
+                                                <li>Delivery & pricing</li>
+                                            </ul>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <ul class="small mb-0">
+                                                <li>Notification system</li>
+                                                <li>Marketing campaigns</li>
+                                                <li>Bar & beverage tracking</li>
+                                                <li>Housekeeping inventory</li>
+                                                <li>Audit & security logs</li>
+                                                <li>130+ database tables</li>
+                                            </ul>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
                             <div class="card border-warning mb-4">
                                 <div class="card-body">
-                                    <h6 class="card-title text-warning"><i class="bi bi-exclamation-triangle-fill me-2"></i>Before Upgrading:</h6>
+                                    <h6 class="card-title text-warning"><i class="bi bi-exclamation-triangle-fill me-2"></i>Before Running:</h6>
                                     <ol class="mb-0 small">
-                                        <li>✅ Backup your database first!</li>
-                                        <li>✅ Make sure XAMPP MySQL is running</li>
-                                        <li>✅ Existing data will NOT be affected</li>
-                                        <li>✅ New tables will be added</li>
+                                        <li>Backup your database first</li>
+                                        <li>Ensure MySQL is running</li>
+                                        <li>Existing data will be preserved</li>
+                                        <li>Safe to run multiple times (idempotent)</li>
                                     </ol>
                                 </div>
                             </div>
@@ -264,7 +326,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <form method="POST">
                                 <div class="d-grid">
                                     <button type="submit" class="btn btn-primary btn-lg">
-                                        <i class="bi bi-rocket-takeoff me-2"></i>Upgrade Now
+                                        <i class="bi bi-database-gear me-2"></i>Run Migrations
                                     </button>
                                 </div>
                             </form>
@@ -273,7 +335,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
 
                 <div class="text-center mt-3 text-white">
-                    <small>&copy; <?= date('Y') ?> WAPOS - Phase 2 Upgrade</small>
+                    <small>&copy; <?= date('Y') ?> <?= APP_NAME ?> - Enterprise Suite v3.0</small>
                 </div>
             </div>
         </div>

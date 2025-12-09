@@ -34,6 +34,7 @@ require_once __DIR__ . "/SystemManager.php";
 require_once __DIR__ . "/RateLimiter.php";
 require_once __DIR__ . "/ApiRateLimiter.php";
 require_once __DIR__ . "/SystemLogger.php";
+require_once __DIR__ . "/branding-helpers.php";
 
 // Autoload application namespaces if vendor autoloader exists
 $composerAutoload = ROOT_PATH . '/vendor/autoload.php';

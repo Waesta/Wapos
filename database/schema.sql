@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
         'accountant',
         'cashier',
         'waiter',
+        'bartender',
         'inventory_manager',
         'rider',
         'frontdesk',

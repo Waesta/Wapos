@@ -37,6 +37,12 @@ return [
         'icon' => 'bi-cup-hot',
         'category' => 'Hospitality & Guest Ops',
     ],
+    'bar' => [
+        'label' => 'Bar & Beverage',
+        'description' => 'Tots, shots, portions, cocktail recipes, and yield tracking.',
+        'icon' => 'bi-cup-straw',
+        'category' => 'Hospitality & Guest Ops',
+    ],
     'rooms' => [
         'label' => 'Rooms & Accommodation',
         'description' => 'Room inventory, folios, invoices, and stay extensions.',

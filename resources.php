@@ -337,10 +337,10 @@ $pageDescription = 'Complete user manual and documentation for WAPOS - Point of 
                         <li><a href="#getting-started"><i class="bi bi-play-circle"></i> Getting Started</a></li>
                         <li><a href="#user-roles"><i class="bi bi-people"></i> User Roles</a></li>
                         <li><a href="#pos"><i class="bi bi-cart-check"></i> Point of Sale</a></li>
-                        <li><a href="#restaurant"><i class="bi bi-cup-straw"></i> Restaurant</a></li>
+                        <li><a href="#restaurant"><i class="bi bi-cup-straw"></i> Restaurant & Bar</a></li>
                         <li><a href="#inventory"><i class="bi bi-boxes"></i> Inventory</a></li>
                         <li><a href="#delivery"><i class="bi bi-truck"></i> Delivery</a></li>
-                        <li><a href="#housekeeping"><i class="bi bi-house"></i> Housekeeping</a></li>
+                        <li><a href="#housekeeping"><i class="bi bi-house"></i> Housekeeping & Inventory</a></li>
                         <li><a href="#maintenance"><i class="bi bi-tools"></i> Maintenance</a></li>
                         <li><a href="#guest-portal"><i class="bi bi-shield-lock"></i> Guest Portal</a></li>
                         <li><a href="#accounting"><i class="bi bi-calculator"></i> Accounting</a></li>
@@ -547,6 +547,34 @@ $pageDescription = 'Complete user manual and documentation for WAPOS - Point of 
                         <li>Add special requests or notes</li>
                         <li>Save reservation - guest receives confirmation</li>
                     </ol>
+
+                    <h3>Bar & Beverage</h3>
+                    <p>Manage bar sales with portion-based tracking:</p>
+                    <ul>
+                        <li><strong>Portion Sales</strong> - Sell by tot (25ml, 35ml, 50ml), shot, or glass</li>
+                        <li><strong>Cocktail Recipes</strong> - Define ingredients and auto-calculate costs</li>
+                        <li><strong>Open Bottle Tracking</strong> - Track opened bottles and remaining ml</li>
+                        <li><strong>Pour Logging</strong> - Record sales, wastage, spillage, comps</li>
+                        <li><strong>Variance Reports</strong> - Compare expected vs actual usage</li>
+                    </ul>
+
+                    <h3>Digital Menu & QR Codes</h3>
+                    <p>Guest-facing digital menu accessible via QR code:</p>
+                    <ol class="steps-list">
+                        <li>Go to <strong>Restaurant → Digital Menu QR</strong></li>
+                        <li>Print QR codes for each table</li>
+                        <li>Guests scan to view menu on their phones</li>
+                        <li>Menu shows categories, prices, and portion options</li>
+                    </ol>
+
+                    <h3>Kitchen Order Tickets (KOT)</h3>
+                    <p>Print formal KOT tickets for kitchen:</p>
+                    <ul>
+                        <li>Auto-print when orders are sent to kitchen</li>
+                        <li>Includes order number, table, items, modifiers</li>
+                        <li>Priority indicators for urgent orders</li>
+                        <li>Allergen warnings displayed prominently</li>
+                    </ul>
                 </section>
 
                 <!-- Inventory -->
@@ -654,6 +682,44 @@ $pageDescription = 'Complete user manual and documentation for WAPOS - Point of 
                         <li>Complete cleaning checklist</li>
                         <li>Mark as complete (status → Clean)</li>
                         <li>Report any maintenance issues found</li>
+                    </ol>
+
+                    <h3>Housekeeping Inventory</h3>
+                    <p>Track supplies across multiple sections:</p>
+                    <ul>
+                        <li><strong>Laundry</strong> - Towels, linens, uniforms for washing</li>
+                        <li><strong>Linen Store</strong> - Bed sheets, pillowcases, blankets</li>
+                        <li><strong>Room Amenities</strong> - Toiletries, welcome items</li>
+                        <li><strong>Minibar</strong> - Track consumption and charge to folio</li>
+                        <li><strong>Cleaning Supplies</strong> - Detergents, disinfectants</li>
+                        <li><strong>Public Area Supplies</strong> - Lobby and corridor items</li>
+                    </ul>
+
+                    <h3>Linen Tracking</h3>
+                    <p>Track individual linen items through their lifecycle:</p>
+                    <ul>
+                        <li><strong>Clean</strong> - Available for use</li>
+                        <li><strong>In Use</strong> - Currently in a room</li>
+                        <li><strong>Dirty</strong> - Awaiting laundry</li>
+                        <li><strong>Washing</strong> - In laundry batch</li>
+                        <li><strong>Damaged/Discarded</strong> - End of life</li>
+                    </ul>
+
+                    <h3>Laundry Batches</h3>
+                    <ol class="steps-list">
+                        <li>Go to <strong>Property → HK Inventory</strong></li>
+                        <li>Select dirty linen items</li>
+                        <li>Create laundry batch</li>
+                        <li>Update status as batch progresses</li>
+                        <li>Mark complete - items return to "Clean" status</li>
+                    </ol>
+
+                    <h3>Minibar Management</h3>
+                    <ol class="steps-list">
+                        <li>Record minibar consumption during room check</li>
+                        <li>Select items consumed and quantities</li>
+                        <li>Charges can be posted to guest folio</li>
+                        <li>Inventory automatically deducted</li>
                     </ol>
                 </section>
 

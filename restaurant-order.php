@@ -24,8 +24,33 @@ $orderType = $_GET['type'] ?? 'dine-in';
 $tableId = isset($_GET['table_id']) ? (int)$_GET['table_id'] : null;
 $orderId = isset($_GET['id']) ? (int)$_GET['id'] : null;
 
-// Get products and modifiers
-$products = $db->fetchAll("SELECT * FROM products WHERE is_active = 1 ORDER BY name");
+// Get products and modifiers (including bar portion info)
+$products = $db->fetchAll("
+    SELECT p.*, 
+           p.is_portioned, p.bottle_size_ml, p.default_portion_ml,
+           c.name as category_name
+    FROM products p
+    LEFT JOIN categories c ON p.category_id = c.id
+    WHERE p.is_active = 1 
+    ORDER BY p.name
+");
+
+// Get portions for portioned products
+$productPortions = [];
+try {
+    $portionsData = $db->fetchAll("
+        SELECT pp.* FROM product_portions pp
+        JOIN products p ON pp.product_id = p.id
+        WHERE pp.is_active = 1 AND p.is_portioned = 1
+        ORDER BY pp.product_id, pp.sort_order, pp.portion_size_ml
+    ");
+    foreach ($portionsData as $portion) {
+        $productPortions[$portion['product_id']][] = $portion;
+    }
+} catch (Throwable $e) {
+    // Table may not exist yet
+    $productPortions = [];
+}
 $categories = $db->fetchAll("SELECT * FROM categories WHERE is_active = 1 ORDER BY name");
 
 // Fetch checked-in rooms for room charge payments
@@ -466,20 +491,38 @@ window.EXISTING_LOYALTY_PAYLOAD = <?= json_encode($existingLoyaltyPayload, JSON_
             <div id="productsList" class="product-grid">
                 <?php foreach ($products as $product): ?>
                     <?php
+                    $isPortioned = !empty($product['is_portioned']);
+                    $portions = $productPortions[$product['id']] ?? [];
                     $productPayload = json_encode([
                         'id' => (int)$product['id'],
                         'name' => $product['name'],
                         'selling_price' => (float)$product['selling_price'],
                         'stock_quantity' => (float)$product['stock_quantity'],
+                        'is_portioned' => $isPortioned,
+                        'portions' => $portions,
                     ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
                     ?>
                     <article class="product-item" data-category="<?= $product['category_id'] ?>" data-name="<?= strtolower($product['name']) ?>">
                         <div class="d-flex justify-content-between align-items-start">
                             <div class="stack-xs">
-                                <h6 class="mb-0"><?= htmlspecialchars($product['name']) ?></h6>
+                                <h6 class="mb-0">
+                                    <?= htmlspecialchars($product['name']) ?>
+                                    <?php if ($isPortioned): ?>
+                                    <span class="badge bg-info text-dark ms-1" style="font-size: 0.6rem;">BAR</span>
+                                    <?php endif; ?>
+                                </h6>
                                 <span class="stock-pill"><i class="bi bi-archive me-1"></i>Stock <?= (float)$product['stock_quantity'] ?></span>
+                                <?php if ($isPortioned && !empty($portions)): ?>
+                                <span class="text-muted small d-block"><?= count($portions) ?> portion options</span>
+                                <?php endif; ?>
                             </div>
-                            <span class="product-price"><?= formatMoney($product['selling_price'], false) ?></span>
+                            <span class="product-price">
+                                <?php if ($isPortioned && !empty($portions)): ?>
+                                from <?= formatMoney(min(array_column($portions, 'selling_price')), false) ?>
+                                <?php else: ?>
+                                <?= formatMoney($product['selling_price'], false) ?>
+                                <?php endif; ?>
+                            </span>
                         </div>
                         <button
                             type="button"
@@ -489,8 +532,13 @@ window.EXISTING_LOYALTY_PAYLOAD = <?= json_encode($existingLoyaltyPayload, JSON_
                             data-product-price="<?= (float)$product['selling_price'] ?>"
                             data-product-stock="<?= (float)$product['stock_quantity'] ?>"
                             data-product-json="<?= htmlspecialchars($productPayload, ENT_QUOTES, 'UTF-8') ?>"
+                            data-is-portioned="<?= $isPortioned ? '1' : '0' ?>"
                         >
+                            <?php if ($isPortioned): ?>
+                            <i class="bi bi-cup-straw me-2"></i>Select Portion
+                            <?php else: ?>
                             <i class="bi bi-cart-plus me-2"></i>Add to Order
+                            <?php endif; ?>
                         </button>
                     </article>
                 <?php endforeach; ?>
@@ -805,6 +853,43 @@ window.EXISTING_LOYALTY_PAYLOAD = <?= json_encode($existingLoyaltyPayload, JSON_
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-primary" onclick="confirmModifiers()">Add to Order</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Portion Selection Modal (for bar items) -->
+<div class="modal fade" id="portionModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-dark">
+                <h5 class="modal-title"><i class="bi bi-cup-straw me-2"></i>Select Portion</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <h6 id="portionItemName" class="mb-3"></h6>
+                <div id="portionOptions" class="d-grid gap-2">
+                    <!-- Portion buttons will be inserted here -->
+                </div>
+                <hr class="my-3">
+                <div class="mb-3">
+                    <label class="form-label">Quantity</label>
+                    <div class="input-group" style="max-width: 150px;">
+                        <button type="button" class="btn btn-outline-secondary" onclick="adjustPortionQty(-1)">-</button>
+                        <input type="number" class="form-control text-center" id="portionQuantity" value="1" min="1" max="99">
+                        <button type="button" class="btn btn-outline-secondary" onclick="adjustPortionQty(1)">+</button>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Special Instructions</label>
+                    <input type="text" class="form-control" id="portionInstructions" placeholder="e.g., On the rocks, with lime">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="confirmPortion()" id="confirmPortionBtn" disabled>
+                    <i class="bi bi-cart-plus me-1"></i>Add to Order
+                </button>
             </div>
         </div>
     </div>
@@ -1523,9 +1608,20 @@ function buildProductFromDataset(dataset) {
     };
 }
 
+// Portion modal state
+let portionModalInstance = null;
+let currentPortionProduct = null;
+let selectedPortion = null;
+
 function addToCart(product) {
     if (!product || !product.name || Number.isNaN(product.id) || Number.isNaN(product.selling_price)) {
         console.error('Invalid product payload', product);
+        return;
+    }
+
+    // Check if this is a portioned product (bar item)
+    if (product.is_portioned && product.portions && product.portions.length > 0) {
+        showPortionModal(product);
         return;
     }
 
@@ -1549,6 +1645,93 @@ function addToCart(product) {
         modifierModalInstance = new bootstrap.Modal(modifierModalEl);
     }
     modifierModalInstance.show();
+}
+
+function showPortionModal(product) {
+    currentPortionProduct = product;
+    selectedPortion = null;
+    
+    document.getElementById('portionItemName').textContent = product.name;
+    document.getElementById('portionQuantity').value = 1;
+    document.getElementById('portionInstructions').value = '';
+    document.getElementById('confirmPortionBtn').disabled = true;
+    
+    // Build portion options
+    const container = document.getElementById('portionOptions');
+    container.innerHTML = '';
+    
+    product.portions.forEach((portion, index) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-outline-primary portion-option-btn d-flex justify-content-between align-items-center';
+        btn.dataset.index = index;
+        btn.innerHTML = `
+            <span>
+                <strong>${portion.portion_name}</strong>
+                ${portion.portion_size_ml ? `<small class="text-muted ms-2">(${portion.portion_size_ml}ml)</small>` : ''}
+            </span>
+            <span class="fw-bold">${currencySymbol}${parseFloat(portion.selling_price).toFixed(2)}</span>
+        `;
+        btn.addEventListener('click', () => selectPortion(index));
+        container.appendChild(btn);
+    });
+    
+    const portionModalEl = document.getElementById('portionModal');
+    if (!portionModalInstance) {
+        portionModalInstance = new bootstrap.Modal(portionModalEl);
+    }
+    portionModalInstance.show();
+}
+
+function selectPortion(index) {
+    selectedPortion = currentPortionProduct.portions[index];
+    
+    // Update button states
+    document.querySelectorAll('.portion-option-btn').forEach((btn, i) => {
+        btn.classList.toggle('btn-primary', i === index);
+        btn.classList.toggle('btn-outline-primary', i !== index);
+    });
+    
+    document.getElementById('confirmPortionBtn').disabled = false;
+}
+
+function adjustPortionQty(delta) {
+    const input = document.getElementById('portionQuantity');
+    let val = parseInt(input.value) || 1;
+    val = Math.max(1, Math.min(99, val + delta));
+    input.value = val;
+}
+
+function confirmPortion() {
+    if (!selectedPortion || !currentPortionProduct) return;
+    
+    const quantity = parseInt(document.getElementById('portionQuantity').value) || 1;
+    const instructions = document.getElementById('portionInstructions').value;
+    
+    const item = {
+        id: currentPortionProduct.id,
+        name: `${currentPortionProduct.name} (${selectedPortion.portion_name})`,
+        price: parseFloat(selectedPortion.selling_price),
+        quantity: quantity,
+        modifiers: [],
+        instructions: instructions,
+        base_price: parseFloat(selectedPortion.selling_price),
+        total: parseFloat(selectedPortion.selling_price) * quantity,
+        portion_id: selectedPortion.id,
+        portion_name: selectedPortion.portion_name,
+        portion_size_ml: selectedPortion.portion_size_ml
+    };
+    
+    cart.push(item);
+    updateCart();
+    
+    if (portionModalInstance) {
+        portionModalInstance.hide();
+    }
+    
+    // Reset state
+    currentPortionProduct = null;
+    selectedPortion = null;
 }
 
 function confirmModifiers() {

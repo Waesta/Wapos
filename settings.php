@@ -86,6 +86,11 @@ $fieldDefinitions = [
     'require_register_session' => ['type' => 'bool'],
     'blind_close_enabled' => ['type' => 'bool'],
     'max_variance_without_approval' => ['type' => 'float'],
+    'branding_logo' => ['type' => 'string'],
+    'branding_logo_light' => ['type' => 'string'],
+    'branding_tagline' => ['type' => 'string'],
+    'branding_primary_color' => ['type' => 'string'],
+    'branding_secondary_color' => ['type' => 'string'],
 ];
 
 // Handle form submission
@@ -272,10 +277,10 @@ $sections = [
         'roles' => ['admin', 'developer', 'accountant'],
     ],
     'receipts_branding' => [
-        'title' => 'Receipts & Printing',
-        'icon' => 'bi-journal-text',
-        'description' => 'Customize receipt headers, footers, and printing preferences.',
-        'roles' => ['admin', 'developer', 'accountant'],
+        'title' => 'Branding & Receipts',
+        'icon' => 'bi-palette',
+        'description' => 'Upload business logo and customize receipt headers, footers, and printing preferences.',
+        'roles' => ['admin', 'developer'],
     ],
     'delivery_logistics' => [
         'title' => 'Delivery & Logistics',
@@ -513,29 +518,119 @@ $visibleSections = array_filter($sections, function ($section) use ($userRole) {
                             </div>
                         </div>
                     <?php elseif ($key === 'receipts_branding'): ?>
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <label class="form-label">Receipt Header</label>
-                                <input type="text" class="form-control" name="receipt_header" value="<?= htmlspecialchars($settings['receipt_header'] ?? '') ?>" placeholder="Thank you for your business!">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Receipt Footer</label>
-                                <textarea class="form-control" name="receipt_footer" rows="2" placeholder="Return policy or contact info"><?= htmlspecialchars($settings['receipt_footer'] ?? '') ?></textarea>
-                            </div>
-                            <div class="col-md-6">
-                                <?php $showLogo = !empty($settings['receipt_show_logo']); ?>
-                                <div class="form-check form-switch mt-4">
-                                    <input class="form-check-input" type="checkbox" role="switch" id="receiptLogoToggle" name="receipt_show_logo" <?= $showLogo ? 'checked' : '' ?>>
-                                    <label class="form-check-label" for="receiptLogoToggle">Show company logo on printed receipts</label>
+                        <?php 
+                        $businessLogo = $settings['branding_logo'] ?? '';
+                        $businessLogoLight = $settings['branding_logo_light'] ?? '';
+                        $brandingTagline = $settings['branding_tagline'] ?? '';
+                        $primaryColor = $settings['branding_primary_color'] ?? '#2563eb';
+                        $secondaryColor = $settings['branding_secondary_color'] ?? '#1e293b';
+                        ?>
+                        
+                        <!-- Logo Upload Section -->
+                        <div class="mb-4 pb-4 border-bottom">
+                            <h6 class="text-muted mb-3"><i class="bi bi-image me-2"></i>Business Logo</h6>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label fw-semibold">Primary Logo</label>
+                                    <div class="border rounded p-3 text-center bg-dark mb-2" style="min-height: 120px;">
+                                        <?php if ($businessLogo): ?>
+                                            <img src="<?= htmlspecialchars($businessLogo) ?>" alt="Business Logo" 
+                                                 id="logoPreview" style="max-height: 100px; max-width: 100%;">
+                                        <?php else: ?>
+                                            <div class="text-white-50" id="logoPlaceholder">
+                                                <i class="bi bi-image" style="font-size: 2.5rem;"></i>
+                                                <p class="mb-0 mt-2 small">No logo uploaded</p>
+                                            </div>
+                                            <img src="" alt="" id="logoPreview" style="max-height: 100px; max-width: 100%; display: none;">
+                                        <?php endif; ?>
+                                    </div>
+                                    <input type="file" class="form-control" id="logoUploadInput" accept="image/*">
+                                    <input type="hidden" name="branding_logo" id="brandingLogoUrl" value="<?= htmlspecialchars($businessLogo) ?>">
+                                    <div class="form-text">PNG or SVG with transparent background recommended. Max 5MB.</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-semibold">Secondary Logo (Light BG)</label>
+                                    <div class="border rounded p-3 text-center bg-light mb-2" style="min-height: 120px;">
+                                        <?php if ($businessLogoLight): ?>
+                                            <img src="<?= htmlspecialchars($businessLogoLight) ?>" alt="Logo Light" 
+                                                 id="logoLightPreview" style="max-height: 100px; max-width: 100%;">
+                                        <?php elseif ($businessLogo): ?>
+                                            <img src="<?= htmlspecialchars($businessLogo) ?>" alt="Logo" 
+                                                 id="logoLightPreview" style="max-height: 100px; max-width: 100%;">
+                                        <?php else: ?>
+                                            <div class="text-muted" id="logoLightPlaceholder">
+                                                <i class="bi bi-image" style="font-size: 2.5rem;"></i>
+                                                <p class="mb-0 mt-2 small">Optional</p>
+                                            </div>
+                                            <img src="" alt="" id="logoLightPreview" style="max-height: 100px; max-width: 100%; display: none;">
+                                        <?php endif; ?>
+                                    </div>
+                                    <input type="file" class="form-control" id="logoLightUploadInput" accept="image/*">
+                                    <input type="hidden" name="branding_logo_light" id="brandingLogoLightUrl" value="<?= htmlspecialchars($businessLogoLight) ?>">
+                                    <div class="form-text">Use if primary logo doesn't work on light backgrounds.</div>
                                 </div>
                             </div>
-                            <div class="col-md-6">
-                                <?php $showQr = !empty($settings['receipt_show_qr']); ?>
-                                <div class="form-check form-switch mt-4">
-                                    <input class="form-check-input" type="checkbox" role="switch" id="receiptQRToggle" name="receipt_show_qr" <?= $showQr ? 'checked' : '' ?>>
-                                    <label class="form-check-label" for="receiptQRToggle">Include payment QR code / M-Pesa paybill</label>
+                        </div>
+                        
+                        <!-- Brand Colors & Tagline -->
+                        <div class="mb-4 pb-4 border-bottom">
+                            <h6 class="text-muted mb-3"><i class="bi bi-palette2 me-2"></i>Brand Identity</h6>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">Tagline / Slogan</label>
+                                    <input type="text" class="form-control" name="branding_tagline" 
+                                           value="<?= htmlspecialchars($brandingTagline) ?>" 
+                                           placeholder="e.g., Quality Service, Always">
+                                    <div class="form-text">Appears below logo on documents</div>
                                 </div>
-                                <div class="form-text">Configure QR code content in the integrations section.</div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Primary Color</label>
+                                    <div class="input-group">
+                                        <input type="color" class="form-control form-control-color" 
+                                               name="branding_primary_color" value="<?= htmlspecialchars($primaryColor) ?>">
+                                        <input type="text" class="form-control" value="<?= htmlspecialchars($primaryColor) ?>" 
+                                               style="max-width: 90px;" readonly>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Secondary Color</label>
+                                    <div class="input-group">
+                                        <input type="color" class="form-control form-control-color" 
+                                               name="branding_secondary_color" value="<?= htmlspecialchars($secondaryColor) ?>">
+                                        <input type="text" class="form-control" value="<?= htmlspecialchars($secondaryColor) ?>" 
+                                               style="max-width: 90px;" readonly>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Receipt Settings -->
+                        <div>
+                            <h6 class="text-muted mb-3"><i class="bi bi-receipt me-2"></i>Receipt Settings</h6>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">Receipt Header</label>
+                                    <input type="text" class="form-control" name="receipt_header" value="<?= htmlspecialchars($settings['receipt_header'] ?? '') ?>" placeholder="Thank you for your business!">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Receipt Footer</label>
+                                    <textarea class="form-control" name="receipt_footer" rows="2" placeholder="Return policy or contact info"><?= htmlspecialchars($settings['receipt_footer'] ?? '') ?></textarea>
+                                </div>
+                                <div class="col-md-6">
+                                    <?php $showLogo = !empty($settings['receipt_show_logo']); ?>
+                                    <div class="form-check form-switch mt-2">
+                                        <input class="form-check-input" type="checkbox" role="switch" id="receiptLogoToggle" name="receipt_show_logo" <?= $showLogo ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="receiptLogoToggle">Show company logo on printed receipts</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <?php $showQr = !empty($settings['receipt_show_qr']); ?>
+                                    <div class="form-check form-switch mt-2">
+                                        <input class="form-check-input" type="checkbox" role="switch" id="receiptQRToggle" name="receipt_show_qr" <?= $showQr ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="receiptQRToggle">Include payment QR code / M-Pesa paybill</label>
+                                    </div>
+                                    <div class="form-text">Configure QR code content in the integrations section.</div>
+                                </div>
                             </div>
                         </div>
                     <?php elseif ($key === 'delivery_logistics'): ?>
@@ -1174,6 +1269,68 @@ document.addEventListener('DOMContentLoaded', () => {
                 dataImportSubmit.disabled = false;
             }
         }
+    });
+});
+
+// Logo Upload Handlers
+document.getElementById('logoUploadInput')?.addEventListener('change', async function(e) {
+    await uploadLogo(this, 'logoPreview', 'brandingLogoUrl', 'logoPlaceholder');
+});
+
+document.getElementById('logoLightUploadInput')?.addEventListener('change', async function(e) {
+    await uploadLogo(this, 'logoLightPreview', 'brandingLogoLightUrl', 'logoLightPlaceholder');
+});
+
+async function uploadLogo(input, previewId, hiddenId, placeholderId) {
+    const file = input.files[0];
+    if (!file) return;
+    
+    if (file.size > 5 * 1024 * 1024) {
+        alert('File too large. Maximum size is 5MB.');
+        input.value = '';
+        return;
+    }
+    
+    const preview = document.getElementById(previewId);
+    const hidden = document.getElementById(hiddenId);
+    const placeholder = document.getElementById(placeholderId);
+    
+    // Show loading
+    if (placeholder) placeholder.innerHTML = '<div class="spinner-border spinner-border-sm text-light"></div>';
+    
+    const formData = new FormData();
+    formData.append('image', file);
+    formData.append('type', 'logos');
+    
+    try {
+        const response = await fetch('/wapos/api/upload-image.php', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            preview.src = result.url;
+            preview.style.display = '';
+            hidden.value = result.url;
+            if (placeholder) placeholder.style.display = 'none';
+        } else {
+            alert('Upload failed: ' + result.error);
+            if (placeholder) {
+                placeholder.innerHTML = '<i class="bi bi-image" style="font-size: 2.5rem;"></i><p class="mb-0 mt-2 small">Upload failed</p>';
+            }
+        }
+    } catch (error) {
+        alert('Upload failed: ' + error.message);
+    }
+}
+
+// Color picker sync
+document.querySelectorAll('input[type="color"]').forEach(input => {
+    input.addEventListener('input', function() {
+        const textInput = this.parentElement.querySelector('input[type="text"]');
+        if (textInput) textInput.value = this.value;
     });
 });
 </script>

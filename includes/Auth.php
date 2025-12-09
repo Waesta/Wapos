@@ -35,7 +35,12 @@ class Auth {
         $this->user = $this->db->fetchOne($sql, [$this->userId]);
         
         if (!$this->user) {
-            $this->logout();
+            // User not found or inactive - clear session without full logout to avoid redirect loops
+            $this->userId = null;
+            $this->user = null;
+            unset($_SESSION['user_id']);
+            unset($_SESSION['username']);
+            unset($_SESSION['role']);
         }
     }
     

@@ -725,6 +725,20 @@ $ctaButton = $cm->get('home_cta_button', 'Sign In to Dashboard');
                     </ul>
                 </article>
 
+                <!-- Bar & Beverage -->
+                <article class="module-card">
+                    <div class="module-icon" style="background: rgba(23,162,184,0.12); color: #17a2b8;"><i class="bi bi-cup-straw" aria-hidden="true"></i></div>
+                    <h3>Bar & Beverage</h3>
+                    <ul class="module-features">
+                        <li>Portion-based sales (tots, shots)</li>
+                        <li>Cocktail recipe management</li>
+                        <li>Open bottle tracking</li>
+                        <li>Yield & variance reports</li>
+                        <li>Pour logging & wastage</li>
+                        <li>Digital menu with QR codes</li>
+                    </ul>
+                </article>
+
                 <!-- Housekeeping -->
                 <article class="module-card">
                     <div class="module-icon"><i class="bi bi-house-check" aria-hidden="true"></i></div>
@@ -732,9 +746,9 @@ $ctaButton = $cm->get('home_cta_button', 'Sign In to Dashboard');
                     <ul class="module-features">
                         <li>Room status board</li>
                         <li>Task assignment & tracking</li>
-                        <li>Cleaning schedules</li>
-                        <li>Staff workload management</li>
-                        <li>Inspection checklists</li>
+                        <li>Linen & laundry tracking</li>
+                        <li>Minibar consumption logging</li>
+                        <li>Supplies inventory</li>
                         <li>Real-time status updates</li>
                     </ul>
                 </article>
