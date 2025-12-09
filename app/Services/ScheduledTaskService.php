@@ -15,49 +15,38 @@ class ScheduledTaskService
     public function __construct(PDO $db)
     {
         $this->db = $db;
-        $this->ensureSchema();
     }
 
-    private function ensureSchema(): void
-    {
-        $sql = "CREATE TABLE IF NOT EXISTS scheduled_tasks (
-            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-            task_name VARCHAR(100) NOT NULL,
-            task_type ENUM('backup','report','alert','cleanup') NOT NULL,
-            schedule VARCHAR(50) NOT NULL,
-            last_run DATETIME NULL,
-            next_run DATETIME NULL,
-            status ENUM('active','inactive','running','failed') DEFAULT 'active',
-            config TEXT NULL,
-            message TEXT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            UNIQUE KEY uniq_task_name (task_name)
-        ) ENGINE=InnoDB";
-
-        $this->db->exec($sql);
-    }
-
+    /**
+     * Upsert backup task using existing schema:
+     * task_key, description, schedule_expression, next_run_at, last_run_at, status, is_active
+     */
     public function upsertBackupTask(array $config): void
     {
-        $payload = [
-            'schedule' => $config['frequency'] ?? 'daily',
-            'config' => json_encode($config),
-            'next_run' => $this->computeNextRun($config)->format('Y-m-d H:i:s'),
-        ];
+        $scheduleExpr = $this->configToScheduleExpression($config);
+        $nextRun = $this->computeNextRun($config)->format('Y-m-d H:i:s');
+        $description = 'Automated system backup (' . ($config['frequency'] ?? 'daily') . ')';
 
         $stmt = $this->db->prepare(
-            "INSERT INTO scheduled_tasks (task_name, task_type, schedule, next_run, config)
-             VALUES ('daily_backup', 'backup', :schedule, :next_run, :config)
-             ON DUPLICATE KEY UPDATE schedule = VALUES(schedule), config = VALUES(config), next_run = VALUES(next_run), status = 'active'"
+            "INSERT INTO scheduled_tasks (task_key, description, schedule_expression, next_run_at, is_active)
+             VALUES ('system_backup', :description, :schedule_expr, :next_run, 1)
+             ON DUPLICATE KEY UPDATE 
+                description = VALUES(description), 
+                schedule_expression = VALUES(schedule_expression), 
+                next_run_at = VALUES(next_run_at), 
+                is_active = 1"
         );
-        $stmt->execute($payload);
+        $stmt->execute([
+            ':description' => $description,
+            ':schedule_expr' => $scheduleExpr,
+            ':next_run' => $nextRun,
+        ]);
     }
 
-    public function getTaskByName(string $taskName): ?array
+    public function getTaskByKey(string $taskKey): ?array
     {
-        $stmt = $this->db->prepare('SELECT * FROM scheduled_tasks WHERE task_name = :name');
-        $stmt->execute([':name' => $taskName]);
+        $stmt = $this->db->prepare('SELECT * FROM scheduled_tasks WHERE task_key = :key');
+        $stmt->execute([':key' => $taskKey]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         return $row ?: null;
     }
@@ -66,9 +55,10 @@ class ScheduledTaskService
     {
         $stmt = $this->db->prepare(
             "SELECT * FROM scheduled_tasks
-             WHERE status IN ('active','failed')
-               AND next_run IS NOT NULL
-               AND next_run <= NOW()"
+             WHERE is_active = 1
+               AND status IN ('pending','failed')
+               AND next_run_at IS NOT NULL
+               AND next_run_at <= NOW()"
         );
         $stmt->execute();
         return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
@@ -76,7 +66,7 @@ class ScheduledTaskService
 
     public function markRunning(int $taskId): void
     {
-        $stmt = $this->db->prepare('UPDATE scheduled_tasks SET status = "running", last_run = NOW(), updated_at = NOW() WHERE id = :id');
+        $stmt = $this->db->prepare("UPDATE scheduled_tasks SET status = 'running', last_run_at = NOW(), updated_at = NOW() WHERE id = :id");
         $stmt->execute([':id' => $taskId]);
     }
 
@@ -84,20 +74,35 @@ class ScheduledTaskService
     {
         $nextRun = $this->computeNextRun($config)->format('Y-m-d H:i:s');
         $stmt = $this->db->prepare(
-            'UPDATE scheduled_tasks SET status = :status, message = :message, next_run = :next_run, updated_at = NOW() WHERE id = :id'
+            "UPDATE scheduled_tasks SET status = :status, last_error = :message, next_run_at = :next_run, updated_at = NOW() WHERE id = :id"
         );
         $stmt->execute([
-            ':status' => $success ? 'active' : 'failed',
-            ':message' => $message,
+            ':status' => $success ? 'pending' : 'failed',
+            ':message' => $success ? null : $message,
             ':next_run' => $nextRun,
             ':id' => $taskId,
         ]);
     }
 
-    public function deactivateTask(string $taskName): void
+    public function deactivateTask(string $taskKey): void
     {
-        $stmt = $this->db->prepare('UPDATE scheduled_tasks SET status = "inactive" WHERE task_name = :name');
-        $stmt->execute([':name' => $taskName]);
+        $stmt = $this->db->prepare('UPDATE scheduled_tasks SET is_active = 0 WHERE task_key = :key');
+        $stmt->execute([':key' => $taskKey]);
+    }
+
+    private function configToScheduleExpression(array $config): string
+    {
+        $frequency = $config['frequency'] ?? 'daily';
+        $time = $config['time'] ?? '02:00';
+        $weekday = $config['weekday'] ?? 'monday';
+
+        if ($frequency === 'hourly') {
+            return 'hourly';
+        }
+        if ($frequency === 'weekly') {
+            return "weekly:{$weekday}@{$time}";
+        }
+        return "daily@{$time}";
     }
 
     private function computeNextRun(array $config): DateTimeImmutable

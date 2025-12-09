@@ -685,7 +685,7 @@ $ctaButton = $cm->get('home_cta_button', 'Sign In to Dashboard');
 
                 <!-- Restaurant -->
                 <article class="module-card">
-                    <div class="module-icon"><i class="bi bi-cup-straw" aria-hidden="true"></i></div>
+                    <div class="module-icon"><i class="bi bi-egg-fried" aria-hidden="true"></i></div>
                     <h3>Restaurant</h3>
                     <ul class="module-features">
                         <li>Table management & floor plan</li>
@@ -693,7 +693,9 @@ $ctaButton = $cm->get('home_cta_button', 'Sign In to Dashboard');
                         <li>Kitchen Display System (KDS)</li>
                         <li>Menu & modifier management</li>
                         <li>Reservations & waitlist</li>
-                        <li>Waiter order taking</li>
+                        <li>Split billing & item transfers</li>
+                        <li>Digital menu with QR codes</li>
+                        <li>Recipe-based inventory deduction</li>
                     </ul>
                 </article>
 
@@ -730,12 +732,14 @@ $ctaButton = $cm->get('home_cta_button', 'Sign In to Dashboard');
                     <div class="module-icon" style="background: rgba(23,162,184,0.12); color: #17a2b8;"><i class="bi bi-cup-straw" aria-hidden="true"></i></div>
                     <h3>Bar & Beverage</h3>
                     <ul class="module-features">
-                        <li>Portion-based sales (tots, shots)</li>
+                        <li>Dedicated Bar POS with tabs</li>
+                        <li>Portion-based sales (tots, shots, glasses)</li>
                         <li>Cocktail recipe management</li>
-                        <li>Open bottle tracking</li>
+                        <li>Open bottle tracking & pour logging</li>
+                        <li>Bar KDS for drink orders</li>
+                        <li>Happy hour pricing rules</li>
                         <li>Yield & variance reports</li>
-                        <li>Pour logging & wastage</li>
-                        <li>Digital menu with QR codes</li>
+                        <li>Floor plan with table status</li>
                     </ul>
                 </article>
 
@@ -848,6 +852,48 @@ $ctaButton = $cm->get('home_cta_button', 'Sign In to Dashboard');
                         <li>System settings & configuration</li>
                         <li>Audit logs & activity tracking</li>
                         <li>Data backup & restore</li>
+                    </ul>
+                </article>
+
+                <!-- Property Management -->
+                <article class="module-card">
+                    <div class="module-icon" style="background: rgba(139,92,246,0.12); color: #8b5cf6;"><i class="bi bi-building" aria-hidden="true"></i></div>
+                    <h3>Property Management</h3>
+                    <ul class="module-features">
+                        <li>Room booking & reservations</li>
+                        <li>Guest check-in/out with QR codes</li>
+                        <li>Room service ordering</li>
+                        <li>Folio & billing management</li>
+                        <li>Guest self-service portal</li>
+                        <li>Occupancy reports</li>
+                    </ul>
+                </article>
+
+                <!-- Employee Management -->
+                <article class="module-card">
+                    <div class="module-icon" style="background: rgba(236,72,153,0.12); color: #ec4899;"><i class="bi bi-person-badge" aria-hidden="true"></i></div>
+                    <h3>Employee Management</h3>
+                    <ul class="module-features">
+                        <li>Time clock with PIN entry</li>
+                        <li>Shift scheduling</li>
+                        <li>Attendance tracking</li>
+                        <li>Overtime calculations</li>
+                        <li>Timesheet reports</li>
+                        <li>Role-based access control</li>
+                    </ul>
+                </article>
+
+                <!-- QR Code & Digital Tools -->
+                <article class="module-card">
+                    <div class="module-icon" style="background: rgba(20,184,166,0.12); color: #14b8a6;"><i class="bi bi-qr-code" aria-hidden="true"></i></div>
+                    <h3>QR Code & Digital Tools</h3>
+                    <ul class="module-features">
+                        <li>Digital menu QR codes</li>
+                        <li>Table ordering via QR</li>
+                        <li>Guest self check-in QR</li>
+                        <li>Loyalty card QR codes</li>
+                        <li>Receipt & feedback QR</li>
+                        <li>Barcode scanner support</li>
                     </ul>
                 </article>
             </div>

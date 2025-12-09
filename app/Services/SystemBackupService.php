@@ -8,6 +8,7 @@ use Exception;
 use PDO;
 use PDOException;
 use ZipArchive;
+use SettingsStore;
 
 class SystemBackupService
 {

@@ -937,7 +937,7 @@ $visibleSections = array_filter($sections, function ($section) use ($userRole) {
                                                     </button>
                                                 </div>
                                                 <div class="col-12">
-                                                    <form id="dataImportForm" class="row g-3" enctype="multipart/form-data" novalidate>
+                                                    <div id="dataImportForm" class="row g-3">
                                                         <div class="col-md-6">
                                                             <label class="form-label">Upload CSV</label>
                                                             <input type="file" class="form-control" id="dataImportFile" accept=".csv,text/csv">
@@ -951,12 +951,12 @@ $visibleSections = array_filter($sections, function ($section) use ($userRole) {
                                                             </select>
                                                         </div>
                                                         <div class="col-md-3 d-flex align-items-end">
-                                                            <button type="submit" class="btn btn-success w-100" id="dataImportSubmit">
+                                                            <button type="button" class="btn btn-success w-100" id="dataImportSubmit">
                                                                 <span class="spinner-border spinner-border-sm me-2 d-none" role="status" aria-hidden="true"></span>
                                                                 <i class="bi bi-upload me-1"></i>Process File
                                                             </button>
                                                         </div>
-                                                    </form>
+                                                    </div>
                                                     <div id="dataImportStatus" class="alert d-none mt-3" role="alert"></div>
                                                 </div>
                                             </div>

@@ -34,7 +34,11 @@ include 'includes/header.php';
                         <a class="nav-link" href="#getting-started">🚀 Getting Started</a>
                         <a class="nav-link" href="#pos-sales">💰 Making Sales (POS)</a>
                         <a class="nav-link" href="#restaurant">🍽️ Restaurant Orders</a>
+                        <a class="nav-link" href="#bar-pos">🍸 Bar & Beverage</a>
+                        <a class="nav-link" href="#property">🏨 Property Management</a>
                         <a class="nav-link" href="#inventory">📦 Inventory Management</a>
+                        <a class="nav-link" href="#time-clock">⏰ Time Clock</a>
+                        <a class="nav-link" href="#qr-codes">📲 QR Codes</a>
                         <a class="nav-link" href="#reports">📊 Reports</a>
                         <a class="nav-link" href="#settings">⚙️ Settings</a>
                         <a class="nav-link" href="#troubleshooting">🔧 Troubleshooting</a>
@@ -239,10 +243,14 @@ include 'includes/header.php';
                     <h5 class="mt-4">Understanding Your Dashboard</h5>
                     <p>Your dashboard shows information relevant to your role:</p>
                     <ul>
-                        <li><strong>Admin/Manager:</strong> Sales overview, staff activity, inventory alerts</li>
+                        <li><strong>Admin/Manager:</strong> Sales overview, staff activity, inventory alerts, KPIs</li>
                         <li><strong>Cashier:</strong> Quick access to POS, today's sales summary</li>
                         <li><strong>Waiter:</strong> Active orders, table status, kitchen updates</li>
-                        <li><strong>Accountant:</strong> Financial summaries, reports access</li>
+                        <li><strong>Bartender:</strong> Bar POS, open tabs, happy hour status, time clock</li>
+                        <li><strong>Accountant:</strong> Financial summaries, P&L, balance sheet</li>
+                        <li><strong>Front Desk:</strong> Room bookings, check-ins, guest folios</li>
+                        <li><strong>Housekeeping:</strong> Room status, cleaning tasks, supplies</li>
+                        <li><strong>Maintenance:</strong> Work orders, task assignments</li>
                     </ul>
 
                     <h5 class="mt-4">Navigation</h5>
@@ -338,7 +346,108 @@ include 'includes/header.php';
                 </div>
             </section>
 
-            <!-- Section 6: Inventory -->
+            <!-- Section 6: Bar & Beverage -->
+            <section id="bar-pos" class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white border-bottom">
+                    <h4 class="mb-0"><i class="bi bi-cup-straw me-2 text-info"></i>Bar & Beverage</h4>
+                </div>
+                <div class="card-body">
+                    <h5>Bar POS</h5>
+                    <p>The dedicated Bar POS is designed for fast drink service:</p>
+                    <ol>
+                        <li>Go to <strong>Restaurant → Bar POS</strong> from sidebar</li>
+                        <li>Select products by category (Spirits, Beer, Wine, Cocktails)</li>
+                        <li>For portioned items (spirits), select the <strong>portion size</strong> (tot, shot, glass)</li>
+                        <li>Add to cart and process payment</li>
+                    </ol>
+
+                    <h5 class="mt-4">Bar Tabs</h5>
+                    <p>Allow customers to run a tab:</p>
+                    <ol>
+                        <li>Click <strong>"Open Tab"</strong> when starting an order</li>
+                        <li>Enter customer name or room number</li>
+                        <li>Add drinks throughout the session</li>
+                        <li>Click <strong>"Close Tab"</strong> to settle the bill</li>
+                    </ol>
+
+                    <h5 class="mt-4">Happy Hour</h5>
+                    <p>Configure automatic discounts during happy hour:</p>
+                    <ol>
+                        <li>Go to <strong>Settings → Happy Hour</strong></li>
+                        <li>Set start and end times</li>
+                        <li>Choose discount type (percentage or fixed)</li>
+                        <li>Select which products or categories apply</li>
+                        <li>Discounts apply automatically during configured times</li>
+                    </ol>
+
+                    <h5 class="mt-4">Open Bottle Tracking</h5>
+                    <p>Track opened bottles for variance control:</p>
+                    <ol>
+                        <li>Go to <strong>Bar Management</strong></li>
+                        <li>Click <strong>"Open Bottle"</strong> when opening new stock</li>
+                        <li>System tracks remaining ml after each pour</li>
+                        <li>View variance reports to identify wastage</li>
+                    </ol>
+
+                    <h5 class="mt-4">Bar KDS (Kitchen Display)</h5>
+                    <p>View drink orders on a dedicated screen:</p>
+                    <ul>
+                        <li>Orders appear in real-time</li>
+                        <li>Click to mark items as <strong>In Progress</strong> or <strong>Ready</strong></li>
+                        <li>Color-coded by wait time</li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- Section 7: Property Management -->
+            <section id="property" class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white border-bottom">
+                    <h4 class="mb-0"><i class="bi bi-building me-2 text-purple"></i>Property Management</h4>
+                </div>
+                <div class="card-body">
+                    <h5>Room Bookings</h5>
+                    <ol>
+                        <li>Go to <strong>Property → Rooms</strong></li>
+                        <li>Click <strong>"New Booking"</strong></li>
+                        <li>Select room, dates, and guest details</li>
+                        <li>Confirm booking and send confirmation</li>
+                    </ol>
+
+                    <h5 class="mt-4">Guest Check-In/Out</h5>
+                    <ol>
+                        <li>Find the booking in the list</li>
+                        <li>Click <strong>"Check In"</strong> to register arrival</li>
+                        <li>At departure, click <strong>"Check Out"</strong></li>
+                        <li>Review folio and process final payment</li>
+                    </ol>
+
+                    <h5 class="mt-4">Guest Self Check-In (QR Code)</h5>
+                    <p>Guests can check in using their phone:</p>
+                    <ol>
+                        <li>Generate a check-in QR code from <strong>QR Generator</strong></li>
+                        <li>Guest scans QR code with their phone</li>
+                        <li>Guest enters booking number to verify</li>
+                        <li>Check-in is recorded automatically</li>
+                    </ol>
+
+                    <h5 class="mt-4">Room Service</h5>
+                    <ol>
+                        <li>Guest calls or orders via digital menu</li>
+                        <li>Create order linked to room number</li>
+                        <li>Charges added to guest folio automatically</li>
+                    </ol>
+
+                    <h5 class="mt-4">Housekeeping Tasks</h5>
+                    <ol>
+                        <li>Go to <strong>Property → Housekeeping</strong></li>
+                        <li>View room status board</li>
+                        <li>Assign cleaning tasks to staff</li>
+                        <li>Mark rooms as clean when complete</li>
+                    </ol>
+                </div>
+            </section>
+
+            <!-- Section 8: Inventory -->
             <section id="inventory" class="card border-0 shadow-sm mb-4">
                 <div class="card-header bg-white border-bottom">
                     <h4 class="mb-0"><i class="bi bi-box-seam me-2 text-warning"></i>Inventory Management</h4>
@@ -376,7 +485,92 @@ include 'includes/header.php';
                 </div>
             </section>
 
-            <!-- Section 7: Reports -->
+            <!-- Section 9: Time Clock -->
+            <section id="time-clock" class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white border-bottom">
+                    <h4 class="mb-0"><i class="bi bi-clock-history me-2 text-danger"></i>Time Clock</h4>
+                </div>
+                <div class="card-body">
+                    <h5>Clocking In/Out</h5>
+                    <p>Employees can track their work hours:</p>
+                    <ol>
+                        <li>Go to <strong>Time Clock</strong> from the sidebar</li>
+                        <li>Enter your <strong>PIN</strong> (assigned by manager)</li>
+                        <li>Click <strong>"Clock In"</strong> to start your shift</li>
+                        <li>At the end of your shift, click <strong>"Clock Out"</strong></li>
+                    </ol>
+
+                    <h5 class="mt-4">Viewing Your Hours</h5>
+                    <ul>
+                        <li>See today's hours and current status</li>
+                        <li>View weekly summary of hours worked</li>
+                        <li>Check overtime hours if applicable</li>
+                    </ul>
+
+                    <h5 class="mt-4">Manager Functions</h5>
+                    <p>Managers can:</p>
+                    <ul>
+                        <li>View all employee time entries</li>
+                        <li>Edit or correct clock times</li>
+                        <li>Generate timesheet reports</li>
+                        <li>Approve overtime</li>
+                        <li>Set employee PINs</li>
+                    </ul>
+
+                    <div class="alert alert-info mt-3">
+                        <i class="bi bi-lightbulb me-2"></i>
+                        <strong>Tip:</strong> The time clock can also be accessed from the Bartender Dashboard for quick clock in/out.
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 10: QR Codes -->
+            <section id="qr-codes" class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white border-bottom">
+                    <h4 class="mb-0"><i class="bi bi-qr-code me-2 text-success"></i>QR Codes</h4>
+                </div>
+                <div class="card-body">
+                    <h5>QR Code Generator</h5>
+                    <p>Generate QR codes for various purposes:</p>
+                    <ol>
+                        <li>Go to <strong>Restaurant → QR Generator</strong></li>
+                        <li>Select the QR code type</li>
+                        <li>Configure options</li>
+                        <li>Click <strong>"Generate"</strong></li>
+                        <li>Download or print the QR code</li>
+                    </ol>
+
+                    <h5 class="mt-4">Available QR Code Types</h5>
+                    <table class="table table-bordered">
+                        <tr><td><strong>Digital Menu</strong></td><td>Guests scan to view menu on their phone</td></tr>
+                        <tr><td><strong>Table Order</strong></td><td>Guests can order directly from their table</td></tr>
+                        <tr><td><strong>Guest Check-In</strong></td><td>Hotel guests self check-in with booking number</td></tr>
+                        <tr><td><strong>Loyalty Card</strong></td><td>Customer scans to link loyalty account</td></tr>
+                        <tr><td><strong>Feedback</strong></td><td>Customers leave reviews and ratings</td></tr>
+                        <tr><td><strong>WiFi</strong></td><td>Auto-connect guests to WiFi network</td></tr>
+                        <tr><td><strong>Receipt</strong></td><td>Digital receipt access</td></tr>
+                        <tr><td><strong>Payment</strong></td><td>Mobile payment link</td></tr>
+                    </table>
+
+                    <h5 class="mt-4">Printing Table QR Codes</h5>
+                    <ol>
+                        <li>Go to <strong>Restaurant → Digital Menu QR</strong></li>
+                        <li>Select tables to generate codes for</li>
+                        <li>Print and place on tables</li>
+                        <li>Guests scan to view menu and order</li>
+                    </ol>
+
+                    <h5 class="mt-4">Barcode Scanning</h5>
+                    <p>The system supports barcode scanning for products:</p>
+                    <ul>
+                        <li><strong>USB Scanner:</strong> Plug in and scan directly into search field</li>
+                        <li><strong>Camera Scanner:</strong> Use device camera to scan barcodes</li>
+                        <li><strong>Manual Entry:</strong> Type barcode number if scanner unavailable</li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- Section 11: Reports -->
             <section id="reports" class="card border-0 shadow-sm mb-4">
                 <div class="card-header bg-white border-bottom">
                     <h4 class="mb-0"><i class="bi bi-bar-chart me-2 text-primary"></i>Reports</h4>
@@ -384,12 +578,21 @@ include 'includes/header.php';
                 <div class="card-body">
                     <h5>Available Reports</h5>
                     <table class="table table-bordered">
-                        <tr><td><strong>Sales Report</strong></td><td>Daily, weekly, monthly sales summaries</td></tr>
-                        <tr><td><strong>Product Report</strong></td><td>Best sellers, slow movers, stock levels</td></tr>
-                        <tr><td><strong>Staff Report</strong></td><td>Sales by employee, performance metrics</td></tr>
-                        <tr><td><strong>Payment Report</strong></td><td>Breakdown by payment method</td></tr>
-                        <tr><td><strong>Tax Report</strong></td><td>Tax collected, ready for filing</td></tr>
-                        <tr><td><strong>Inventory Report</strong></td><td>Stock movements, valuations</td></tr>
+                        <thead class="table-light">
+                            <tr><th>Report</th><th>Description</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><strong>Sales Report</strong></td><td>Daily, weekly, monthly sales summaries</td></tr>
+                            <tr><td><strong>Product Report</strong></td><td>Best sellers, slow movers, stock levels</td></tr>
+                            <tr><td><strong>Staff Report</strong></td><td>Sales by employee, performance metrics</td></tr>
+                            <tr><td><strong>Payment Report</strong></td><td>Breakdown by payment method</td></tr>
+                            <tr><td><strong>Tax Report</strong></td><td>Tax collected, ready for filing</td></tr>
+                            <tr><td><strong>Inventory Report</strong></td><td>Stock movements, valuations</td></tr>
+                            <tr><td><strong>Bar Variance Report</strong></td><td>Expected vs actual pour usage</td></tr>
+                            <tr><td><strong>Timesheet Report</strong></td><td>Employee hours and attendance</td></tr>
+                            <tr><td><strong>Register Report</strong></td><td>X, Y, Z reports for cash reconciliation</td></tr>
+                            <tr><td><strong>Location Analytics</strong></td><td>Multi-location performance comparison</td></tr>
+                        </tbody>
                     </table>
 
                     <h5 class="mt-4">Exporting Reports</h5>
