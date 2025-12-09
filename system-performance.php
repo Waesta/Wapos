@@ -3,7 +3,7 @@ require_once 'includes/bootstrap.php';
 // System performance is restricted to super admin only
 if (!$auth->isLoggedIn() || !in_array($auth->getRole(), ['developer', 'super_admin'])) {
     $_SESSION['error_message'] = 'Access denied. Super admin privileges required.';
-    redirect('index.php');
+    redirectToDashboard($auth);
 }
 
 $db = Database::getInstance();

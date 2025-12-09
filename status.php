@@ -10,7 +10,7 @@ require_once __DIR__ . '/includes/bootstrap.php';
 // System status is restricted to admin roles
 if (!$auth->isLoggedIn() || !in_array($auth->getRole(), ['developer', 'super_admin', 'admin'])) {
     $_SESSION['error_message'] = 'Access denied. Admin privileges required.';
-    redirect('index.php');
+    redirectToDashboard($auth);
 }
 
 $db = Database::getInstance();

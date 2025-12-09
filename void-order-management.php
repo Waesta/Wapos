@@ -4,9 +4,9 @@ $auth->requireLogin();
 
 // Check void permission - simplified for now
 $user = $auth->getUser();
-if (!$user || !in_array($user['role'], ['admin', 'manager', 'developer'])) {
+if (!$user || !in_array($user['role'], ['admin', 'manager', 'developer', 'super_admin'])) {
     $_SESSION['error_message'] = 'You do not have permission to void orders. Manager or Admin role required.';
-    redirect('index.php');
+    redirectToDashboard($auth);
 }
 
 $db = Database::getInstance();

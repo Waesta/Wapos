@@ -5,8 +5,8 @@ $auth->requireLogin();
 $user = $auth->getUser();
 $role = strtolower($user['role'] ?? '');
 
-if (!in_array($role, ['admin', 'developer'], true)) {
-    redirect('index.php');
+if (!in_array($role, ['admin', 'developer', 'super_admin'], true)) {
+    redirectToDashboard($auth);
 }
 
 $pageTitle = 'Delivery Pricing Management';

@@ -6,7 +6,7 @@ header("Pragma: no-cache");
 header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
 ?>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="<?= function_exists('current_locale') ? current_locale() : 'en' ?>"<?= function_exists('is_rtl') && is_rtl() ? ' dir="rtl"' : '' ?>>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -34,6 +34,10 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
     <!-- PWA Scripts -->
     <script defer src="<?= APP_URL ?>/assets/js/offline-manager.js"></script>
     <script defer src="<?= APP_URL ?>/assets/js/pwa-install.js"></script>
+    
+    <!-- UX Enhancements -->
+    <script defer src="<?= APP_URL ?>/assets/js/ux-enhancements.js"></script>
+    <script defer src="<?= APP_URL ?>/assets/js/smart-helpers.js"></script>
     
     <style>
         :root {

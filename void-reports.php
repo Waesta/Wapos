@@ -4,9 +4,9 @@ $auth->requireLogin();
 
 // Check permission
 $user = $auth->getUser();
-if (!$user || !in_array($user['role'], ['admin', 'manager', 'accountant'])) {
+if (!$user || !in_array($user['role'], ['admin', 'manager', 'accountant', 'developer', 'super_admin'])) {
     $_SESSION['error_message'] = 'You do not have permission to view void reports.';
-    redirect('index.php');
+    redirectToDashboard($auth);
 }
 
 $db = Database::getInstance();
