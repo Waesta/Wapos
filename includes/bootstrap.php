@@ -170,6 +170,15 @@ function showAlert($message, $type = 'info') {
     echo '</div>';
 }
 
+// Trigger background task runner (automatic backups, etc.) - non-blocking
+if (php_sapi_name() !== 'cli') {
+    try {
+        \App\Services\TaskRunner::trigger($db->getConnection());
+    } catch (Throwable $e) {
+        // Silently fail - don't break user requests
+    }
+}
+
 // Automatically guard module-restricted pages now that SystemManager is initialized
 if (php_sapi_name() !== 'cli') {
     $modulePageMap = [

@@ -29,24 +29,20 @@ if (empty($dueTasks)) {
 
 foreach ($dueTasks as $task) {
     $taskId = (int)($task['id'] ?? 0);
-    $taskName = $task['task_name'] ?? 'unknown';
-    $taskType = $task['task_type'] ?? 'unknown';
+    $taskKey = $task['task_key'] ?? 'unknown';
+    $description = $task['description'] ?? '';
 
-    $config = [];
-    if (!empty($task['config'])) {
-        $decoded = json_decode($task['config'], true);
-        if (is_array($decoded)) {
-            $config = $decoded;
-        }
+    // Determine task type from task_key
+    $taskType = 'unknown';
+    if (str_contains($taskKey, 'backup')) {
+        $taskType = 'backup';
     }
 
-    if (empty($config)) {
-        // Fallback to current backup configuration so that next_run calculations remain stable
-        $config = $backupService->getConfig();
-    }
+    // Get config from backup service for backup tasks
+    $config = $backupService->getConfig();
 
     $scheduledTaskService->markRunning($taskId);
-    $echo("Executing task '{$taskName}' ({$taskType})...");
+    $echo("Executing task '{$taskKey}' ({$taskType})...");
 
     $success = false;
     $message = 'Completed';
@@ -63,20 +59,20 @@ foreach ($dueTasks as $task) {
                 break;
 
             default:
-                $message = 'Unsupported task type';
+                $message = 'Unsupported task type: ' . $taskKey;
                 throw new RuntimeException($message);
         }
     } catch (Throwable $e) {
         $message = $e->getMessage();
-        $echo("Task '{$taskName}' failed: {$message}");
+        $echo("Task '{$taskKey}' failed: {$message}");
     }
 
     $scheduledTaskService->markCompleted($taskId, $success, $message, $config);
 
     if ($success) {
-        $echo("Task '{$taskName}' finished successfully.");
+        $echo("Task '{$taskKey}' finished successfully.");
     } else {
-        $echo("Task '{$taskName}' marked as failed.");
+        $echo("Task '{$taskKey}' marked as failed.");
     }
 }
 

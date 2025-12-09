@@ -819,6 +819,28 @@ $visibleSections = array_filter($sections, function ($section) use ($userRole) {
                                         <input type="text" class="form-control" name="backup_storage_path" value="<?= htmlspecialchars($backupConfig['storage_path'] ?? ROOT_PATH . '/backups') ?>" placeholder="D:/WAPOS/backups">
                                         <div class="form-text">Use an absolute path to an accessible drive or mounted network share.</div>
                                     </div>
+                                    <?php
+                                    // Get next scheduled backup info
+                                    $nextBackupInfo = null;
+                                    try {
+                                        $scheduledTaskService = new \App\Services\ScheduledTaskService($pdo);
+                                        $nextBackupInfo = $scheduledTaskService->getTaskByKey('system_backup');
+                                    } catch (Throwable $e) {}
+                                    ?>
+                                    <?php if ($nextBackupInfo): ?>
+                                    <div class="alert alert-info mb-3 small">
+                                        <i class="bi bi-clock-history me-1"></i>
+                                        <strong>Next automatic backup:</strong> 
+                                        <?= htmlspecialchars(date('D, M j, Y \a\t g:i A', strtotime($nextBackupInfo['next_run_at'] ?? ''))) ?>
+                                        <?php if ($nextBackupInfo['status'] === 'running'): ?>
+                                            <span class="badge bg-warning ms-2">Running now...</span>
+                                        <?php elseif ($nextBackupInfo['is_active']): ?>
+                                            <span class="badge bg-success ms-2">Active</span>
+                                        <?php else: ?>
+                                            <span class="badge bg-secondary ms-2">Disabled</span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <?php endif; ?>
                                     <div class="alert alert-warning mb-0 small">
                                         <i class="bi bi-exclamation-triangle me-1"></i>Ensure the web server user has permission to write to the selected directory.
                                     </div>
