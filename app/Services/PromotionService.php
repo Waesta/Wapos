@@ -222,7 +222,7 @@ SQL;
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function getActivePromotions(DateTimeInterface $at = null): array
+    public function getActivePromotions(?DateTimeInterface $at = null): array
     {
         $this->ensureSchema();
         $now = $at ? DateTimeImmutable::createFromInterface($at) : new DateTimeImmutable('now');

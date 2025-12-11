@@ -6,12 +6,12 @@
 const CACHE_VERSION = '2.1';
 const CACHE_NAME = `wapos-v${CACHE_VERSION}`;
 const DATA_CACHE_NAME = `wapos-data-v${CACHE_VERSION}`;
-const OFFLINE_URL = '/wapos/offline.html';
+const OFFLINE_URL = '/offline.html';
 
 // Core application files to cache (App Shell) - ONLY STATIC FILES
 const APP_SHELL_FILES = [
-    '/wapos/offline.html',
-    '/wapos/assets/images/logo.png'
+    '/offline.html',
+    '/assets/images/logo.png'
 ];
 
 // External resources to cache
@@ -23,18 +23,18 @@ const EXTERNAL_RESOURCES = [
 
 // API endpoints that should be cached for offline use
 const CACHEABLE_API_ENDPOINTS = [
-    '/wapos/api/get-products.php',
-    '/wapos/api/get-customers.php',
-    '/wapos/api/get-categories.php',
-    '/wapos/api/get-settings.php'
+    '/api/get-products.php',
+    '/api/get-customers.php',
+    '/api/get-categories.php',
+    '/api/get-settings.php'
 ];
 
 // Network-first endpoints (always try network first)
 const NETWORK_FIRST_ENDPOINTS = [
-    '/wapos/api/complete-sale.php',
-    '/wapos/api/create-restaurant-order.php',
-    '/wapos/api/update-order-item-status.php',
-    '/wapos/api/complete-order.php'
+    '/api/complete-sale.php',
+    '/api/create-restaurant-order.php',
+    '/api/update-order-item-status.php',
+    '/api/complete-order.php'
 ];
 
 // Install event - cache essential files
@@ -444,12 +444,12 @@ function getStoreNameFromUrl(url) {
 
 function getEndpointForStore(storeName) {
     const endpoints = {
-        'pending-sales': '/wapos/api/complete-sale.php',
-        'pending-orders': '/wapos/api/create-restaurant-order.php',
-        'pending-customers': '/wapos/api/save-customer.php',
-        'pending-inventory': '/wapos/api/update-inventory.php'
+        'pending-sales': '/api/complete-sale.php',
+        'pending-orders': '/api/create-restaurant-order.php',
+        'pending-customers': '/api/save-customer.php',
+        'pending-inventory': '/api/update-inventory.php'
     };
-    return endpoints[storeName] || '/wapos/api/sync-data.php';
+    return endpoints[storeName] || '/api/sync-data.php';
 }
 
 // Message handling for communication with main thread

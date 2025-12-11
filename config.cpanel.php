@@ -1,19 +1,21 @@
 <?php
 /**
  * WAPOS - Waesta Point of Sale System
- * Configuration File
+ * Production Configuration for cPanel
+ * 
+ * Upload this file to cPanel and rename it to config.php
  */
 
-// Database Configuration
-define('DB_HOST', '127.0.0.1');
-define('DB_NAME', 'wapos');
-define('DB_USER', 'root');
-define('DB_PASS', '');
+// Database Configuration - UPDATE THESE WITH YOUR CPANEL DETAILS
+define('DB_HOST', 'localhost');
+define('DB_NAME', 'zxgivemy_wapos');           // Change to your cPanel database name
+define('DB_USER', 'zxgivemy_waposuser');       // Change to your cPanel database user
+define('DB_PASS', 'YOUR_DATABASE_PASSWORD');   // Change to your database password
 define('DB_CHARSET', 'utf8mb4');
 
 // Application Settings
 define('APP_NAME', 'WAPOS');
-define('APP_URL', 'http://localhost/wapos');
+define('APP_URL', 'https://wapos.scholarza.com');
 define('TIMEZONE', 'Africa/Nairobi');
 
 // Currency Settings (Configure in Settings page or set defaults here)
@@ -41,7 +43,7 @@ define('LOG_PATH', ROOT_PATH . '/logs');
 // Set timezone
 date_default_timezone_set(TIMEZONE);
 
-// Error Reporting (set to 0 for production)
+// Error Reporting - PRODUCTION (errors logged, not displayed)
 error_reporting(0);
 ini_set('display_errors', 0);
 ini_set('log_errors', 1);

@@ -88,7 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="card login-card">
                     <div class="card-body p-5">
                         <div class="text-center mb-4">
-                            <img src="<?= APP_URL ?>/assets/images/logo.png" alt="<?= APP_NAME ?>" class="brand-logo">
+                            <img src="<?= APP_URL ?>/assets/images/system/wapos-logo.svg" alt="<?= APP_NAME ?>" class="brand-logo">
                             <h2 class="mt-2 fw-bold"><?= APP_NAME ?></h2>
                             <p class="text-muted">Waesta Point of Sale System</p>
                         </div>

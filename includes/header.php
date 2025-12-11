@@ -485,17 +485,20 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                 $privilegedRoles = ['super_admin', 'developer'];
                 $isPrivileged = in_array($userRole, $privilegedRoles, true);
                 
+                // Base path - empty for root, '/wapos' for subfolder
+                $basePath = '';
+                
                 // Determine dashboard URL based on role
                 $dashboardUrls = [
-                    'super_admin' => '/wapos/dashboards/admin.php',
-                    'developer' => '/wapos/dashboards/admin.php',
-                    'admin' => '/wapos/dashboards/admin.php',
-                    'manager' => '/wapos/dashboards/manager.php',
-                    'accountant' => '/wapos/dashboards/accountant.php',
-                    'cashier' => '/wapos/dashboards/cashier.php',
-                    'waiter' => '/wapos/dashboards/waiter.php',
+                    'super_admin' => $basePath . '/dashboards/admin.php',
+                    'developer' => $basePath . '/dashboards/admin.php',
+                    'admin' => $basePath . '/dashboards/admin.php',
+                    'manager' => $basePath . '/dashboards/manager.php',
+                    'accountant' => $basePath . '/dashboards/accountant.php',
+                    'cashier' => $basePath . '/dashboards/cashier.php',
+                    'waiter' => $basePath . '/dashboards/waiter.php',
                 ];
-                $userDashboard = $dashboardUrls[$userRole] ?? '/wapos/pos.php';
+                $userDashboard = $dashboardUrls[$userRole] ?? $basePath . '/pos.php';
                 
                 $navGroups = [
                     'core' => [
@@ -510,21 +513,21 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => 'all',
-                                'href' => '/wapos/feedback.php',
+                                'href' => $basePath . '/feedback.php',
                                 'page' => 'feedback.php',
                                 'icon' => 'bi-chat-dots',
                                 'label' => 'User Feedback'
                             ],
                             [
                                 'roles' => 'all',
-                                'href' => '/wapos/user-manual.php',
+                                'href' => $basePath . '/user-manual.php',
                                 'page' => 'user-manual.php',
                                 'icon' => 'bi-book',
                                 'label' => 'User Manual'
                             ],
                             [
                                 'roles' => ['admin','manager','super_admin','developer'],
-                                'href' => '/wapos/executive-dashboard.php',
+                                'href' => $basePath . '/executive-dashboard.php',
                                 'page' => 'executive-dashboard.php',
                                 'icon' => 'bi-graph-up-arrow',
                                 'label' => 'Executive KPIs'
@@ -536,7 +539,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                         'items' => [
                             [
                                 'roles' => ['admin','manager','cashier'],
-                                'href' => '/wapos/pos.php',
+                                'href' => $basePath . '/pos.php',
                                 'page' => 'pos.php',
                                 'icon' => 'bi-cart-plus',
                                 'label' => 'Retail POS',
@@ -544,7 +547,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager','cashier'],
-                                'href' => '/wapos/customers.php',
+                                'href' => $basePath . '/customers.php',
                                 'page' => 'customers.php',
                                 'icon' => 'bi-people',
                                 'label' => 'Customers',
@@ -552,7 +555,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager'],
-                                'href' => '/wapos/notifications.php',
+                                'href' => $basePath . '/notifications.php',
                                 'page' => 'notifications.php',
                                 'icon' => 'bi-bell',
                                 'label' => 'Notifications',
@@ -560,7 +563,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['super_admin','developer'],
-                                'href' => '/wapos/notification-usage.php',
+                                'href' => $basePath . '/notification-usage.php',
                                 'page' => 'notification-usage.php',
                                 'icon' => 'bi-bar-chart-line',
                                 'label' => 'Notification Billing',
@@ -568,7 +571,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager','cashier','accountant'],
-                                'href' => '/wapos/sales.php',
+                                'href' => $basePath . '/sales.php',
                                 'page' => 'sales.php',
                                 'icon' => 'bi-receipt',
                                 'label' => 'Sales History',
@@ -576,7 +579,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager','cashier'],
-                                'href' => '/wapos/register-reports.php',
+                                'href' => $basePath . '/register-reports.php',
                                 'page' => 'register-reports.php',
                                 'icon' => 'bi-journal-check',
                                 'label' => 'Register Reports',
@@ -584,7 +587,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager','owner'],
-                                'href' => '/wapos/register-analytics.php',
+                                'href' => $basePath . '/register-analytics.php',
                                 'page' => 'register-analytics.php',
                                 'icon' => 'bi-graph-up',
                                 'label' => 'Register Analytics',
@@ -592,7 +595,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager','owner'],
-                                'href' => '/wapos/location-analytics.php',
+                                'href' => $basePath . '/location-analytics.php',
                                 'page' => 'location-analytics.php',
                                 'icon' => 'bi-geo-alt',
                                 'label' => 'Location Analytics',
@@ -600,7 +603,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager'],
-                                'href' => '/wapos/manage-promotions.php',
+                                'href' => $basePath . '/manage-promotions.php',
                                 'page' => 'manage-promotions.php',
                                 'icon' => 'bi-stars',
                                 'label' => 'Promotions',
@@ -608,7 +611,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager'],
-                                'href' => '/wapos/receipt-settings.php',
+                                'href' => $basePath . '/receipt-settings.php',
                                 'page' => 'receipt-settings.php',
                                 'icon' => 'bi-receipt-cutoff',
                                 'label' => 'Receipt Settings',
@@ -621,7 +624,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                         'items' => [
                             [
                                 'roles' => ['admin','manager','waiter','cashier'],
-                                'href' => '/wapos/restaurant.php',
+                                'href' => $basePath . '/restaurant.php',
                                 'page' => 'restaurant.php',
                                 'icon' => 'bi-cup-hot',
                                 'label' => 'Orders',
@@ -629,7 +632,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager'],
-                                'href' => '/wapos/kitchen-display.php',
+                                'href' => $basePath . '/kitchen-display.php',
                                 'page' => 'kitchen-display.php',
                                 'icon' => 'bi-fire',
                                 'label' => 'Kitchen Display',
@@ -637,7 +640,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager'],
-                                'href' => '/wapos/manage-tables.php',
+                                'href' => $basePath . '/manage-tables.php',
                                 'page' => 'manage-tables.php',
                                 'icon' => 'bi-grid-3x3',
                                 'label' => 'Tables',
@@ -645,7 +648,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager','waiter'],
-                                'href' => '/wapos/restaurant-reservations.php',
+                                'href' => $basePath . '/restaurant-reservations.php',
                                 'page' => 'restaurant-reservations.php',
                                 'icon' => 'bi-calendar-event',
                                 'label' => 'Reservations',
@@ -653,7 +656,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager'],
-                                'href' => '/wapos/manage-modifiers.php',
+                                'href' => $basePath . '/manage-modifiers.php',
                                 'page' => 'manage-modifiers.php',
                                 'icon' => 'bi-sliders2',
                                 'label' => 'Modifiers',
@@ -661,7 +664,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager'],
-                                'href' => '/wapos/void-order-management.php',
+                                'href' => $basePath . '/void-order-management.php',
                                 'page' => 'void-order-management.php',
                                 'icon' => 'bi-x-circle',
                                 'label' => 'Void Orders',
@@ -669,7 +672,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager'],
-                                'href' => '/wapos/void-reports.php',
+                                'href' => $basePath . '/void-reports.php',
                                 'page' => 'void-reports.php',
                                 'icon' => 'bi-file-bar-graph',
                                 'label' => 'Void Reports',
@@ -677,7 +680,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin'],
-                                'href' => '/wapos/void-settings.php',
+                                'href' => $basePath . '/void-settings.php',
                                 'page' => 'void-settings.php',
                                 'icon' => 'bi-sliders',
                                 'label' => 'Void Settings',
@@ -685,7 +688,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager','bartender','cashier'],
-                                'href' => '/wapos/bar-management.php',
+                                'href' => $basePath . '/bar-management.php',
                                 'page' => 'bar-management.php',
                                 'icon' => 'bi-cup-straw',
                                 'label' => 'Bar & Beverage',
@@ -693,7 +696,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager','bartender','waiter','cashier'],
-                                'href' => '/wapos/bar-pos.php',
+                                'href' => $basePath . '/bar-pos.php',
                                 'page' => 'bar-pos.php',
                                 'icon' => 'bi-wallet2',
                                 'label' => 'Bar POS & Tabs',
@@ -701,7 +704,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager','bartender'],
-                                'href' => '/wapos/bar-kds.php',
+                                'href' => $basePath . '/bar-kds.php',
                                 'page' => 'bar-kds.php',
                                 'icon' => 'bi-display',
                                 'label' => 'Bar Display (KDS)',
@@ -709,7 +712,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager','bartender'],
-                                'href' => '/wapos/bartender-dashboard.php',
+                                'href' => $basePath . '/bartender-dashboard.php',
                                 'page' => 'bartender-dashboard.php',
                                 'icon' => 'bi-speedometer2',
                                 'label' => 'Bartender Stats',
@@ -717,7 +720,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager'],
-                                'href' => '/wapos/happy-hour.php',
+                                'href' => $basePath . '/happy-hour.php',
                                 'page' => 'happy-hour.php',
                                 'icon' => 'bi-clock-history',
                                 'label' => 'Happy Hour',
@@ -725,7 +728,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager'],
-                                'href' => '/wapos/bar-floor-plan.php',
+                                'href' => $basePath . '/bar-floor-plan.php',
                                 'page' => 'bar-floor-plan.php',
                                 'icon' => 'bi-grid-3x3',
                                 'label' => 'Floor Plan',
@@ -733,7 +736,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager','frontdesk','waiter','bartender'],
-                                'href' => '/wapos/qr-generator.php',
+                                'href' => $basePath . '/qr-generator.php',
                                 'page' => 'qr-generator.php',
                                 'icon' => 'bi-qr-code',
                                 'label' => 'QR Code Generator',
@@ -741,7 +744,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager','frontdesk'],
-                                'href' => '/wapos/guest-checkin.php',
+                                'href' => $basePath . '/guest-checkin.php',
                                 'page' => 'guest-checkin.php',
                                 'icon' => 'bi-door-open',
                                 'label' => 'Guest Self Check-in',
@@ -754,7 +757,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                         'items' => [
                             [
                                 'roles' => ['admin','manager','frontdesk'],
-                                'href' => '/wapos/rooms.php',
+                                'href' => $basePath . '/rooms.php',
                                 'page' => 'rooms.php',
                                 'icon' => 'bi-calendar2-week',
                                 'label' => 'Room Calendar',
@@ -762,7 +765,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager'],
-                                'href' => '/wapos/manage-rooms.php',
+                                'href' => $basePath . '/manage-rooms.php',
                                 'page' => 'manage-rooms.php',
                                 'icon' => 'bi-door-open',
                                 'label' => 'Manage Rooms',
@@ -770,7 +773,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager','housekeeping_manager','housekeeping_staff','housekeeper','housekeeping','frontdesk'],
-                                'href' => '/wapos/housekeeping.php',
+                                'href' => $basePath . '/housekeeping.php',
                                 'page' => 'housekeeping.php',
                                 'icon' => 'bi-stars',
                                 'label' => 'Housekeeping Tasks',
@@ -778,7 +781,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager','housekeeping_manager','housekeeping_staff'],
-                                'href' => '/wapos/housekeeping-inventory.php',
+                                'href' => $basePath . '/housekeeping-inventory.php',
                                 'page' => 'housekeeping-inventory.php',
                                 'icon' => 'bi-box-seam',
                                 'label' => 'HK Inventory',
@@ -786,7 +789,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager','maintenance_manager','maintenance_staff','maintenance','technician','engineer','frontdesk'],
-                                'href' => '/wapos/maintenance.php',
+                                'href' => $basePath . '/maintenance.php',
                                 'page' => 'maintenance.php',
                                 'icon' => 'bi-tools',
                                 'label' => 'Maintenance',
@@ -794,7 +797,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['super_admin', 'developer', 'admin', 'manager', 'frontdesk'],
-                                'href' => '/wapos/guest-portal-settings.php',
+                                'href' => $basePath . '/guest-portal-settings.php',
                                 'page' => 'guest-portal-settings.php',
                                 'icon' => 'bi-shield-lock',
                                 'label' => 'Guest Portal',
@@ -802,7 +805,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['super_admin', 'developer', 'admin', 'manager', 'frontdesk', 'receptionist', 'cashier'],
-                                'href' => '/wapos/whatsapp-inbox.php',
+                                'href' => $basePath . '/whatsapp-inbox.php',
                                 'page' => 'whatsapp-inbox.php',
                                 'icon' => 'bi-whatsapp',
                                 'label' => 'WhatsApp Inbox',
@@ -815,7 +818,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                         'items' => [
                             [
                                 'roles' => ['admin','manager','rider'],
-                                'href' => '/wapos/delivery.php',
+                                'href' => $basePath . '/delivery.php',
                                 'page' => 'delivery.php',
                                 'icon' => 'bi-truck',
                                 'label' => 'Deliveries',
@@ -823,7 +826,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager','rider'],
-                                'href' => '/wapos/enhanced-delivery-tracking.php',
+                                'href' => $basePath . '/enhanced-delivery-tracking.php',
                                 'page' => 'enhanced-delivery-tracking.php',
                                 'icon' => 'bi-geo-alt',
                                 'label' => 'Tracking',
@@ -831,7 +834,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','developer'],
-                                'href' => '/wapos/delivery-pricing.php',
+                                'href' => $basePath . '/delivery-pricing.php',
                                 'page' => 'delivery-pricing.php',
                                 'icon' => 'bi-cash-coin',
                                 'label' => 'Pricing Rules',
@@ -844,7 +847,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                         'items' => [
                             [
                                 'roles' => ['admin','manager','inventory_manager','cashier'],
-                                'href' => '/wapos/products.php',
+                                'href' => $basePath . '/products.php',
                                 'page' => 'products.php',
                                 'icon' => 'bi-box',
                                 'label' => 'Products',
@@ -852,7 +855,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager','inventory_manager'],
-                                'href' => '/wapos/inventory.php',
+                                'href' => $basePath . '/inventory.php',
                                 'page' => 'inventory.php',
                                 'icon' => 'bi-boxes',
                                 'label' => 'Stock Levels',
@@ -860,7 +863,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager','inventory_manager'],
-                                'href' => '/wapos/goods-received.php',
+                                'href' => $basePath . '/goods-received.php',
                                 'page' => 'goods-received.php',
                                 'icon' => 'bi-box-arrow-in-down',
                                 'label' => 'Goods Received',
@@ -873,7 +876,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                         'items' => [
                             [
                                 'roles' => ['admin','manager','accountant'],
-                                'href' => '/wapos/accounting.php',
+                                'href' => $basePath . '/accounting.php',
                                 'page' => 'accounting.php',
                                 'icon' => 'bi-calculator',
                                 'label' => 'Accounting',
@@ -881,7 +884,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager','accountant'],
-                                'href' => '/wapos/reports.php',
+                                'href' => $basePath . '/reports.php',
                                 'page' => 'reports.php',
                                 'icon' => 'bi-file-earmark-text',
                                 'label' => 'Reports',
@@ -889,7 +892,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','accountant'],
-                                'href' => '/wapos/reports/profit-and-loss.php',
+                                'href' => $basePath . '/reports/profit-and-loss.php',
                                 'page' => 'profit-and-loss.php',
                                 'icon' => 'bi-journal-text',
                                 'label' => 'Profit & Loss',
@@ -897,7 +900,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','accountant'],
-                                'href' => '/wapos/reports/balance-sheet.php',
+                                'href' => $basePath . '/reports/balance-sheet.php',
                                 'page' => 'balance-sheet.php',
                                 'icon' => 'bi-clipboard-data',
                                 'label' => 'Balance Sheet',
@@ -905,7 +908,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','accountant'],
-                                'href' => '/wapos/reports/sales-tax-report.php',
+                                'href' => $basePath . '/reports/sales-tax-report.php',
                                 'page' => 'sales-tax-report.php',
                                 'icon' => 'bi-file-spreadsheet',
                                 'label' => 'Tax Report',
@@ -918,7 +921,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                         'items' => [
                             [
                                 'roles' => ['admin'],
-                                'href' => '/wapos/users.php',
+                                'href' => $basePath . '/users.php',
                                 'page' => 'users.php',
                                 'icon' => 'bi-person-gear',
                                 'label' => 'Users',
@@ -926,7 +929,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager','cashier','waiter','bartender','housekeeping_staff','maintenance_staff','frontdesk'],
-                                'href' => '/wapos/time-clock.php',
+                                'href' => $basePath . '/time-clock.php',
                                 'page' => 'time-clock.php',
                                 'icon' => 'bi-clock-history',
                                 'label' => 'Time Clock',
@@ -934,7 +937,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin'],
-                                'href' => '/wapos/permissions.php',
+                                'href' => $basePath . '/permissions.php',
                                 'page' => 'permissions.php',
                                 'icon' => 'bi-shield-lock',
                                 'label' => 'Permissions',
@@ -942,7 +945,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager'],
-                                'href' => '/wapos/locations.php',
+                                'href' => $basePath . '/locations.php',
                                 'page' => 'locations.php',
                                 'icon' => 'bi-geo-alt',
                                 'label' => 'Locations',
@@ -950,7 +953,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin','manager'],
-                                'href' => '/wapos/registers.php',
+                                'href' => $basePath . '/registers.php',
                                 'page' => 'registers.php',
                                 'icon' => 'bi-cash-stack',
                                 'label' => 'Registers/Tills',
@@ -958,7 +961,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['developer', 'super_admin'],
-                                'href' => '/wapos/system-health.php',
+                                'href' => $basePath . '/system-health.php',
                                 'page' => 'system-health.php',
                                 'icon' => 'bi-heart-pulse',
                                 'label' => 'System Health',
@@ -966,7 +969,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['developer', 'super_admin', 'admin'],
-                                'href' => '/wapos/system-logs.php',
+                                'href' => $basePath . '/system-logs.php',
                                 'page' => 'system-logs.php',
                                 'icon' => 'bi-journal-text',
                                 'label' => 'System Logs',
@@ -974,7 +977,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['super_admin', 'admin', 'developer'],
-                                'href' => '/wapos/module-manager.php',
+                                'href' => $basePath . '/module-manager.php',
                                 'page' => 'module-manager.php',
                                 'icon' => 'bi-toggle2-on',
                                 'label' => 'Module Manager',
@@ -982,7 +985,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin', 'developer'],
-                                'href' => '/wapos/settings.php',
+                                'href' => $basePath . '/settings.php',
                                 'page' => 'settings.php',
                                 'icon' => 'bi-gear',
                                 'label' => 'Settings',
@@ -990,7 +993,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['admin'],
-                                'href' => '/wapos/currency-settings.php',
+                                'href' => $basePath . '/currency-settings.php',
                                 'page' => 'currency-settings.php',
                                 'icon' => 'bi-currency-exchange',
                                 'label' => 'Currency',
@@ -998,14 +1001,14 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                             ],
                             [
                                 'roles' => ['super_admin', 'developer'],
-                                'href' => '/wapos/payment-gateways.php',
+                                'href' => $basePath . '/payment-gateways.php',
                                 'page' => 'payment-gateways.php',
                                 'icon' => 'bi-credit-card',
                                 'label' => 'Payment Gateways'
                             ],
                             [
                                 'roles' => ['super_admin', 'developer'],
-                                'href' => '/wapos/site-editor.php',
+                                'href' => $basePath . '/site-editor.php',
                                 'page' => 'site-editor.php',
                                 'icon' => 'bi-pencil-square',
                                 'label' => 'Site Editor'
@@ -1107,9 +1110,9 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                         <i class="bi bi-person-circle me-2"></i><?= htmlspecialchars($auth->getUser()['username'] ?? 'User') ?>
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end">
-                        <li><a class="dropdown-item" href="/wapos/settings.php"><i class="bi bi-gear me-2"></i>Settings</a></li>
+                        <li><a class="dropdown-item" href="<?= $basePath ?>/settings.php"><i class="bi bi-gear me-2"></i>Settings</a></li>
                         <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item" href="/wapos/logout.php"><i class="bi bi-box-arrow-right me-2"></i>Logout</a></li>
+                        <li><a class="dropdown-item" href="<?= $basePath ?>/logout.php"><i class="bi bi-box-arrow-right me-2"></i>Logout</a></li>
                     </ul>
                 </div>
             </div>

@@ -69,7 +69,7 @@ class OfflineManager {
                 this.isOnline = results.some(r => r.status === 'fulfilled' && r.value === true);
             } else {
                 // On production server, ping our own endpoint
-                const response = await fetch('/wapos/api/ping.php?t=' + Date.now(), {
+                const response = await fetch('/api/ping.php?t=' + Date.now(), {
                     method: 'HEAD',
                     cache: 'no-store',
                     signal: controller.signal
@@ -192,7 +192,7 @@ class OfflineManager {
     async registerServiceWorker() {
         if ('serviceWorker' in navigator) {
             try {
-                const registration = await navigator.serviceWorker.register('/wapos/service-worker.js');
+                const registration = await navigator.serviceWorker.register('/service-worker.js');
                 console.log('[OfflineManager] Service Worker registered:', registration);
                 
                 // Handle updates
@@ -383,9 +383,9 @@ class OfflineManager {
     async syncTransaction(type, transaction) {
         try {
             const endpoints = {
-                'sales': '/wapos/api/complete-sale.php',
-                'orders': '/wapos/api/create-restaurant-order.php',
-                'customers': '/wapos/api/save-customer.php'
+                'sales': '/api/complete-sale.php',
+                'orders': '/api/create-restaurant-order.php',
+                'customers': '/api/save-customer.php'
             };
             
             const response = await fetch(endpoints[type], {
@@ -619,7 +619,7 @@ class OfflineManager {
         
         for (const sale of pendingSales) {
             try {
-                const response = await fetch('/wapos/api/complete-sale.php', {
+                const response = await fetch('/api/complete-sale.php', {
                     method: 'POST',
                     headers: { 
                         'Content-Type': 'application/json',
