@@ -75,8 +75,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             box-shadow: 0 10px 40px rgba(0,0,0,0.2);
         }
         .brand-logo {
-            font-size: 3rem;
-            color: #667eea;
+            max-width: 150px;
+            height: auto;
+            margin-bottom: 10px;
         }
     </style>
 </head>
@@ -87,7 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="card login-card">
                     <div class="card-body p-5">
                         <div class="text-center mb-4">
-                            <i class="bi bi-shop brand-logo"></i>
+                            <img src="<?= APP_URL ?>/assets/images/logo.png" alt="<?= APP_NAME ?>" class="brand-logo">
                             <h2 class="mt-2 fw-bold"><?= APP_NAME ?></h2>
                             <p class="text-muted">Waesta Point of Sale System</p>
                         </div>
