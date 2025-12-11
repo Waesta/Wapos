@@ -69,7 +69,10 @@ class OfflineManager {
                 this.isOnline = results.some(r => r.status === 'fulfilled' && r.value === true);
             } else {
                 // On production server, ping our own endpoint
-                const response = await fetch('/api/ping.php?t=' + Date.now(), {
+                // Use relative path to work with any base URL
+                const basePath = window.APP_URL || '';
+                const pingUrl = basePath + '/api/ping.php?t=' + Date.now();
+                const response = await fetch(pingUrl, {
                     method: 'HEAD',
                     cache: 'no-store',
                     signal: controller.signal

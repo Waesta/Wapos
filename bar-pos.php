@@ -689,6 +689,46 @@ include 'includes/header.php';
     </div>
 </div>
 
+<!-- Quick Quantity Modal (for non-portioned items) -->
+<div class="modal fade" id="quickQtyModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="quickQtyModalTitle">Add Item</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-center mb-3">
+                    <div class="text-muted">Unit Price</div>
+                    <div class="fs-5 fw-bold" id="quickQtyPrice">0.00</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Quantity</label>
+                    <div class="input-group input-group-lg">
+                        <button class="btn btn-outline-secondary" type="button" onclick="adjustQuickQty(-1)">
+                            <i class="bi bi-dash-lg"></i>
+                        </button>
+                        <input type="number" class="form-control text-center fw-bold" id="quickQty" value="1" min="1" onchange="updateQuickQtyTotal()">
+                        <button class="btn btn-outline-secondary" type="button" onclick="adjustQuickQty(1)">
+                            <i class="bi bi-plus-lg"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="text-center py-2 bg-light rounded">
+                    <div class="text-muted small">Total</div>
+                    <div class="fs-4 fw-bold text-success" id="quickQtyTotal">0.00</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="confirmQuickQty()">
+                    <i class="bi bi-plus-lg me-1"></i>Add to Tab
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Portion Selection Modal -->
 <div class="modal fade" id="portionModal" tabindex="-1">
     <div class="modal-dialog">
@@ -1040,13 +1080,12 @@ async function addProduct(productId) {
         await loadPortions(productId);
         new bootstrap.Modal(document.getElementById('portionModal')).show();
     } else {
-        // Add directly
-        await addItemToTab({
-            product_id: productId,
-            item_name: selectedProduct.name,
-            unit_price: selectedProduct.price,
-            quantity: 1
-        });
+        // Show quantity modal for non-portioned items
+        document.getElementById('quickQtyModalTitle').textContent = selectedProduct.name;
+        document.getElementById('quickQtyPrice').textContent = formatCurrency(selectedProduct.price);
+        document.getElementById('quickQty').value = 1;
+        updateQuickQtyTotal();
+        new bootstrap.Modal(document.getElementById('quickQtyModal')).show();
     }
 }
 
@@ -1103,6 +1142,34 @@ function selectPortion(element) {
 function adjustPortionQty(delta) {
     const input = document.getElementById('portionQty');
     input.value = Math.max(1, parseInt(input.value) + delta);
+}
+
+// Quick Quantity Modal functions
+function adjustQuickQty(delta) {
+    const input = document.getElementById('quickQty');
+    input.value = Math.max(1, parseInt(input.value) + delta);
+    updateQuickQtyTotal();
+}
+
+function updateQuickQtyTotal() {
+    const qty = parseInt(document.getElementById('quickQty').value) || 1;
+    const total = selectedProduct.price * qty;
+    document.getElementById('quickQtyTotal').textContent = formatCurrency(total);
+}
+
+async function confirmQuickQty() {
+    const qty = parseInt(document.getElementById('quickQty').value) || 1;
+    
+    await addItemToTab({
+        product_id: selectedProduct.id,
+        item_name: selectedProduct.name,
+        unit_price: selectedProduct.price,
+        quantity: qty,
+        send_to_bar: true
+    });
+    
+    bootstrap.Modal.getInstance(document.getElementById('quickQtyModal')).hide();
+    document.getElementById('quickQty').value = 1;
 }
 
 async function confirmPortion() {

@@ -32,6 +32,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
     <meta name="msapplication-TileImage" content="<?= APP_URL ?>/assets/images/icons/icon-144.png">
     
     <!-- PWA Scripts -->
+    <script>window.APP_URL = '<?= APP_URL ?>';</script>
     <script defer src="<?= APP_URL ?>/assets/js/offline-manager.js"></script>
     <script defer src="<?= APP_URL ?>/assets/js/pwa-install.js"></script>
     
@@ -482,7 +483,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                 $userRole = $auth->getRole() ?? 'guest';
                 $currentPage = basename($_SERVER['PHP_SELF']);
                 $systemManager = SystemManager::getInstance();
-                $privilegedRoles = ['super_admin', 'developer'];
+                $privilegedRoles = ['super_admin', 'superadmin', 'developer'];
                 $isPrivileged = in_array($userRole, $privilegedRoles, true);
                 
                 // Base path - detect localhost vs production
@@ -493,6 +494,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                 // Determine dashboard URL based on role
                 $dashboardUrls = [
                     'super_admin' => $basePath . '/dashboards/admin.php',
+                    'superadmin' => $basePath . '/dashboards/admin.php',
                     'developer' => $basePath . '/dashboards/admin.php',
                     'admin' => $basePath . '/dashboards/admin.php',
                     'manager' => $basePath . '/dashboards/manager.php',
