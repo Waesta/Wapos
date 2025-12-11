@@ -43,7 +43,16 @@ try {
         throw new Exception('Failed to create order');
     }
     
+    // Ensure added_by column exists
+    try {
+        $cols = $db->fetchAll("SHOW COLUMNS FROM order_items LIKE 'added_by'");
+        if (empty($cols)) {
+            $db->query("ALTER TABLE order_items ADD COLUMN added_by INT UNSIGNED NULL AFTER special_instructions, ADD COLUMN added_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP AFTER added_by");
+        }
+    } catch (Exception $e) { /* ignore */ }
+    
     // Insert order items
+    $waiterId = $auth->getUserId();
     foreach ($data['items'] as $item) {
         $db->insert('order_items', [
             'order_id' => $orderId,
@@ -54,7 +63,9 @@ try {
             'modifiers_data' => json_encode($item['modifiers']),
             'special_instructions' => $item['instructions'] ?? null,
             'status' => 'pending',
-            'total_price' => $item['total']
+            'total_price' => $item['total'],
+            'added_by' => $waiterId,
+            'added_at' => date('Y-m-d H:i:s')
         ]);
         
         // Update stock

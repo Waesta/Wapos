@@ -657,7 +657,7 @@ class NotificationService
     /**
      * Send sale receipt to customer
      */
-    public function sendReceipt(int $saleId, string $channel = null): array
+    public function sendReceipt(int $saleId, ?string $channel = null): array
     {
         $sale = $this->getSaleWithCustomer($saleId);
         if (!$sale) {
@@ -684,7 +684,7 @@ class NotificationService
     /**
      * Send thank you / appreciation message
      */
-    public function sendThankYou(int $customerId, string $channel = null): array
+    public function sendThankYou(int $customerId, ?string $channel = null): array
     {
         $customer = $this->getCustomer($customerId);
         if (!$customer) {
@@ -796,7 +796,7 @@ class NotificationService
     /**
      * Send daily sales summary
      */
-    public function sendDailySummary(string $date = null): array
+    public function sendDailySummary(?string $date = null): array
     {
         $date = $date ?? date('Y-m-d');
         $adminEmail = $this->settings['notification_admin_email'] ?? '';

@@ -3,15 +3,18 @@
  * Handles comprehensive offline functionality and intelligent caching
  */
 
-const CACHE_VERSION = '2.1';
+const CACHE_VERSION = '2.2';
 const CACHE_NAME = `wapos-v${CACHE_VERSION}`;
 const DATA_CACHE_NAME = `wapos-data-v${CACHE_VERSION}`;
-const OFFLINE_URL = '/offline.html';
+
+// Detect if running on localhost - use /wapos prefix
+const BASE_PATH = self.location.hostname === 'localhost' || self.location.hostname === '127.0.0.1' ? '/wapos' : '';
+const OFFLINE_URL = BASE_PATH + '/offline.html';
 
 // Core application files to cache (App Shell) - ONLY STATIC FILES
 const APP_SHELL_FILES = [
-    '/offline.html',
-    '/assets/images/logo.png'
+    BASE_PATH + '/offline.html',
+    BASE_PATH + '/assets/images/logo.png'
 ];
 
 // External resources to cache
@@ -23,18 +26,18 @@ const EXTERNAL_RESOURCES = [
 
 // API endpoints that should be cached for offline use
 const CACHEABLE_API_ENDPOINTS = [
-    '/api/get-products.php',
-    '/api/get-customers.php',
-    '/api/get-categories.php',
-    '/api/get-settings.php'
+    BASE_PATH + '/api/get-products.php',
+    BASE_PATH + '/api/get-customers.php',
+    BASE_PATH + '/api/get-categories.php',
+    BASE_PATH + '/api/get-settings.php'
 ];
 
 // Network-first endpoints (always try network first)
 const NETWORK_FIRST_ENDPOINTS = [
-    '/api/complete-sale.php',
-    '/api/create-restaurant-order.php',
-    '/api/update-order-item-status.php',
-    '/api/complete-order.php'
+    BASE_PATH + '/api/complete-sale.php',
+    BASE_PATH + '/api/create-restaurant-order.php',
+    BASE_PATH + '/api/update-order-item-status.php',
+    BASE_PATH + '/api/complete-order.php'
 ];
 
 // Install event - cache essential files
@@ -444,12 +447,12 @@ function getStoreNameFromUrl(url) {
 
 function getEndpointForStore(storeName) {
     const endpoints = {
-        'pending-sales': '/api/complete-sale.php',
-        'pending-orders': '/api/create-restaurant-order.php',
-        'pending-customers': '/api/save-customer.php',
-        'pending-inventory': '/api/update-inventory.php'
+        'pending-sales': BASE_PATH + '/api/complete-sale.php',
+        'pending-orders': BASE_PATH + '/api/create-restaurant-order.php',
+        'pending-customers': BASE_PATH + '/api/save-customer.php',
+        'pending-inventory': BASE_PATH + '/api/update-inventory.php'
     };
-    return endpoints[storeName] || '/api/sync-data.php';
+    return endpoints[storeName] || BASE_PATH + '/api/sync-data.php';
 }
 
 // Message handling for communication with main thread

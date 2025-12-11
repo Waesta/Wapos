@@ -192,7 +192,10 @@ class OfflineManager {
     async registerServiceWorker() {
         if ('serviceWorker' in navigator) {
             try {
-                const registration = await navigator.serviceWorker.register('/service-worker.js');
+                const isLocalhost = window.location.hostname === 'localhost' || 
+                                   window.location.hostname === '127.0.0.1';
+                const swPath = isLocalhost ? '/wapos/service-worker.js' : '/service-worker.js';
+                const registration = await navigator.serviceWorker.register(swPath);
                 console.log('[OfflineManager] Service Worker registered:', registration);
                 
                 // Handle updates
@@ -382,10 +385,14 @@ class OfflineManager {
     
     async syncTransaction(type, transaction) {
         try {
+            const isLocalhost = window.location.hostname === 'localhost' || 
+                               window.location.hostname === '127.0.0.1';
+            const basePath = isLocalhost ? '/wapos' : '';
+            
             const endpoints = {
-                'sales': '/api/complete-sale.php',
-                'orders': '/api/create-restaurant-order.php',
-                'customers': '/api/save-customer.php'
+                'sales': basePath + '/api/complete-sale.php',
+                'orders': basePath + '/api/create-restaurant-order.php',
+                'customers': basePath + '/api/save-customer.php'
             };
             
             const response = await fetch(endpoints[type], {
@@ -614,12 +621,16 @@ class OfflineManager {
         const pendingSales = JSON.parse(localStorage.getItem('wapos_pending_sales') || '[]');
         if (pendingSales.length === 0) return;
         
+        const isLocalhost = window.location.hostname === 'localhost' || 
+                           window.location.hostname === '127.0.0.1';
+        const basePath = isLocalhost ? '/wapos' : '';
+        
         const synced = [];
         const failed = [];
         
         for (const sale of pendingSales) {
             try {
-                const response = await fetch('/api/complete-sale.php', {
+                const response = await fetch(basePath + '/api/complete-sale.php', {
                     method: 'POST',
                     headers: { 
                         'Content-Type': 'application/json',

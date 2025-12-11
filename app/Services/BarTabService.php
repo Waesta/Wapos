@@ -184,29 +184,57 @@ class BarTabService
      */
     public function addItem(int $tabId, array $item): array
     {
-        $stmt = $this->db->prepare("
-            INSERT INTO bar_tab_items (
-                tab_id, product_id, portion_id, recipe_id, item_name,
-                portion_name, quantity, unit_price, total_price,
-                modifiers, special_instructions
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ");
+        // Check if added_by column exists
+        $hasAddedBy = $this->hasColumn('bar_tab_items', 'added_by');
         
         $totalPrice = $item['unit_price'] * $item['quantity'];
         
-        $stmt->execute([
-            $tabId,
-            $item['product_id'],
-            $item['portion_id'] ?? null,
-            $item['recipe_id'] ?? null,
-            $item['item_name'],
-            $item['portion_name'] ?? null,
-            $item['quantity'],
-            $item['unit_price'],
-            $totalPrice,
-            isset($item['modifiers']) ? json_encode($item['modifiers']) : null,
-            $item['special_instructions'] ?? null
-        ]);
+        if ($hasAddedBy) {
+            $stmt = $this->db->prepare("
+                INSERT INTO bar_tab_items (
+                    tab_id, product_id, portion_id, recipe_id, item_name,
+                    portion_name, quantity, unit_price, total_price,
+                    modifiers, special_instructions, added_by
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            
+            $stmt->execute([
+                $tabId,
+                $item['product_id'],
+                $item['portion_id'] ?? null,
+                $item['recipe_id'] ?? null,
+                $item['item_name'],
+                $item['portion_name'] ?? null,
+                $item['quantity'],
+                $item['unit_price'],
+                $totalPrice,
+                isset($item['modifiers']) ? json_encode($item['modifiers']) : null,
+                $item['special_instructions'] ?? null,
+                $item['added_by'] ?? null
+            ]);
+        } else {
+            $stmt = $this->db->prepare("
+                INSERT INTO bar_tab_items (
+                    tab_id, product_id, portion_id, recipe_id, item_name,
+                    portion_name, quantity, unit_price, total_price,
+                    modifiers, special_instructions
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            
+            $stmt->execute([
+                $tabId,
+                $item['product_id'],
+                $item['portion_id'] ?? null,
+                $item['recipe_id'] ?? null,
+                $item['item_name'],
+                $item['portion_name'] ?? null,
+                $item['quantity'],
+                $item['unit_price'],
+                $totalPrice,
+                isset($item['modifiers']) ? json_encode($item['modifiers']) : null,
+                $item['special_instructions'] ?? null
+            ]);
+        }
         
         $itemId = $this->db->lastInsertId();
         
@@ -226,13 +254,28 @@ class BarTabService
      */
     public function getTabItems(int $tabId): array
     {
-        $stmt = $this->db->prepare("
-            SELECT i.*, p.name as product_name, p.image as product_image
-            FROM bar_tab_items i
-            LEFT JOIN products p ON i.product_id = p.id
-            WHERE i.tab_id = ?
-            ORDER BY i.created_at ASC
-        ");
+        $hasAddedBy = $this->hasColumn('bar_tab_items', 'added_by');
+        
+        if ($hasAddedBy) {
+            $stmt = $this->db->prepare("
+                SELECT i.*, p.name as product_name, p.image as product_image,
+                       u.full_name as added_by_name
+                FROM bar_tab_items i
+                LEFT JOIN products p ON i.product_id = p.id
+                LEFT JOIN users u ON i.added_by = u.id
+                WHERE i.tab_id = ?
+                ORDER BY i.created_at ASC
+            ");
+        } else {
+            $stmt = $this->db->prepare("
+                SELECT i.*, p.name as product_name, p.image as product_image,
+                       NULL as added_by_name
+                FROM bar_tab_items i
+                LEFT JOIN products p ON i.product_id = p.id
+                WHERE i.tab_id = ?
+                ORDER BY i.created_at ASC
+            ");
+        }
         $stmt->execute([$tabId]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
@@ -644,5 +687,116 @@ class BarTabService
             SELECT * FROM bar_stations WHERE is_active = 1 ORDER BY display_order
         ");
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Check if a column exists in a table
+     */
+    private function hasColumn(string $table, string $column): bool
+    {
+        static $cache = [];
+        $key = "$table.$column";
+        
+        if (!isset($cache[$key])) {
+            try {
+                $stmt = $this->db->prepare("SHOW COLUMNS FROM $table LIKE ?");
+                $stmt->execute([$column]);
+                $cache[$key] = $stmt->rowCount() > 0;
+            } catch (\Exception $e) {
+                $cache[$key] = false;
+            }
+        }
+        
+        return $cache[$key];
+    }
+
+    /**
+     * Transfer tab to another waiter (shift handoff)
+     */
+    public function transferTab(int $tabId, int $fromWaiterId, int $toWaiterId, ?string $reason = null): bool
+    {
+        // Update tab server
+        $stmt = $this->db->prepare("UPDATE bar_tabs SET server_id = ? WHERE id = ?");
+        $stmt->execute([$toWaiterId, $tabId]);
+        
+        // Log the transfer
+        $this->logTransfer('bar_tab', $tabId, $fromWaiterId, $toWaiterId, $reason);
+        
+        return true;
+    }
+
+    /**
+     * Log service transfer for audit trail
+     */
+    private function logTransfer(string $sourceType, int $sourceId, int $fromId, int $toId, ?string $reason): void
+    {
+        try {
+            // Ensure table exists
+            $this->db->exec("
+                CREATE TABLE IF NOT EXISTS service_transfers (
+                    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                    source_type ENUM('bar_tab', 'restaurant_order') NOT NULL,
+                    source_id INT UNSIGNED NOT NULL,
+                    from_waiter_id INT UNSIGNED NOT NULL,
+                    to_waiter_id INT UNSIGNED NOT NULL,
+                    transfer_reason VARCHAR(255) NULL,
+                    transferred_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_source (source_type, source_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            ");
+            
+            $stmt = $this->db->prepare("
+                INSERT INTO service_transfers (source_type, source_id, from_waiter_id, to_waiter_id, transfer_reason)
+                VALUES (?, ?, ?, ?, ?)
+            ");
+            $stmt->execute([$sourceType, $sourceId, $fromId, $toId, $reason]);
+        } catch (\Exception $e) {
+            // Non-critical, just log
+            error_log("Failed to log transfer: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Get waiter performance for a date range
+     */
+    public function getWaiterPerformance(int $waiterId, ?string $startDate = null, ?string $endDate = null): array
+    {
+        $startDate = $startDate ?? date('Y-m-d');
+        $endDate = $endDate ?? date('Y-m-d');
+        
+        // Items added by this waiter
+        $stmt = $this->db->prepare("
+            SELECT 
+                COUNT(DISTINCT bti.tab_id) as tabs_served,
+                COUNT(bti.id) as items_served,
+                SUM(CASE WHEN bti.status != 'voided' THEN bti.total_price ELSE 0 END) as total_sales,
+                SUM(CASE WHEN bti.status = 'voided' THEN bti.total_price ELSE 0 END) as voided_amount
+            FROM bar_tab_items bti
+            WHERE bti.added_by = ?
+            AND DATE(bti.added_at) BETWEEN ? AND ?
+        ");
+        $stmt->execute([$waiterId, $startDate, $endDate]);
+        $itemStats = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        // Tips earned
+        $stmt = $this->db->prepare("
+            SELECT COALESCE(SUM(tip_amount), 0) as total_tips
+            FROM bar_tab_payments btp
+            JOIN bar_tabs bt ON btp.tab_id = bt.id
+            WHERE bt.server_id = ?
+            AND DATE(btp.created_at) BETWEEN ? AND ?
+        ");
+        $stmt->execute([$waiterId, $startDate, $endDate]);
+        $tips = $stmt->fetchColumn();
+        
+        return [
+            'waiter_id' => $waiterId,
+            'period' => ['start' => $startDate, 'end' => $endDate],
+            'tabs_served' => (int)($itemStats['tabs_served'] ?? 0),
+            'items_served' => (int)($itemStats['items_served'] ?? 0),
+            'total_sales' => (float)($itemStats['total_sales'] ?? 0),
+            'voided_amount' => (float)($itemStats['voided_amount'] ?? 0),
+            'tips_earned' => (float)$tips
+        ];
     }
 }

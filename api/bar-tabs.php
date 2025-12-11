@@ -120,7 +120,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'quantity' => (int)($input['quantity'] ?? 1),
                     'modifiers' => $input['modifiers'] ?? null,
                     'special_instructions' => $input['special_instructions'] ?? null,
-                    'send_to_bar' => $input['send_to_bar'] ?? false
+                    'send_to_bar' => $input['send_to_bar'] ?? false,
+                    'added_by' => $userId
                 ];
                 
                 $result = $tabService->addItem($tabId, $item);
@@ -138,6 +139,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 $tabService->voidItem($itemId, $userId, $reason);
                 echo json_encode(['success' => true, 'message' => 'Item voided']);
+                break;
+                
+            case 'transfer_tab':
+                $tabId = (int)($input['tab_id'] ?? 0);
+                $fromWaiterId = (int)($input['from_waiter_id'] ?? 0);
+                $toWaiterId = (int)($input['to_waiter_id'] ?? 0);
+                $reason = $input['reason'] ?? null;
+                
+                if (!$tabId || !$toWaiterId) {
+                    echo json_encode(['success' => false, 'message' => 'Tab ID and target waiter required']);
+                    exit;
+                }
+                
+                $tabService->transferTab($tabId, $fromWaiterId, $toWaiterId, $reason);
+                echo json_encode(['success' => true, 'message' => 'Tab transferred successfully']);
                 break;
                 
             case 'apply_discount':

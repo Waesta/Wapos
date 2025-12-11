@@ -485,8 +485,10 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                 $privilegedRoles = ['super_admin', 'developer'];
                 $isPrivileged = in_array($userRole, $privilegedRoles, true);
                 
-                // Base path - empty for root, '/wapos' for subfolder
-                $basePath = '';
+                // Base path - detect localhost vs production
+                $isLocalhost = in_array($_SERVER['HTTP_HOST'] ?? '', ['localhost', '127.0.0.1'], true) 
+                               || strpos($_SERVER['HTTP_HOST'] ?? '', 'localhost:') === 0;
+                $basePath = $isLocalhost ? '/wapos' : '';
                 
                 // Determine dashboard URL based on role
                 $dashboardUrls = [

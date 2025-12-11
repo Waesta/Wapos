@@ -73,6 +73,16 @@
             sidebarCloseBtn?.addEventListener('click', closeSidebar);
             sidebarOverlay?.addEventListener('click', closeSidebar);
             
+            // Auto-close sidebar on mobile when clicking a nav link
+            const navLinks = document.querySelectorAll('.sidebar .nav-link');
+            navLinks.forEach(link => {
+                link.addEventListener('click', () => {
+                    if (isMobile()) {
+                        closeSidebar();
+                    }
+                });
+            });
+            
             // Handle window resize - if going from mobile to desktop, ensure proper state
             window.addEventListener('resize', () => {
                 if (!isMobile()) {
@@ -99,7 +109,24 @@
                 }
 
                 toggle.addEventListener('click', () => {
-                    const isOpen = group.classList.toggle('open');
+                    const wasOpen = group.classList.contains('open');
+                    
+                    // Collapse all other groups first (accordion behavior)
+                    navGroups.forEach(otherGroup => {
+                        if (otherGroup !== group && otherGroup.classList.contains('open')) {
+                            const otherToggle = otherGroup.querySelector('.nav-group-toggle');
+                            const otherTargetId = otherToggle?.getAttribute('data-target');
+                            const otherTarget = otherTargetId ? document.querySelector(otherTargetId) : null;
+                            
+                            otherGroup.classList.remove('open');
+                            if (otherToggle) otherToggle.setAttribute('aria-expanded', 'false');
+                            if (otherTarget) otherTarget.style.maxHeight = '0';
+                        }
+                    });
+                    
+                    // Toggle current group
+                    const isOpen = !wasOpen;
+                    group.classList.toggle('open', isOpen);
                     toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
                     target.style.maxHeight = isOpen ? target.scrollHeight + 'px' : '0';
                 });

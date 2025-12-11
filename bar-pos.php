@@ -276,8 +276,29 @@ include 'includes/header.php';
         color: var(--bs-secondary);
     }
     
+    .order-item .waiter-badge {
+        display: inline-block;
+        background: var(--bs-info-bg-subtle);
+        color: var(--bs-info);
+        padding: 0.1rem 0.4rem;
+        border-radius: 0.25rem;
+        font-size: 0.65rem;
+        margin-left: 0.25rem;
+    }
+    
+    .order-item .item-qty {
+        font-size: 0.85rem;
+        color: var(--bs-secondary);
+        min-width: 30px;
+        text-align: center;
+    }
+    
     .order-item .item-price {
-        font-weight: 600;
+        font-weight: 700;
+        font-size: 1rem;
+        color: var(--bs-success);
+        min-width: 100px;
+        text-align: right;
     }
     
     .order-totals {
@@ -290,14 +311,27 @@ include 'includes/header.php';
         display: flex;
         justify-content: space-between;
         margin-bottom: 0.25rem;
+        font-size: 0.95rem;
+    }
+    
+    .total-row span:last-child {
+        font-weight: 600;
+        min-width: 120px;
+        text-align: right;
     }
     
     .total-row.grand-total {
-        font-size: 1.2rem;
+        font-size: 1.4rem;
         font-weight: 700;
-        border-top: 2px solid var(--bs-border-color);
-        padding-top: 0.5rem;
-        margin-top: 0.5rem;
+        border-top: 2px solid var(--bs-primary);
+        padding-top: 0.75rem;
+        margin-top: 0.75rem;
+        color: var(--bs-primary);
+    }
+    
+    .total-row.grand-total span:last-child {
+        color: var(--bs-success);
+        font-size: 1.5rem;
     }
     
     .order-actions {
@@ -764,9 +798,56 @@ include 'includes/header.php';
     </div>
 </div>
 
+<!-- Transfer Tab Modal -->
+<div class="modal fade" id="transferTabModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-arrow-left-right me-2"></i>Transfer Tab</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted mb-3">Transfer this tab to another waiter/bartender (e.g., shift handoff)</p>
+                <div class="mb-3">
+                    <label class="form-label">Transfer To</label>
+                    <select class="form-select" id="transferToWaiter">
+                        <option value="">Select waiter/bartender...</option>
+                        <?php
+                        $waiters = $db->fetchAll("SELECT id, full_name, username FROM users WHERE role IN ('waiter', 'bartender', 'cashier', 'manager', 'admin') AND is_active = 1 ORDER BY full_name");
+                        foreach ($waiters as $w):
+                            if ($w['id'] != $userId):
+                        ?>
+                            <option value="<?= $w['id'] ?>"><?= htmlspecialchars($w['full_name']) ?> (<?= htmlspecialchars($w['username']) ?>)</option>
+                        <?php 
+                            endif;
+                        endforeach; 
+                        ?>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Reason (optional)</label>
+                    <select class="form-select" id="transferReason">
+                        <option value="shift_change">Shift Change</option>
+                        <option value="break">Going on Break</option>
+                        <option value="reassignment">Manager Reassignment</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="transferTab()">
+                    <i class="bi bi-arrow-left-right me-1"></i>Transfer Tab
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 const CSRF_TOKEN = '<?= $csrfToken ?>';
-const CURRENCY_SYMBOL = '<?= CURRENCY_SYMBOL ?>';
+const CURRENT_USER_ID = <?= $userId ?>;
+const CURRENCY_SYMBOL = '<?= htmlspecialchars(CurrencyManager::getInstance()->getCurrencySymbol() ?: CurrencyManager::getInstance()->getCurrencyCode() ?: '') ?>';
 let currentTabId = null;
 let currentTab = null;
 let selectedProduct = null;
@@ -916,7 +997,11 @@ function renderTabDetails(tab) {
             <div class="order-item ${item.status === 'voided' ? 'text-decoration-line-through text-muted' : ''}">
                 <div class="item-details">
                     <div class="item-name">${item.item_name}</div>
-                    <div class="item-portion">${item.portion_name || ''} ${item.special_instructions ? '• ' + item.special_instructions : ''}</div>
+                    <div class="item-portion">
+                        ${item.portion_name || ''} 
+                        ${item.special_instructions ? '• ' + item.special_instructions : ''}
+                        ${item.added_by_name ? '<span class="waiter-badge"><i class="bi bi-person-fill"></i> ' + item.added_by_name + '</span>' : ''}
+                    </div>
                 </div>
                 <div class="item-qty">x${item.quantity}</div>
                 <div class="item-price">${formatCurrency(item.total_price)}</div>
@@ -1106,6 +1191,144 @@ async function voidItem(itemId) {
         }
     } catch (error) {
         console.error('Error:', error);
+    }
+}
+
+function showTransferModal() {
+    if (!currentTab) {
+        alert('Please select a tab first');
+        return;
+    }
+    new bootstrap.Modal(document.getElementById('transferTabModal')).show();
+}
+
+async function transferTab() {
+    const toWaiterId = document.getElementById('transferToWaiter').value;
+    const reason = document.getElementById('transferReason').value;
+    
+    if (!toWaiterId) {
+        alert('Please select a waiter to transfer to');
+        return;
+    }
+    
+    try {
+        const response = await fetch('api/bar-tabs.php', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                action: 'transfer_tab',
+                tab_id: currentTabId,
+                from_waiter_id: CURRENT_USER_ID,
+                to_waiter_id: parseInt(toWaiterId),
+                reason: reason,
+                csrf_token: CSRF_TOKEN
+            })
+        });
+        const result = await response.json();
+        
+        if (result.success) {
+            bootstrap.Modal.getInstance(document.getElementById('transferTabModal')).hide();
+            alert('Tab transferred successfully');
+            loadOpenTabs();
+            // Clear current tab since it's now assigned to someone else
+            currentTabId = null;
+            currentTab = null;
+            document.getElementById('currentTabName').textContent = 'No Tab Selected';
+            document.getElementById('currentTabMeta').textContent = '';
+            document.getElementById('orderItems').innerHTML = '<div class="text-center text-muted py-5"><i class="bi bi-cup-straw fs-1 d-block mb-2"></i><p>Select a tab or start a new one</p></div>';
+        } else {
+            alert(result.message || 'Failed to transfer tab');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Failed to transfer tab');
+    }
+}
+
+function showDiscountModal() {
+    if (!currentTab) {
+        alert('Please select a tab first');
+        return;
+    }
+    const amount = prompt('Enter discount amount:');
+    if (amount === null) return;
+    
+    const discountAmount = parseFloat(amount);
+    if (isNaN(discountAmount) || discountAmount <= 0) {
+        alert('Please enter a valid discount amount');
+        return;
+    }
+    
+    const reason = prompt('Reason for discount (optional):') || '';
+    applyDiscount(discountAmount, reason);
+}
+
+async function applyDiscount(amount, reason) {
+    try {
+        const response = await fetch('api/bar-tabs.php', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                action: 'apply_discount',
+                tab_id: currentTabId,
+                amount: amount,
+                reason: reason,
+                csrf_token: CSRF_TOKEN
+            })
+        });
+        const result = await response.json();
+        
+        if (result.success) {
+            selectTab(currentTabId);
+        } else {
+            alert(result.message || 'Failed to apply discount');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Failed to apply discount');
+    }
+}
+
+function showTipModal() {
+    if (!currentTab) {
+        alert('Please select a tab first');
+        return;
+    }
+    const amount = prompt('Enter tip amount:');
+    if (amount === null) return;
+    
+    const tipAmount = parseFloat(amount);
+    if (isNaN(tipAmount) || tipAmount <= 0) {
+        alert('Please enter a valid tip amount');
+        return;
+    }
+    
+    addTip(tipAmount);
+}
+
+async function addTip(amount) {
+    try {
+        const response = await fetch('api/bar-tabs.php', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                action: 'add_tip',
+                tab_id: currentTabId,
+                amount: amount,
+                csrf_token: CSRF_TOKEN
+            })
+        });
+        const result = await response.json();
+        
+        if (result.success) {
+            selectTab(currentTabId);
+            alert('Tip added successfully');
+        } else {
+            alert(result.message || 'Failed to add tip');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Failed to add tip');
     }
 }
 

@@ -217,6 +217,232 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['success_message'] = 'Permission template created successfully';
         }
         
+        elseif ($action === 'apply_role_template') {
+            $templateType = $_POST['template_type'] ?? '';
+            $userId = (int)($_POST['user_id'] ?? 0);
+            
+            if (!$userId) {
+                throw new Exception('Please select a user');
+            }
+            
+            // Get user info
+            $user = $db->fetchOne("SELECT * FROM users WHERE id = ?", [$userId]);
+            if (!$user) {
+                throw new Exception('User not found');
+            }
+            
+            // Define predefined role templates for all system roles
+            $roleTemplates = [
+                // RETAIL ROLES
+                'cashier' => [
+                    'pos' => ['create', 'read'],
+                    'customers' => ['create', 'read', 'update'],
+                    'products' => ['read'],
+                    'sales' => ['create', 'read'],
+                    'users' => ['read']
+                ],
+                
+                // RESTAURANT ROLES
+                'waiter' => [
+                    'restaurant' => ['create', 'read', 'update'],
+                    'pos' => ['create', 'read'],
+                    'customers' => ['create', 'read', 'update'],
+                    'products' => ['read'],
+                    'rooms' => ['read'],
+                    'users' => ['read']
+                ],
+                'bartender' => [
+                    'bar' => ['create', 'read', 'update'],
+                    'restaurant' => ['create', 'read', 'update'],
+                    'pos' => ['create', 'read'],
+                    'products' => ['read'],
+                    'customers' => ['read'],
+                    'inventory' => ['read'],
+                    'users' => ['read']
+                ],
+                'kitchen' => [
+                    'restaurant' => ['read', 'update'],
+                    'products' => ['read'],
+                    'inventory' => ['read']
+                ],
+                
+                // PROPERTY/HOTEL ROLES
+                'frontdesk' => [
+                    'rooms' => ['create', 'read', 'update'],
+                    'customers' => ['create', 'read', 'update'],
+                    'pos' => ['create', 'read'],
+                    'restaurant' => ['read', 'create'],
+                    'housekeeping' => ['read'],
+                    'maintenance' => ['create', 'read'],
+                    'users' => ['read']
+                ],
+                'housekeeper' => [
+                    'housekeeping' => ['create', 'read', 'update'],
+                    'rooms' => ['read', 'update'],
+                    'inventory' => ['read'],
+                    'users' => ['read']
+                ],
+                'housekeeping_manager' => [
+                    'housekeeping' => ['create', 'read', 'update', 'delete', 'manage'],
+                    'rooms' => ['read', 'update'],
+                    'inventory' => ['read', 'update'],
+                    'users' => ['read'],
+                    'reports' => ['read']
+                ],
+                'maintenance_staff' => [
+                    'maintenance' => ['create', 'read', 'update'],
+                    'rooms' => ['read'],
+                    'inventory' => ['read'],
+                    'users' => ['read']
+                ],
+                'maintenance_manager' => [
+                    'maintenance' => ['create', 'read', 'update', 'delete', 'manage'],
+                    'rooms' => ['read'],
+                    'inventory' => ['read', 'update'],
+                    'users' => ['read'],
+                    'reports' => ['read']
+                ],
+                
+                // DELIVERY ROLES
+                'rider' => [
+                    'delivery' => ['read', 'update'],
+                    'customers' => ['read'],
+                    'users' => ['read']
+                ],
+                
+                // INVENTORY ROLES
+                'inventory_manager' => [
+                    'inventory' => ['create', 'read', 'update', 'delete', 'manage'],
+                    'products' => ['create', 'read', 'update', 'delete'],
+                    'reports' => ['read'],
+                    'accounting' => ['read'],
+                    'users' => ['read']
+                ],
+                
+                // FINANCE ROLES
+                'accountant' => [
+                    'accounting' => ['create', 'read', 'update'],
+                    'reports' => ['read', 'create'],
+                    'sales' => ['read'],
+                    'inventory' => ['read'],
+                    'customers' => ['read'],
+                    'users' => ['read']
+                ],
+                
+                // MANAGEMENT ROLES
+                'manager' => [
+                    'pos' => ['create', 'read', 'update', 'delete'],
+                    'restaurant' => ['create', 'read', 'update', 'delete'],
+                    'bar' => ['create', 'read', 'update', 'delete'],
+                    'inventory' => ['create', 'read', 'update', 'delete'],
+                    'customers' => ['create', 'read', 'update', 'delete'],
+                    'products' => ['create', 'read', 'update', 'delete'],
+                    'sales' => ['create', 'read', 'update'],
+                    'reports' => ['read', 'create'],
+                    'rooms' => ['create', 'read', 'update', 'delete'],
+                    'housekeeping' => ['create', 'read', 'update', 'delete'],
+                    'maintenance' => ['create', 'read', 'update', 'delete'],
+                    'delivery' => ['create', 'read', 'update', 'delete'],
+                    'users' => ['read', 'update'],
+                    'locations' => ['read', 'update']
+                ],
+                'owner' => [
+                    'pos' => ['read'],
+                    'restaurant' => ['read'],
+                    'bar' => ['read'],
+                    'inventory' => ['read'],
+                    'customers' => ['read'],
+                    'products' => ['read'],
+                    'sales' => ['read'],
+                    'reports' => ['read', 'create'],
+                    'rooms' => ['read'],
+                    'housekeeping' => ['read'],
+                    'maintenance' => ['read'],
+                    'delivery' => ['read'],
+                    'accounting' => ['read'],
+                    'users' => ['read'],
+                    'locations' => ['read']
+                ],
+                
+                // ADMIN ROLES
+                'admin' => [
+                    'pos' => ['create', 'read', 'update', 'delete', 'manage'],
+                    'restaurant' => ['create', 'read', 'update', 'delete', 'manage'],
+                    'bar' => ['create', 'read', 'update', 'delete', 'manage'],
+                    'inventory' => ['create', 'read', 'update', 'delete', 'manage'],
+                    'customers' => ['create', 'read', 'update', 'delete', 'manage'],
+                    'products' => ['create', 'read', 'update', 'delete', 'manage'],
+                    'sales' => ['create', 'read', 'update', 'delete', 'manage'],
+                    'reports' => ['read', 'create', 'manage'],
+                    'rooms' => ['create', 'read', 'update', 'delete', 'manage'],
+                    'housekeeping' => ['create', 'read', 'update', 'delete', 'manage'],
+                    'maintenance' => ['create', 'read', 'update', 'delete', 'manage'],
+                    'delivery' => ['create', 'read', 'update', 'delete', 'manage'],
+                    'accounting' => ['create', 'read', 'update', 'delete', 'manage'],
+                    'users' => ['create', 'read', 'update', 'delete', 'manage'],
+                    'locations' => ['create', 'read', 'update', 'delete', 'manage'],
+                    'settings' => ['read', 'update', 'manage']
+                ]
+            ];
+            
+            if (!isset($roleTemplates[$templateType])) {
+                throw new Exception('Invalid template type');
+            }
+            
+            $permissions = $roleTemplates[$templateType];
+            
+            // Clear existing permissions for this user
+            $db->execute("DELETE FROM user_permissions WHERE user_id = ?", [$userId]);
+            
+            $permissionsCreated = 0;
+            
+            // Create permissions using system_modules and system_actions
+            foreach ($permissions as $moduleKey => $actions) {
+                $module = $db->fetchOne("SELECT id FROM system_modules WHERE module_key = ?", [$moduleKey]);
+                if (!$module) continue;
+                
+                foreach ($actions as $actionKey) {
+                    $action = $db->fetchOne("SELECT id FROM system_actions WHERE action_key = ?", [$actionKey]);
+                    if (!$action) continue;
+                    
+                    // Check if module_action exists
+                    $moduleAction = $db->fetchOne(
+                        "SELECT id FROM module_actions WHERE module_id = ? AND action_id = ?", 
+                        [$module['id'], $action['id']]
+                    );
+                    
+                    if ($moduleAction) {
+                        $db->execute("
+                            INSERT INTO user_permissions (user_id, module_id, action_id, is_granted, granted_by, created_at) 
+                            VALUES (?, ?, ?, 1, ?, NOW())
+                            ON DUPLICATE KEY UPDATE is_granted = 1, granted_by = ?, updated_at = NOW()
+                        ", [$userId, $module['id'], $action['id'], $auth->getUserId(), $auth->getUserId()]);
+                        $permissionsCreated++;
+                    }
+                }
+            }
+            
+            $templateNames = [
+                'cashier' => 'Cashier',
+                'waiter' => 'Waiter',
+                'bartender' => 'Bartender',
+                'kitchen' => 'Kitchen Staff',
+                'frontdesk' => 'Front Desk',
+                'housekeeper' => 'Housekeeper',
+                'housekeeping_manager' => 'Housekeeping Manager',
+                'maintenance_staff' => 'Maintenance Staff',
+                'maintenance_manager' => 'Maintenance Manager',
+                'rider' => 'Delivery Rider',
+                'inventory_manager' => 'Inventory Manager',
+                'accountant' => 'Accountant',
+                'manager' => 'Manager',
+                'owner' => 'Business Owner',
+                'admin' => 'Administrator'
+            ];
+            
+            $_SESSION['success_message'] = "'{$templateNames[$templateType]}' template applied to {$user['full_name']} - {$permissionsCreated} permissions granted";
+        }
+        
     } catch (Exception $e) {
         $_SESSION['error_message'] = 'Error: ' . $e->getMessage();
     }
@@ -535,7 +761,7 @@ include 'includes/header.php';
             <p class="mb-0">Audit, grant, and monitor granular access across every module.</p>
         </div>
         <div class="toolbar-actions">
-            <a href="create-permission-templates.php" class="btn btn-light">
+            <a href="<?= buildPermissionsLink(['tab' => 'templates']) ?>" class="btn btn-light">
                 <i class="bi bi-collection me-2"></i>Templates
             </a>
             <button class="btn btn-outline-info" data-bs-toggle="modal" data-bs-target="#auditLogModal" type="button">
@@ -607,7 +833,7 @@ include 'includes/header.php';
                 </div>
             </div>
             <div class="card-body p-0">
-                <?php if ($selectedUserId && !empty($permissionMatrix)): ?>
+                <?php if ($selectedUserId && !empty($modules)): ?>
                 <div class="table-responsive">
                     <table class="table table-sm permission-matrix mb-0">
                         <thead class="table-light">
@@ -624,10 +850,11 @@ include 'includes/header.php';
                             </tr>
                         </thead>
                         <tbody>
-                            <?php foreach ($permissionMatrix as $moduleKey => $module): ?>
+                            <?php foreach ($modules as $module): ?>
+                            <?php $moduleKey = $module['module_key']; ?>
                             <tr>
                                 <td class="text-start">
-                                    <i class="<?= $module['icon'] ?> me-2"></i>
+                                    <i class="<?= $module['icon'] ?? 'bi bi-gear' ?> me-2"></i>
                                     <?= htmlspecialchars($module['module_name']) ?>
                                 </td>
                                 <?php foreach ($actions as $action): ?>
@@ -637,8 +864,8 @@ include 'includes/header.php';
                                         echo '<td class="text-muted">&mdash;</td>';
                                         continue;
                                     }
-                                    $hasPermission = $module['actions'][$action['action_key']]['has_permission'] ?? false;
-                                    $isSensitive = $module['actions'][$action['action_key']]['is_sensitive'] ?? ($moduleActionSet[$action['action_key']]['is_sensitive'] ?? false);
+                                    $hasPermission = $permissionMatrix[$moduleKey]['actions'][$action['action_key']]['has_permission'] ?? false;
+                                    $isSensitive = $moduleActionSet[$action['action_key']]['is_sensitive'] ?? false;
                                     ?>
                                     <td class="text-center <?= $hasPermission ? 'permission-granted' : 'permission-denied' ?> <?= $isSensitive ? 'sensitive-action' : '' ?>">
                                         <i class="bi bi-<?= $hasPermission ? 'check-circle-fill text-success' : 'x-circle-fill text-danger' ?>"></i>
@@ -648,6 +875,11 @@ include 'includes/header.php';
                             <?php endforeach; ?>
                         </tbody>
                     </table>
+                </div>
+                <?php elseif ($selectedUserId && empty($modules)): ?>
+                <div class="text-center py-5">
+                    <i class="bi bi-exclamation-triangle text-warning" style="font-size: 3rem;"></i>
+                    <p class="text-muted mt-3">No system modules configured. Please run database migrations.</p>
                 </div>
                 <?php else: ?>
                 <div class="text-center py-5">
@@ -804,45 +1036,448 @@ include 'includes/header.php';
 
     <!-- Permission Templates Tab -->
     <div class="tab-pane fade <?= $activeTab === 'templates' ? 'show active' : '' ?>" id="templates" role="tabpanel" aria-labelledby="templates-tab">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-white">
-                <h6 class="mb-0"><i class="bi bi-file-earmark-code me-2"></i>Permission Templates</h6>
-            </div>
-            <div class="card-body">
-                <div class="alert alert-info">
-                    <i class="bi bi-info-circle me-2"></i>
-                    Permission templates allow you to save and reuse common permission sets. This feature helps maintain consistency and speeds up user setup.
-                </div>
-                
-                <?php
-                $templates = $db->fetchAll("SELECT id, name, description, created_at FROM permission_templates ORDER BY name") ?: [];
-                if (!empty($templates)):
-                ?>
-                <div class="row g-3">
-                    <?php foreach ($templates as $template): ?>
-                    <div class="col-md-4">
-                        <div class="card border">
-                            <div class="card-body">
-                                <h6><?= htmlspecialchars($template['name']) ?></h6>
-                                <p class="small text-muted mb-2"><?= htmlspecialchars($template['description'] ?? '') ?></p>
-                                <button class="btn btn-sm btn-outline-primary" type="button">
-                                    <i class="bi bi-copy me-1"></i>Apply
-                                </button>
+        
+        <!-- RETAIL SECTION -->
+        <div class="mb-4">
+            <h6 class="text-muted mb-3"><i class="bi bi-cart me-2"></i>Retail & Sales</h6>
+            <div class="row g-3">
+                <!-- Cashier -->
+                <div class="col-md-6 col-lg-4 col-xl-3">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-header bg-success text-white py-2">
+                            <h6 class="mb-0 small"><i class="bi bi-cash-coin me-2"></i>Cashier</h6>
+                        </div>
+                        <div class="card-body py-2">
+                            <p class="text-muted small mb-2">POS sales & transactions</p>
+                            <div class="mb-2">
+                                <span class="badge bg-primary me-1 mb-1">POS</span>
+                                <span class="badge bg-info me-1 mb-1">Customers</span>
+                                <span class="badge bg-secondary mb-1">Sales</span>
                             </div>
+                            <button class="btn btn-success btn-sm w-100" data-bs-toggle="modal" data-bs-target="#applyTemplateModal" 
+                                    onclick="setRoleTemplate('cashier', 'Cashier')">
+                                <i class="bi bi-check-lg me-1"></i>Apply
+                            </button>
                         </div>
                     </div>
-                    <?php endforeach; ?>
                 </div>
-                <?php else: ?>
-                <div class="text-center py-5">
-                    <i class="bi bi-file-earmark-plus text-muted" style="font-size: 3rem;"></i>
-                    <p class="text-muted mt-3">No permission templates created yet.</p>
-                    <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#createTemplateModal" type="button">
-                        <i class="bi bi-plus-circle me-2"></i>Create Template
-                    </button>
-                </div>
-                <?php endif; ?>
             </div>
+        </div>
+        
+        <!-- RESTAURANT & BAR SECTION -->
+        <div class="mb-4">
+            <h6 class="text-muted mb-3"><i class="bi bi-cup-hot me-2"></i>Restaurant & Bar</h6>
+            <div class="row g-3">
+                <!-- Waiter -->
+                <div class="col-md-6 col-lg-4 col-xl-3">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-header bg-warning text-dark py-2">
+                            <h6 class="mb-0 small"><i class="bi bi-cup-hot me-2"></i>Waiter</h6>
+                        </div>
+                        <div class="card-body py-2">
+                            <p class="text-muted small mb-2">Table service & orders</p>
+                            <div class="mb-2">
+                                <span class="badge bg-warning text-dark me-1 mb-1">Restaurant</span>
+                                <span class="badge bg-success me-1 mb-1">POS</span>
+                                <span class="badge bg-info mb-1">Customers</span>
+                            </div>
+                            <button class="btn btn-warning btn-sm w-100" data-bs-toggle="modal" data-bs-target="#applyTemplateModal" 
+                                    onclick="setRoleTemplate('waiter', 'Waiter')">
+                                <i class="bi bi-check-lg me-1"></i>Apply
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <!-- Bartender -->
+                <div class="col-md-6 col-lg-4 col-xl-3">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-header bg-purple text-white py-2" style="background-color: #6f42c1;">
+                            <h6 class="mb-0 small"><i class="bi bi-cup-straw me-2"></i>Bartender</h6>
+                        </div>
+                        <div class="card-body py-2">
+                            <p class="text-muted small mb-2">Bar service & tabs</p>
+                            <div class="mb-2">
+                                <span class="badge me-1 mb-1" style="background-color: #6f42c1;">Bar</span>
+                                <span class="badge bg-warning text-dark me-1 mb-1">Restaurant</span>
+                                <span class="badge bg-success mb-1">POS</span>
+                            </div>
+                            <button class="btn btn-sm w-100 text-white" style="background-color: #6f42c1;" data-bs-toggle="modal" data-bs-target="#applyTemplateModal" 
+                                    onclick="setRoleTemplate('bartender', 'Bartender')">
+                                <i class="bi bi-check-lg me-1"></i>Apply
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <!-- Kitchen -->
+                <div class="col-md-6 col-lg-4 col-xl-3">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-header bg-danger text-white py-2">
+                            <h6 class="mb-0 small"><i class="bi bi-fire me-2"></i>Kitchen Staff</h6>
+                        </div>
+                        <div class="card-body py-2">
+                            <p class="text-muted small mb-2">Kitchen display & prep</p>
+                            <div class="mb-2">
+                                <span class="badge bg-danger me-1 mb-1">Restaurant</span>
+                                <span class="badge bg-secondary me-1 mb-1">Products</span>
+                                <span class="badge bg-info mb-1">Inventory</span>
+                            </div>
+                            <button class="btn btn-danger btn-sm w-100" data-bs-toggle="modal" data-bs-target="#applyTemplateModal" 
+                                    onclick="setRoleTemplate('kitchen', 'Kitchen Staff')">
+                                <i class="bi bi-check-lg me-1"></i>Apply
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- PROPERTY/HOTEL SECTION -->
+        <div class="mb-4">
+            <h6 class="text-muted mb-3"><i class="bi bi-building me-2"></i>Property & Hospitality</h6>
+            <div class="row g-3">
+                <!-- Front Desk -->
+                <div class="col-md-6 col-lg-4 col-xl-3">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-header bg-dark text-white py-2">
+                            <h6 class="mb-0 small"><i class="bi bi-door-open me-2"></i>Front Desk</h6>
+                        </div>
+                        <div class="card-body py-2">
+                            <p class="text-muted small mb-2">Reception & check-in</p>
+                            <div class="mb-2">
+                                <span class="badge bg-dark me-1 mb-1">Rooms</span>
+                                <span class="badge bg-info me-1 mb-1">Customers</span>
+                                <span class="badge bg-success mb-1">POS</span>
+                            </div>
+                            <button class="btn btn-dark btn-sm w-100" data-bs-toggle="modal" data-bs-target="#applyTemplateModal" 
+                                    onclick="setRoleTemplate('frontdesk', 'Front Desk')">
+                                <i class="bi bi-check-lg me-1"></i>Apply
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <!-- Housekeeper -->
+                <div class="col-md-6 col-lg-4 col-xl-3">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-header text-white py-2" style="background-color: #20c997;">
+                            <h6 class="mb-0 small"><i class="bi bi-stars me-2"></i>Housekeeper</h6>
+                        </div>
+                        <div class="card-body py-2">
+                            <p class="text-muted small mb-2">Room cleaning tasks</p>
+                            <div class="mb-2">
+                                <span class="badge me-1 mb-1" style="background-color: #20c997;">Housekeeping</span>
+                                <span class="badge bg-dark me-1 mb-1">Rooms</span>
+                            </div>
+                            <button class="btn btn-sm w-100 text-white" style="background-color: #20c997;" data-bs-toggle="modal" data-bs-target="#applyTemplateModal" 
+                                    onclick="setRoleTemplate('housekeeper', 'Housekeeper')">
+                                <i class="bi bi-check-lg me-1"></i>Apply
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <!-- Housekeeping Manager -->
+                <div class="col-md-6 col-lg-4 col-xl-3">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-header text-white py-2" style="background-color: #0d6efd;">
+                            <h6 class="mb-0 small"><i class="bi bi-clipboard-check me-2"></i>HK Manager</h6>
+                        </div>
+                        <div class="card-body py-2">
+                            <p class="text-muted small mb-2">Supervise housekeeping</p>
+                            <div class="mb-2">
+                                <span class="badge bg-primary me-1 mb-1">Housekeeping</span>
+                                <span class="badge bg-dark me-1 mb-1">Rooms</span>
+                                <span class="badge bg-secondary mb-1">Reports</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm w-100" data-bs-toggle="modal" data-bs-target="#applyTemplateModal" 
+                                    onclick="setRoleTemplate('housekeeping_manager', 'Housekeeping Manager')">
+                                <i class="bi bi-check-lg me-1"></i>Apply
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <!-- Maintenance Staff -->
+                <div class="col-md-6 col-lg-4 col-xl-3">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-header text-white py-2" style="background-color: #fd7e14;">
+                            <h6 class="mb-0 small"><i class="bi bi-wrench me-2"></i>Maintenance</h6>
+                        </div>
+                        <div class="card-body py-2">
+                            <p class="text-muted small mb-2">Repairs & fixes</p>
+                            <div class="mb-2">
+                                <span class="badge me-1 mb-1" style="background-color: #fd7e14;">Maintenance</span>
+                                <span class="badge bg-dark me-1 mb-1">Rooms</span>
+                            </div>
+                            <button class="btn btn-sm w-100 text-white" style="background-color: #fd7e14;" data-bs-toggle="modal" data-bs-target="#applyTemplateModal" 
+                                    onclick="setRoleTemplate('maintenance_staff', 'Maintenance Staff')">
+                                <i class="bi bi-check-lg me-1"></i>Apply
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <!-- Maintenance Manager -->
+                <div class="col-md-6 col-lg-4 col-xl-3">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-header text-white py-2" style="background-color: #dc3545;">
+                            <h6 class="mb-0 small"><i class="bi bi-tools me-2"></i>Maint. Manager</h6>
+                        </div>
+                        <div class="card-body py-2">
+                            <p class="text-muted small mb-2">Supervise maintenance</p>
+                            <div class="mb-2">
+                                <span class="badge bg-danger me-1 mb-1">Maintenance</span>
+                                <span class="badge bg-info me-1 mb-1">Inventory</span>
+                                <span class="badge bg-secondary mb-1">Reports</span>
+                            </div>
+                            <button class="btn btn-danger btn-sm w-100" data-bs-toggle="modal" data-bs-target="#applyTemplateModal" 
+                                    onclick="setRoleTemplate('maintenance_manager', 'Maintenance Manager')">
+                                <i class="bi bi-check-lg me-1"></i>Apply
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- DELIVERY SECTION -->
+        <div class="mb-4">
+            <h6 class="text-muted mb-3"><i class="bi bi-truck me-2"></i>Delivery</h6>
+            <div class="row g-3">
+                <!-- Rider -->
+                <div class="col-md-6 col-lg-4 col-xl-3">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-header text-white py-2" style="background-color: #0dcaf0;">
+                            <h6 class="mb-0 small"><i class="bi bi-bicycle me-2"></i>Delivery Rider</h6>
+                        </div>
+                        <div class="card-body py-2">
+                            <p class="text-muted small mb-2">Deliveries & tracking</p>
+                            <div class="mb-2">
+                                <span class="badge bg-info me-1 mb-1">Delivery</span>
+                                <span class="badge bg-secondary mb-1">Customers</span>
+                            </div>
+                            <button class="btn btn-info btn-sm w-100" data-bs-toggle="modal" data-bs-target="#applyTemplateModal" 
+                                    onclick="setRoleTemplate('rider', 'Delivery Rider')">
+                                <i class="bi bi-check-lg me-1"></i>Apply
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- INVENTORY & FINANCE SECTION -->
+        <div class="mb-4">
+            <h6 class="text-muted mb-3"><i class="bi bi-boxes me-2"></i>Inventory & Finance</h6>
+            <div class="row g-3">
+                <!-- Inventory Manager -->
+                <div class="col-md-6 col-lg-4 col-xl-3">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-header bg-info text-white py-2">
+                            <h6 class="mb-0 small"><i class="bi bi-boxes me-2"></i>Inventory Mgr</h6>
+                        </div>
+                        <div class="card-body py-2">
+                            <p class="text-muted small mb-2">Stock control</p>
+                            <div class="mb-2">
+                                <span class="badge bg-info me-1 mb-1">Inventory</span>
+                                <span class="badge bg-secondary me-1 mb-1">Products</span>
+                                <span class="badge bg-primary mb-1">Reports</span>
+                            </div>
+                            <button class="btn btn-info btn-sm w-100" data-bs-toggle="modal" data-bs-target="#applyTemplateModal" 
+                                    onclick="setRoleTemplate('inventory_manager', 'Inventory Manager')">
+                                <i class="bi bi-check-lg me-1"></i>Apply
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <!-- Accountant -->
+                <div class="col-md-6 col-lg-4 col-xl-3">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-header bg-secondary text-white py-2">
+                            <h6 class="mb-0 small"><i class="bi bi-calculator me-2"></i>Accountant</h6>
+                        </div>
+                        <div class="card-body py-2">
+                            <p class="text-muted small mb-2">Financial reporting</p>
+                            <div class="mb-2">
+                                <span class="badge bg-success me-1 mb-1">Accounting</span>
+                                <span class="badge bg-primary me-1 mb-1">Reports</span>
+                                <span class="badge bg-warning text-dark mb-1">Sales</span>
+                            </div>
+                            <button class="btn btn-secondary btn-sm w-100" data-bs-toggle="modal" data-bs-target="#applyTemplateModal" 
+                                    onclick="setRoleTemplate('accountant', 'Accountant')">
+                                <i class="bi bi-check-lg me-1"></i>Apply
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- MANAGEMENT & ADMIN SECTION -->
+        <div class="mb-4">
+            <h6 class="text-muted mb-3"><i class="bi bi-person-badge me-2"></i>Management & Administration</h6>
+            <div class="row g-3">
+                <!-- Manager -->
+                <div class="col-md-6 col-lg-4 col-xl-3">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-header bg-primary text-white py-2">
+                            <h6 class="mb-0 small"><i class="bi bi-person-badge me-2"></i>Manager</h6>
+                        </div>
+                        <div class="card-body py-2">
+                            <p class="text-muted small mb-2">Full operations access</p>
+                            <div class="mb-2">
+                                <span class="badge bg-primary me-1 mb-1">All Modules</span>
+                                <span class="badge bg-secondary mb-1">14 modules</span>
+                            </div>
+                            <button class="btn btn-primary btn-sm w-100" data-bs-toggle="modal" data-bs-target="#applyTemplateModal" 
+                                    onclick="setRoleTemplate('manager', 'Manager')">
+                                <i class="bi bi-check-lg me-1"></i>Apply
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <!-- Owner -->
+                <div class="col-md-6 col-lg-4 col-xl-3">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-header text-white py-2" style="background-color: #198754;">
+                            <h6 class="mb-0 small"><i class="bi bi-briefcase me-2"></i>Business Owner</h6>
+                        </div>
+                        <div class="card-body py-2">
+                            <p class="text-muted small mb-2">View-only analytics</p>
+                            <div class="mb-2">
+                                <span class="badge bg-success me-1 mb-1">Reports</span>
+                                <span class="badge bg-secondary me-1 mb-1">Read-Only</span>
+                                <span class="badge bg-primary mb-1">All Data</span>
+                            </div>
+                            <button class="btn btn-success btn-sm w-100" data-bs-toggle="modal" data-bs-target="#applyTemplateModal" 
+                                    onclick="setRoleTemplate('owner', 'Business Owner')">
+                                <i class="bi bi-check-lg me-1"></i>Apply
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <!-- Admin -->
+                <div class="col-md-6 col-lg-4 col-xl-3">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-header text-white py-2" style="background-color: #212529;">
+                            <h6 class="mb-0 small"><i class="bi bi-shield-lock me-2"></i>Administrator</h6>
+                        </div>
+                        <div class="card-body py-2">
+                            <p class="text-muted small mb-2">Full system access</p>
+                            <div class="mb-2">
+                                <span class="badge bg-dark me-1 mb-1">Full Access</span>
+                                <span class="badge bg-danger me-1 mb-1">Settings</span>
+                                <span class="badge bg-primary mb-1">Users</span>
+                            </div>
+                            <button class="btn btn-dark btn-sm w-100" data-bs-toggle="modal" data-bs-target="#applyTemplateModal" 
+                                    onclick="setRoleTemplate('admin', 'Administrator')">
+                                <i class="bi bi-check-lg me-1"></i>Apply
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Quick Apply to Users Table -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white">
+                <h6 class="mb-0"><i class="bi bi-people me-2"></i>Quick Apply to Users</h6>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>User</th>
+                                <th>Username</th>
+                                <th>Role</th>
+                                <th>Quick Apply Template</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($users as $user): ?>
+                            <?php if (!$user['is_active']) continue; ?>
+                            <tr>
+                                <td><strong><?= htmlspecialchars($user['full_name']) ?></strong></td>
+                                <td><code class="text-muted small"><?= htmlspecialchars($user['username']) ?></code></td>
+                                <td><span class="badge bg-secondary"><?= htmlspecialchars($user['role']) ?></span></td>
+                                <td>
+                                    <select class="form-select form-select-sm" style="width: auto; display: inline-block;" 
+                                            onchange="if(this.value) { setRoleTemplate(this.value, this.options[this.selectedIndex].text, <?= $user['id'] ?>); new bootstrap.Modal(document.getElementById('applyTemplateModal')).show(); this.value=''; }">
+                                        <option value="">Select template...</option>
+                                        <optgroup label="Retail">
+                                            <option value="cashier">Cashier</option>
+                                        </optgroup>
+                                        <optgroup label="Restaurant & Bar">
+                                            <option value="waiter">Waiter</option>
+                                            <option value="bartender">Bartender</option>
+                                            <option value="kitchen">Kitchen Staff</option>
+                                        </optgroup>
+                                        <optgroup label="Property">
+                                            <option value="frontdesk">Front Desk</option>
+                                            <option value="housekeeper">Housekeeper</option>
+                                            <option value="housekeeping_manager">HK Manager</option>
+                                            <option value="maintenance_staff">Maintenance</option>
+                                            <option value="maintenance_manager">Maint. Manager</option>
+                                        </optgroup>
+                                        <optgroup label="Delivery">
+                                            <option value="rider">Delivery Rider</option>
+                                        </optgroup>
+                                        <optgroup label="Finance">
+                                            <option value="inventory_manager">Inventory Mgr</option>
+                                            <option value="accountant">Accountant</option>
+                                        </optgroup>
+                                        <optgroup label="Management">
+                                            <option value="manager">Manager</option>
+                                            <option value="owner">Business Owner</option>
+                                            <option value="admin">Administrator</option>
+                                        </optgroup>
+                                    </select>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Apply Role Template Modal -->
+<div class="modal fade" id="applyTemplateModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST">
+                <input type="hidden" name="action" value="apply_role_template">
+                <input type="hidden" name="csrf_token" value="<?= generateCSRFToken(); ?>">
+                <input type="hidden" name="template_type" id="applyTemplateType">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-shield-check me-2"></i>Apply Permission Template</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Template</label>
+                        <input type="text" class="form-control" id="applyTemplateName" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Apply to User *</label>
+                        <select name="user_id" class="form-select" id="applyTemplateUserId" required>
+                            <option value="">Select User</option>
+                            <?php foreach ($users as $user): ?>
+                            <?php if (!$user['is_active']) continue; ?>
+                            <option value="<?= $user['id'] ?>"><?= htmlspecialchars($user['full_name']) ?> (<?= $user['username'] ?>)</option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="alert alert-warning mb-0">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>Warning:</strong> This will replace all existing permissions for the selected user.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Apply Template</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
@@ -992,7 +1627,7 @@ include 'includes/header.php';
                     </h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <div class="modal-body">
+                <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
                     <div class="alert alert-light border d-flex align-items-center gap-2 mb-4">
                         <i class="bi bi-info-circle text-primary"></i>
                         <div class="small mb-0">
@@ -1404,6 +2039,19 @@ function hideBootstrapModal(modalEl) {
         modalEl.classList.remove('show');
         modalEl.style.display = 'none';
         document.body.classList.remove('modal-open');
+    }
+}
+
+// Set role template for apply modal
+function setRoleTemplate(templateType, templateName, userId = null) {
+    document.getElementById('applyTemplateType').value = templateType;
+    document.getElementById('applyTemplateName').value = templateName + ' Template';
+    
+    const userSelect = document.getElementById('applyTemplateUserId');
+    if (userId && userSelect) {
+        userSelect.value = userId;
+    } else if (userSelect) {
+        userSelect.value = '';
     }
 }
 
