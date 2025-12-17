@@ -563,22 +563,6 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'module' => 'customers'
                             ],
                             [
-                                'roles' => ['admin','manager'],
-                                'href' => $basePath . '/notifications.php',
-                                'page' => 'notifications.php',
-                                'icon' => 'bi-bell',
-                                'label' => 'Notifications',
-                                'module' => 'customers'
-                            ],
-                            [
-                                'roles' => ['super_admin','developer'],
-                                'href' => $basePath . '/notification-usage.php',
-                                'page' => 'notification-usage.php',
-                                'icon' => 'bi-bar-chart-line',
-                                'label' => 'Notification Billing',
-                                'module' => 'customers'
-                            ],
-                            [
                                 'roles' => ['admin','manager','cashier','accountant'],
                                 'href' => $basePath . '/sales.php',
                                 'page' => 'sales.php',
@@ -985,7 +969,7 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'module' => 'settings'
                             ],
                             [
-                                'roles' => ['super_admin', 'admin', 'developer'],
+                                'roles' => ['super_admin'],
                                 'href' => $basePath . '/module-manager.php',
                                 'page' => 'module-manager.php',
                                 'icon' => 'bi-toggle2-on',
@@ -1021,6 +1005,22 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'page' => 'site-editor.php',
                                 'icon' => 'bi-pencil-square',
                                 'label' => 'Site Editor'
+                            ],
+                            [
+                                'roles' => ['admin','manager'],
+                                'href' => $basePath . '/notifications.php',
+                                'page' => 'notifications.php',
+                                'icon' => 'bi-bell',
+                                'label' => 'Notifications',
+                                'module' => 'customers'
+                            ],
+                            [
+                                'roles' => ['super_admin','developer'],
+                                'href' => $basePath . '/notification-usage.php',
+                                'page' => 'notification-usage.php',
+                                'icon' => 'bi-bar-chart-line',
+                                'label' => 'Notification Billing',
+                                'module' => 'customers'
                             ]
                         ]
                     ]

@@ -1,0 +1,256 @@
+================================================================================
+WAPOS DELIVERY MODULE UPGRADE - DEPLOYMENT FILES & SQL QUERIES
+================================================================================
+Date: December 17, 2025
+Package: Intelligent Dispatch + Manual Pricing Mode + Frontend UI
+================================================================================
+
+STEP 1: UPLOAD THESE FILES TO PRODUCTION
+================================================================================
+
+File 1: DeliveryPricingService.php
+Location: app/Services/DeliveryPricingService.php
+Action: REPLACE existing file
+Description: Updated to support manual pricing mode
+
+---
+
+File 2: DeliveryDispatchService.php
+Location: app/Services/DeliveryDispatchService.php
+Action: UPLOAD as NEW file
+Description: Intelligent rider assignment service
+
+---
+
+File 3: delivery-dispatch.php
+Location: api/delivery-dispatch.php
+Action: UPLOAD as NEW file
+Description: API endpoint for dispatch operations
+
+---
+
+File 4: settings.php
+Location: settings.php (root folder)
+Action: REPLACE existing file
+Description: Added manual pricing mode toggle in Delivery & Logistics section
+
+---
+
+File 5: enhanced-delivery-tracking.php
+Location: enhanced-delivery-tracking.php (root folder)
+Action: REPLACE existing file
+Description: Added auto-assign and rider suggestions buttons
+
+---
+
+File 6: delivery-dispatch-ui.js
+Location: delivery-dispatch-ui.js (root folder)
+Action: UPLOAD as NEW file
+Description: JavaScript functions for auto-assign and rider suggestions modal
+
+---
+
+File 7: GOOGLE_MAPS_API_SECURITY.md
+Location: GOOGLE_MAPS_API_SECURITY.md (root folder)
+Action: UPLOAD as NEW file (documentation only)
+Description: API key security configuration guide
+
+---
+
+File 8: DELIVERY_DISPATCH_UPGRADE.md
+Location: DELIVERY_DISPATCH_UPGRADE.md (root folder)
+Action: UPLOAD as NEW file (documentation only)
+Description: Dispatch system integration guide
+
+---
+
+File 9: MANUAL_DELIVERY_PRICING_GUIDE.md
+Location: MANUAL_DELIVERY_PRICING_GUIDE.md (root folder)
+Action: UPLOAD as NEW file (documentation only)
+Description: Manual pricing mode user guide
+
+---
+
+File 10: DEPLOYMENT_PACKAGE_MANUAL_PRICING.md
+Location: DEPLOYMENT_PACKAGE_MANUAL_PRICING.md (root folder)
+Action: UPLOAD as NEW file (documentation only)
+Description: Deployment instructions
+
+================================================================================
+
+STEP 2: RUN THESE SQL QUERIES IN ORDER
+================================================================================
+
+QUERY 1: Create Dispatch Log Table
+-----------------------------------
+Run this in phpMyAdmin or MySQL console:
+
+CREATE TABLE IF NOT EXISTS delivery_dispatch_log (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    delivery_id INT NOT NULL,
+    selected_rider_id INT NOT NULL,
+    duration_seconds INT NOT NULL,
+    distance_meters INT NOT NULL,
+    candidates_evaluated INT NOT NULL DEFAULT 0,
+    selection_score DECIMAL(10,2) NOT NULL,
+    dispatch_data JSON NULL COMMENT 'Full dispatch result including alternatives',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_delivery (delivery_id),
+    INDEX idx_rider (selected_rider_id),
+    INDEX idx_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Logs intelligent dispatch decisions for analytics';
+
+---
+
+QUERY 2: Add Rider Capacity Column
+-----------------------------------
+Run this in phpMyAdmin or MySQL console:
+
+ALTER TABLE riders 
+ADD COLUMN max_active_deliveries INT NOT NULL DEFAULT 3 
+COMMENT 'Maximum concurrent deliveries this rider can handle'
+AFTER is_active;
+
+---
+
+QUERY 3: Update Existing Riders (SKIP - Not needed after Query 2)
+--------------------------------
+This query is not needed because Query 2 sets DEFAULT 3 for all rows.
+SKIP THIS QUERY.
+
+---
+
+QUERY 4: Add Manual Pricing Mode Setting
+-----------------------------------------
+Run this in phpMyAdmin or MySQL console:
+
+INSERT INTO settings (setting_key, setting_value)
+VALUES (
+    'delivery_manual_pricing_mode',
+    '0'
+)
+ON DUPLICATE KEY UPDATE 
+    setting_value = '0';
+
+---
+
+QUERY 5: Add Manual Pricing Instructions Setting
+-------------------------------------------------
+Run this in phpMyAdmin or MySQL console:
+
+INSERT INTO settings (setting_key, setting_value)
+VALUES (
+    'delivery_manual_pricing_instructions',
+    'Enter delivery fee manually based on distance or flat rate'
+)
+ON DUPLICATE KEY UPDATE 
+    setting_value = 'Enter delivery fee manually based on distance or flat rate';
+
+================================================================================
+
+STEP 3: VERIFY INSTALLATION
+================================================================================
+
+Run this query to verify settings were created:
+
+SELECT * FROM settings 
+WHERE setting_key IN ('delivery_manual_pricing_mode', 'delivery_manual_pricing_instructions');
+
+Expected Result:
+- delivery_manual_pricing_mode = 0 (disabled by default)
+- delivery_manual_pricing_instructions = Enter delivery fee manually...
+
+---
+
+Run this query to verify dispatch log table exists:
+
+SHOW TABLES LIKE 'delivery_dispatch_log';
+
+Expected Result: Should show the table exists
+
+---
+
+Run this query to verify rider capacity column exists:
+
+SHOW COLUMNS FROM riders LIKE 'max_active_deliveries';
+
+Expected Result: Should show the column with DEFAULT 3
+
+================================================================================
+
+STEP 4: CONFIGURATION (CHOOSE ONE)
+================================================================================
+
+OPTION A: Enable Manual Pricing Mode (No Google Maps API)
+----------------------------------------------------------
+Run this query:
+
+UPDATE settings 
+SET setting_value = '1' 
+WHERE setting_key = 'delivery_manual_pricing_mode';
+
+Use this if:
+- Client doesn't want to pay for Google Maps API
+- Simple flat-rate or zone-based pricing preferred
+- Zero API costs required
+
+---
+
+OPTION B: Keep API Mode (Default - Recommended)
+------------------------------------------------
+Run this query:
+
+UPDATE settings 
+SET setting_value = '0' 
+WHERE setting_key = 'delivery_manual_pricing_mode';
+
+Use this if:
+- Client has Google Maps API configured
+- Accurate distance/duration calculations needed
+- Traffic-aware routing required
+
+================================================================================
+
+SUMMARY OF CHANGES
+================================================================================
+
+NEW FEATURES:
+✅ Intelligent rider assignment (traffic-aware)
+✅ Manual pricing mode (no API required)
+✅ Dispatch analytics and logging
+✅ Rider capacity management
+✅ Haversine distance fallback
+✅ Enhanced error handling
+✅ Settings UI for manual pricing toggle
+✅ Auto-assign button in delivery tracking
+✅ Rider suggestions modal with alternatives
+✅ User-friendly dispatch interface
+
+FILES TO UPLOAD: 10 files total (3 backend + 3 frontend + 4 documentation)
+SQL QUERIES TO RUN: 4 queries total (Query 3 is skipped)
+
+ESTIMATED TIME: 20-25 minutes
+
+================================================================================
+
+TROUBLESHOOTING
+================================================================================
+
+If you get "Table already exists" error:
+- Skip that query, table already created
+
+If you get "Column already exists" error:
+- Skip that query, column already added
+
+If you get "Duplicate entry" error on settings:
+- The ON DUPLICATE KEY UPDATE will handle it automatically
+
+If dispatch not working:
+- Verify all 5 SQL queries ran successfully
+- Check that riders table has is_active = 1 riders
+- Verify Google Maps API keys are configured (if using API mode)
+
+================================================================================
+END OF DEPLOYMENT INSTRUCTIONS
+================================================================================

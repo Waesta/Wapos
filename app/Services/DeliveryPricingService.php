@@ -20,12 +20,27 @@ class DeliveryPricingService
 
     /**
      * Calculate delivery fee using live distance metrics, pricing rules, and fallbacks.
+     * Supports manual pricing mode when Google Maps API is unavailable.
      */
     public function calculateFee(array $orderData, ?float $deliveryLat = null, ?float $deliveryLng = null): array
     {
+        // Check if manual pricing mode is enabled
+        $manualPricingMode = (bool)($this->settings['delivery_manual_pricing_mode'] ?? false);
+        
+        // If manual pricing is enabled and a manual fee is provided, use it
+        if ($manualPricingMode && isset($orderData['delivery_fee']) && $orderData['delivery_fee'] > 0) {
+            return $this->buildManualPricingResponse($orderData['delivery_fee'], $orderData);
+        }
+
         $origin = $this->getOriginCoordinates();
 
         if (!$origin['lat'] || !$origin['lng'] || !$deliveryLat || !$deliveryLng) {
+            // If coordinates missing and manual pricing enabled, allow manual fee
+            if ($manualPricingMode) {
+                $manualFee = $orderData['delivery_fee'] ?? (float)($this->settings['delivery_base_fee'] ?? 0);
+                return $this->buildManualPricingResponse($manualFee, $orderData);
+            }
+            
             return $this->buildFallbackResponse(null, null, $orderData['delivery_fee'] ?? 0, null, [
                 'reason' => 'missing_coordinates',
             ]);
@@ -59,6 +74,37 @@ class DeliveryPricingService
                 'soft_cache_expired' => $distanceMetrics['soft_cache_expired'] ?? false,
             ],
             'zone' => $rule,
+            'manual_pricing_mode' => $manualPricingMode,
+        ];
+    }
+
+    /**
+     * Build response for manual pricing mode
+     */
+    private function buildManualPricingResponse(float $manualFee, array $orderData): array
+    {
+        return [
+            'distance_km' => null,
+            'duration_minutes' => null,
+            'calculated_fee' => $manualFee,
+            'base_fee' => $manualFee,
+            'fee_components' => [
+                'base_fee' => $manualFee,
+                'distance_component' => 0,
+                'surcharge_component' => 0,
+                'total_fee' => $manualFee,
+            ],
+            'rule' => null,
+            'provider' => 'manual',
+            'cache_hit' => false,
+            'fallback_used' => false,
+            'audit_request_id' => null,
+            'metadata' => [
+                'manual_pricing_mode' => true,
+                'manual_fee_entered' => true,
+            ],
+            'zone' => null,
+            'manual_pricing_mode' => true,
         ];
     }
 

@@ -619,36 +619,120 @@ $pageDescription = 'Complete user manual and documentation for WAPOS - Point of 
                 <!-- Delivery -->
                 <section id="delivery">
                     <h2><i class="bi bi-truck me-2"></i>Delivery Management</h2>
-                    <p>Manage delivery orders, assign riders, and track deliveries in real-time.</p>
+                    <p>Manage delivery orders, assign riders, and track deliveries in real-time with intelligent dispatch.</p>
 
                     <h3>Creating Delivery Orders</h3>
                     <ol class="steps-list">
-                        <li>Create order in POS and select <strong>Delivery</strong> type</li>
-                        <li>Enter customer address and contact details</li>
-                        <li>System calculates delivery fee based on distance</li>
-                        <li>Complete payment (can be Cash on Delivery)</li>
+                        <li>Create order in POS or Restaurant and select <strong>Delivery</strong> type</li>
+                        <li>Enter customer address (Google Maps autocomplete available)</li>
+                        <li>System calculates delivery fee:
+                            <ul>
+                                <li><strong>Automatic Mode:</strong> Google Routes API with real-time traffic</li>
+                                <li><strong>Manual Mode:</strong> Enter fee manually (zero API costs)</li>
+                            </ul>
+                        </li>
+                        <li>Complete payment (Cash, Card, Mobile Money, or Cash on Delivery)</li>
                         <li>Order appears in Delivery queue</li>
                     </ol>
 
-                    <h3>Dispatching Orders</h3>
+                    <h3>Delivery Pricing Modes</h3>
+                    <h4>Automatic Pricing (Default)</h4>
+                    <ul>
+                        <li>Uses Google Routes API for real-time calculation</li>
+                        <li>Considers traffic conditions</li>
+                        <li>Distance and duration-based</li>
+                        <li>Cached for 30 minutes to reduce API costs</li>
+                        <li>Automatic fallback to Haversine distance if API fails</li>
+                    </ul>
+
+                    <h4>Manual Pricing Mode</h4>
+                    <ul>
+                        <li><strong>Zero API costs</strong> - No Google Maps charges</li>
+                        <li>Staff enters delivery fee manually</li>
+                        <li>Based on your custom pricing guide</li>
+                        <li>Enable in <strong>Settings → Delivery & Logistics</strong></li>
+                        <li>Ideal for fixed-rate or zone-based pricing</li>
+                    </ul>
+
+                    <div class="info-box">
+                        <p><strong>Configure Pricing Mode:</strong> Go to Settings → Delivery & Logistics → Toggle "Enable Manual Pricing Mode" and set custom instructions for your staff.</p>
+                    </div>
+
+                    <h3>Intelligent Dispatch</h3>
+                    <h4>Auto-Assign Optimal Rider</h4>
+                    <p>The system automatically selects the best rider based on:</p>
+                    <ul>
+                        <li><strong>Traffic-aware routing</strong> - Real-time traffic conditions</li>
+                        <li><strong>Distance</strong> - Closest available rider</li>
+                        <li><strong>Capacity</strong> - Current workload (max deliveries per rider)</li>
+                        <li><strong>Availability</strong> - Active riders with GPS location</li>
+                    </ul>
+
+                    <ol class="steps-list">
+                        <li>Go to <strong>Enhanced Delivery Tracking</strong></li>
+                        <li>Find pending delivery</li>
+                        <li>Click <strong>⚡ Auto-Assign</strong> button</li>
+                        <li>System selects optimal rider instantly</li>
+                        <li>Rider receives notification</li>
+                    </ol>
+
+                    <h4>Rider Suggestions</h4>
+                    <p>View top rider options before assigning:</p>
+                    <ol class="steps-list">
+                        <li>Click <strong>👥 Rider Suggestions</strong> button</li>
+                        <li>See recommended rider with duration, distance, capacity, GPS status</li>
+                        <li>View alternative riders</li>
+                        <li>Choose rider or let system auto-assign</li>
+                    </ol>
+
+                    <h3>Manual Dispatching</h3>
                     <ol class="steps-list">
                         <li>Go to <strong>Delivery → Dispatch</strong></li>
                         <li>View pending deliveries</li>
-                        <li>Assign rider to delivery</li>
+                        <li>Click <strong>Assign Rider</strong></li>
+                        <li>Select from available riders</li>
                         <li>Rider receives notification</li>
                     </ol>
+
+                    <h3>Enhanced Tracking Dashboard</h3>
+                    <p>Real-time delivery monitoring with:</p>
+                    <ul>
+                        <li>Google Maps visualization with rider locations</li>
+                        <li>Active deliveries list with status</li>
+                        <li>Auto-assign buttons for pending orders</li>
+                        <li>Rider suggestions modal</li>
+                        <li>Performance charts and analytics</li>
+                        <li>SLA monitoring with at-risk alerts</li>
+                    </ul>
 
                     <h3>Live Tracking</h3>
                     <p>Track riders in real-time:</p>
                     <ul>
-                        <li>View all active riders on map</li>
-                        <li>See estimated arrival times</li>
-                        <li>Monitor delivery status updates</li>
-                        <li>Contact rider directly if needed</li>
+                        <li>View all riders on map with GPS accuracy</li>
+                        <li>See estimated arrival times (ETA)</li>
+                        <li>Monitor status updates</li>
+                        <li>Route visualization with polylines</li>
+                        <li>Contact rider or customer directly</li>
+                    </ul>
+
+                    <h3>Rider Management</h3>
+                    <p>Add and manage delivery riders:</p>
+                    <ul>
+                        <li>Vehicle details (type, number, make, color)</li>
+                        <li>License and plate photo</li>
+                        <li>Max concurrent deliveries (default: 3)</li>
+                        <li>Active/inactive status</li>
+                        <li>Rider portal access for GPS tracking</li>
                     </ul>
 
                     <h3>Delivery Status Flow</h3>
                     <p><code>Pending</code> → <code>Assigned</code> → <code>Picked Up</code> → <code>In Transit</code> → <code>Delivered</code></p>
+                    <p>Alternative: <code>Failed</code> (with reason)</p>
+
+                    <h3>SLA Monitoring</h3>
+                    <div class="info-box warning">
+                        <p><strong>At-Risk Alerts:</strong> System tracks delivery times and highlights deliveries that are pending too long, assigned too long, or in-transit too long. At-risk deliveries appear in red on the dashboard.</p>
+                    </div>
                 </section>
 
                 <!-- Housekeeping -->

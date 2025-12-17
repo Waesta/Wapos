@@ -68,8 +68,8 @@ $fieldDefinitions = [
     'delivery_sla_delivery_limit' => ['type' => 'int'],
     'delivery_sla_slack_minutes' => ['type' => 'int'],
     'google_maps_api_key' => ['type' => 'string'],
-    'google_distance_matrix_endpoint' => ['type' => 'string'],
-    'google_distance_matrix_timeout' => ['type' => 'int'],
+    'google_places_api_key' => ['type' => 'string'],
+    'google_routes_api_key' => ['type' => 'string'],
     'delivery_cache_ttl_minutes' => ['type' => 'int'],
     'delivery_cache_soft_ttl_minutes' => ['type' => 'int'],
     'delivery_distance_fallback_provider' => ['type' => 'string'],
@@ -97,6 +97,9 @@ $fieldDefinitions = [
     'show_waiter_filter' => ['type' => 'bool'],       // Show waiter filter on tabs list
     'waiter_commission_enabled' => ['type' => 'bool'], // Enable waiter commission tracking
     'waiter_commission_rate' => ['type' => 'float'],   // Default commission percentage
+    // Delivery Dispatch Settings
+    'delivery_manual_pricing_mode' => ['type' => 'bool'], // Enable manual delivery pricing (no Google Maps API)
+    'delivery_manual_pricing_instructions' => ['type' => 'string'], // Instructions for manual pricing
 ];
 
 // Handle form submission
@@ -292,19 +295,19 @@ $sections = [
         'title' => 'Delivery & Logistics',
         'icon' => 'bi-truck',
         'description' => 'Control delivery origins, pricing defaults, and Distance Matrix behaviour.',
-        'roles' => ['admin', 'developer'],
+        'roles' => ['super_admin'],
     ],
     'integrations_notifications' => [
         'title' => 'Integrations & Notifications',
         'icon' => 'bi-plug',
         'description' => 'Manage WhatsApp alerts and system-wide notification defaults.',
-        'roles' => ['admin', 'developer'],
+        'roles' => ['super_admin'],
     ],
     'data_protection' => [
         'title' => 'Data Protection & Backups',
         'icon' => 'bi-shield-lock',
         'description' => 'Automate backups, manage retention, and handle data import/export workflows.',
-        'roles' => ['super_admin', 'developer', 'admin', 'accountant'],
+        'roles' => ['super_admin'],
     ],
     'loyalty_rewards' => [
         'title' => 'Loyalty & Rewards',
@@ -707,17 +710,19 @@ $visibleSections = array_filter($sections, function ($section) use ($userRole) {
                                 <div class="form-text">Configure SLA thresholds for monitoring and risk alerts. Slack adds tolerance before triggering an alert.</div>
                             </div>
                             <div class="col-md-12">
-                                <label class="form-label">Google Distance Matrix API Key</label>
+                                <label class="form-label">Google Maps JavaScript API Key</label>
                                 <input type="text" class="form-control" name="google_maps_api_key" value="<?= htmlspecialchars($settings['google_maps_api_key'] ?? '') ?>" placeholder="AIza...">
-                                <div class="form-text">Secure the key via HTTP referrer restrictions or a proxy server.</div>
+                                <div class="form-text">Used for Maps display, Distance Matrix, and Geocoding. Secure via HTTP referrer restrictions.</div>
                             </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Distance Matrix Endpoint</label>
-                                <input type="text" class="form-control" name="google_distance_matrix_endpoint" value="<?= htmlspecialchars($settings['google_distance_matrix_endpoint'] ?? 'https://maps.googleapis.com/maps/api/distancematrix/json') ?>">
+                            <div class="col-md-12">
+                                <label class="form-label">Google Places API Key</label>
+                                <input type="text" class="form-control" name="google_places_api_key" value="<?= htmlspecialchars($settings['google_places_api_key'] ?? '') ?>" placeholder="AIza...">
+                                <div class="form-text">Used for address autocomplete and place details. Can be the same as Maps API key.</div>
                             </div>
-                            <div class="col-md-3">
-                                <label class="form-label">HTTP Timeout (s)</label>
-                                <input type="number" class="form-control" name="google_distance_matrix_timeout" value="<?= htmlspecialchars($settings['google_distance_matrix_timeout'] ?? '10') ?>" min="5">
+                            <div class="col-md-12">
+                                <label class="form-label">Google Routes API Key</label>
+                                <input type="text" class="form-control" name="google_routes_api_key" value="<?= htmlspecialchars($settings['google_routes_api_key'] ?? '') ?>" placeholder="AIza...">
+                                <div class="form-text">Modern Routes API for route optimization, traffic-aware routing, and distance calculations. Replaces deprecated Distance Matrix API.</div>
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label">Fallback Provider</label>
@@ -736,7 +741,39 @@ $visibleSections = array_filter($sections, function ($section) use ($userRole) {
                                 <label class="form-label">Soft Refresh Interval (minutes)</label>
                                 <input type="number" class="form-control" name="delivery_cache_soft_ttl_minutes" min="5" value="<?= htmlspecialchars($settings['delivery_cache_soft_ttl_minutes'] ?? '180') ?>">
                             </div>
+                            <div class="col-md-12">
+                                <hr class="my-3">
+                                <h6 class="text-muted mb-3"><i class="bi bi-lightning-charge-fill text-warning me-2"></i>Intelligent Dispatch & Pricing</h6>
+                            </div>
+                            <div class="col-md-12">
+                                <?php $manualPricingMode = !empty($settings['delivery_manual_pricing_mode']); ?>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="manualPricingMode" name="delivery_manual_pricing_mode" <?= $manualPricingMode ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="manualPricingMode">
+                                        <strong>Enable Manual Pricing Mode</strong>
+                                    </label>
+                                </div>
+                                <div class="form-text">
+                                    <i class="bi bi-info-circle me-1"></i>
+                                    When enabled, delivery fees are entered manually instead of calculated via Google Maps API. 
+                                    <strong>Zero API costs</strong> but requires staff to enter fees based on your pricing guide.
+                                    <br>
+                                    <span class="badge bg-success-subtle text-success mt-1">💰 Cost Savings</span>
+                                    <span class="badge bg-info-subtle text-info mt-1">📍 Simple Pricing</span>
+                                    <span class="badge bg-warning-subtle text-warning mt-1">⚠️ Manual Entry Required</span>
+                                </div>
+                            </div>
+                            <div class="col-md-12" id="manualPricingInstructionsContainer" style="display: <?= $manualPricingMode ? 'block' : 'none' ?>;">
+                                <label class="form-label">Manual Pricing Instructions</label>
+                                <input type="text" class="form-control" name="delivery_manual_pricing_instructions" value="<?= htmlspecialchars($settings['delivery_manual_pricing_instructions'] ?? 'Enter delivery fee manually based on distance or flat rate') ?>" placeholder="Enter delivery fee manually based on distance or flat rate">
+                                <div class="form-text">Instructions shown to staff when entering delivery fees manually.</div>
+                            </div>
                         </div>
+                        <script>
+                        document.getElementById('manualPricingMode').addEventListener('change', function() {
+                            document.getElementById('manualPricingInstructionsContainer').style.display = this.checked ? 'block' : 'none';
+                        });
+                        </script>
                     <?php elseif ($key === 'integrations_notifications'): ?>
                         <div class="row g-3">
                             <div class="col-md-6">

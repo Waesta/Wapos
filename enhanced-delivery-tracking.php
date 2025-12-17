@@ -298,8 +298,8 @@ include 'includes/header.php';
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="delivery-dispatch-ui.js"></script>
 let deliveryChart;
 let googleMap;
 let directionsService;
@@ -490,13 +490,22 @@ function updateActiveDeliveries(deliveries, supportsPricingAudit) {
                     ${slaMeta}
                 </div>
                 ${supportsPricingAudit ? renderPricingMeta(delivery) : ''}
-                <div class="d-flex justify-content-between align-items-center">
+                <div class="d-flex justify-content-between align-items-center gap-2">
                     <small class="text-muted">${formatCurrency(delivery.total_amount)}</small>
                     <div class="btn-group btn-group-sm">
-                        <button class="btn btn-outline-primary" onclick="trackDelivery(${delivery.order_id})">
+                        ${delivery.status === 'pending' && delivery.delivery_latitude && delivery.delivery_longitude ? 
+                            `<button class="btn btn-success" onclick="autoAssignDelivery(${delivery.id})" title="Auto-assign optimal rider">
+                                <i class="bi bi-lightning-fill"></i>
+                            </button>
+                            <button class="btn btn-outline-secondary" onclick="showRiderSuggestions(${delivery.delivery_latitude}, ${delivery.delivery_longitude}, ${delivery.id})" title="View rider suggestions">
+                                <i class="bi bi-people"></i>
+                            </button>` : 
+                            ''
+                        }
+                        <button class="btn btn-outline-primary" onclick="trackDelivery(${delivery.order_id})" title="Track delivery">
                             <i class="bi bi-geo-alt"></i>
                         </button>
-                        <button class="btn btn-outline-info" onclick="contactCustomer('${delivery.customer_phone ? escapeHtml(delivery.customer_phone) : ''}')">
+                        <button class="btn btn-outline-info" onclick="contactCustomer('${delivery.customer_phone ? escapeHtml(delivery.customer_phone) : ''}')" title="Contact customer">
                             <i class="bi bi-telephone"></i>
                         </button>
                     </div>

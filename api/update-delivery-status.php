@@ -10,10 +10,26 @@ if (!$auth->isLoggedIn()) {
     exit;
 }
 
-$data = json_decode(file_get_contents('php://input'), true);
+// Handle both JSON and multipart/form-data (for photo uploads)
+$data = [];
+if ($_SERVER['CONTENT_TYPE'] && strpos($_SERVER['CONTENT_TYPE'], 'multipart/form-data') !== false) {
+    $data = $_POST;
+} else {
+    $data = json_decode(file_get_contents('php://input'), true);
+}
 
-if (!$data || !isset($data['order_id']) || !isset($data['status'])) {
+if (!$data) {
     echo json_encode(['success' => false, 'message' => 'Invalid data']);
+    exit;
+}
+
+// Support both delivery_id and order_id
+$deliveryId = $data['delivery_id'] ?? null;
+$orderId = $data['order_id'] ?? null;
+$newStatus = $data['status'] ?? null;
+
+if (!$newStatus || (!$deliveryId && !$orderId)) {
+    echo json_encode(['success' => false, 'message' => 'Missing required fields']);
     exit;
 }
 
@@ -24,18 +40,36 @@ try {
     $db->beginTransaction();
     
     // Get delivery record
+    $whereClause = $deliveryId ? 'd.id = ?' : 'd.order_id = ?';
+    $whereValue = $deliveryId ?: $orderId;
+    
     $delivery = $db->fetchOne("
         SELECT d.*, r.id as rider_id 
         FROM deliveries d 
         LEFT JOIN riders r ON d.rider_id = r.id 
-        WHERE d.order_id = ?
-    ", [$data['order_id']]);
+        WHERE {$whereClause}
+    ", [$whereValue]);
     
     if (!$delivery) {
         throw new Exception('Delivery record not found');
     }
     
-    $newStatus = $data['status'];
+    // Handle photo upload
+    $photoUrl = null;
+    if (isset($_FILES['photo']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK) {
+        $uploadDir = __DIR__ . '/../uploads/delivery-proofs/';
+        if (!is_dir($uploadDir)) {
+            mkdir($uploadDir, 0755, true);
+        }
+        
+        $extension = pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION);
+        $filename = 'delivery_' . $delivery['id'] . '_' . time() . '.' . $extension;
+        $uploadPath = $uploadDir . $filename;
+        
+        if (move_uploaded_file($_FILES['photo']['tmp_name'], $uploadPath)) {
+            $photoUrl = '/uploads/delivery-proofs/' . $filename;
+        }
+    }
     // Update delivery status
     $updateData = ['status' => $newStatus];
     
@@ -80,8 +114,8 @@ try {
     
     $db->update('deliveries',
         $updateData,
-        'order_id = :order_id',
-        ['order_id' => $data['order_id']]
+        'id = :id',
+        ['id' => $delivery['id']]
     );
     
     // Update rider's delivery count and rating if delivered
@@ -101,12 +135,23 @@ try {
         $historyNotes = $data['reason'] ?? 'Marked as failed';
     }
 
-    // Record timeline entry
+    // Record timeline entry with location and photo
     try {
-        $trackingService->recordStatusHistory((int)$delivery['id'], $newStatus, [
+        $historyContext = [
             'notes' => $historyNotes,
             'user_id' => $auth->getUserId(),
-        ]);
+        ];
+        
+        if (isset($data['latitude']) && isset($data['longitude'])) {
+            $historyContext['latitude'] = (float)$data['latitude'];
+            $historyContext['longitude'] = (float)$data['longitude'];
+        }
+        
+        if ($photoUrl) {
+            $historyContext['photo_url'] = $photoUrl;
+        }
+        
+        $trackingService->recordStatusHistory((int)$delivery['id'], $newStatus, $historyContext);
     } catch (Exception $inner) {
         // Timeline recording failure should not break response
         error_log('Failed to record delivery status history: ' . $inner->getMessage());

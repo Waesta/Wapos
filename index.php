@@ -647,6 +647,7 @@ $ctaButton = $cm->get('home_cta_button', 'Sign In to Dashboard');
                 <a class="nav-link" href="about.php">About</a>
                 <a class="nav-link" href="resources.php">User Manual</a>
                 <a class="nav-link" href="guest-portal.php">Guest Portal</a>
+                <a class="nav-link" href="rider-login.php"><i class="bi bi-bicycle"></i> Riders</a>
                 <a class="nav-link" href="contact.php">Contact</a>
                 <a class="btn-primary" href="login.php"><i class="bi bi-box-arrow-in-right"></i> Sign In</a>
             </nav>

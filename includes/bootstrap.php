@@ -88,6 +88,7 @@ function redirectToDashboard($auth) {
         'accountant' => '/dashboards/accountant.php',
         'cashier' => '/dashboards/cashier.php',
         'waiter' => '/dashboards/waiter.php',
+        'rider' => '/rider-portal.php',
     ];
     
     $dashboard = $dashboardMap[$role] ?? '/pos.php';

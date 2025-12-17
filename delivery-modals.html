@@ -1,0 +1,235 @@
+<!-- View Rider Profile Modal -->
+<div class="modal fade" id="viewRiderModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-person-badge me-2"></i>Rider Profile</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="viewRiderContent">
+                <div class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Reset Password Modal -->
+<div class="modal fade" id="resetPasswordModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" id="resetPasswordForm">
+                <input type="hidden" name="action" value="reset_password">
+                <input type="hidden" name="rider_id" id="resetRiderId">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-key me-2"></i>Reset Password</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        Resetting password for: <strong id="resetRiderName"></strong>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">New Password *</label>
+                        <input type="text" class="form-control" name="new_password" id="newPassword" 
+                               placeholder="Minimum 6 characters" required minlength="6">
+                        <div class="form-text">Share this password with the rider.</div>
+                    </div>
+                    <div class="mb-3">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="generateRandomPassword()">
+                            <i class="bi bi-shuffle me-1"></i>Generate Random Password
+                        </button>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning">
+                        <i class="bi bi-key me-1"></i>Reset Password
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Rider Modal -->
+<div class="modal fade" id="deleteRiderModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" id="deleteRiderForm">
+                <input type="hidden" name="action" value="delete_rider">
+                <input type="hidden" name="rider_id" id="deleteRiderId">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title"><i class="bi bi-trash me-2"></i>Delete Rider</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>Warning!</strong> This will deactivate the rider account.
+                    </div>
+                    <p>Are you sure you want to delete: <strong id="deleteRiderName"></strong>?</p>
+                    <p class="text-muted small mb-0">The rider will be deactivated and cannot login. This action can be reversed by reactivating the account in the database.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-trash me-1"></i>Delete Rider
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// View Rider Profile
+function viewRider(riderId) {
+    const modal = new bootstrap.Modal(document.getElementById('viewRiderModal'));
+    const content = document.getElementById('viewRiderContent');
+    
+    // Find rider data
+    const rider = latestRiders.find(r => r.id == riderId);
+    if (!rider) {
+        content.innerHTML = '<div class="alert alert-danger">Rider not found</div>';
+        modal.show();
+        return;
+    }
+    
+    // Build profile HTML
+    content.innerHTML = `
+        <div class="row g-3">
+            <div class="col-md-6">
+                <h6 class="text-muted mb-2">Personal Information</h6>
+                <table class="table table-sm">
+                    <tr>
+                        <th width="40%">Name:</th>
+                        <td>${escapeHtml(rider.name)}</td>
+                    </tr>
+                    <tr>
+                        <th>Phone:</th>
+                        <td>${escapeHtml(rider.phone)}</td>
+                    </tr>
+                    <tr>
+                        <th>Emergency Contact:</th>
+                        <td>${rider.emergency_contact ? escapeHtml(rider.emergency_contact) : '<span class="text-muted">Not set</span>'}</td>
+                    </tr>
+                    <tr>
+                        <th>Status:</th>
+                        <td>
+                            <span class="badge bg-${rider.status === 'available' ? 'success' : (rider.status === 'busy' ? 'warning' : 'secondary')}">
+                                ${capitalizeFirst(rider.status || 'unknown')}
+                            </span>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+            <div class="col-md-6">
+                <h6 class="text-muted mb-2">Vehicle Information</h6>
+                <table class="table table-sm">
+                    <tr>
+                        <th width="40%">Type:</th>
+                        <td>${escapeHtml(rider.vehicle_type)}</td>
+                    </tr>
+                    <tr>
+                        <th>Make:</th>
+                        <td>${rider.vehicle_make ? escapeHtml(rider.vehicle_make) : '<span class="text-muted">N/A</span>'}</td>
+                    </tr>
+                    <tr>
+                        <th>Color:</th>
+                        <td>${rider.vehicle_color ? escapeHtml(rider.vehicle_color) : '<span class="text-muted">N/A</span>'}</td>
+                    </tr>
+                    <tr>
+                        <th>Plate Number:</th>
+                        <td><strong>${escapeHtml(rider.vehicle_number)}</strong></td>
+                    </tr>
+                    <tr>
+                        <th>License:</th>
+                        <td>${rider.license_number ? escapeHtml(rider.license_number) : '<span class="text-muted">N/A</span>'}</td>
+                    </tr>
+                </table>
+            </div>
+            <div class="col-12">
+                <h6 class="text-muted mb-2">Performance</h6>
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h4 class="mb-0">${rider.total_deliveries || 0}</h4>
+                                <small class="text-muted">Total Deliveries</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h4 class="mb-0">${rider.active_jobs || 0}</h4>
+                                <small class="text-muted">Active Jobs</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h4 class="mb-0"><i class="bi bi-star-fill text-warning"></i> ${Number(rider.rating || 0).toFixed(1)}</h4>
+                                <small class="text-muted">Rating</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h4 class="mb-0">${rider.last_assigned_at ? formatRelativeTimeFromNow(rider.last_assigned_at) : 'Never'}</h4>
+                                <small class="text-muted">Last Assigned</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    modal.show();
+}
+
+// Reset Password
+function resetPassword(riderId, riderName) {
+    document.getElementById('resetRiderId').value = riderId;
+    document.getElementById('resetRiderName').textContent = riderName;
+    document.getElementById('newPassword').value = '';
+    
+    const modal = new bootstrap.Modal(document.getElementById('resetPasswordModal'));
+    modal.show();
+}
+
+// Generate Random Password
+function generateRandomPassword() {
+    const length = 10;
+    const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$";
+    let password = "";
+    for (let i = 0; i < length; i++) {
+        password += charset.charAt(Math.floor(Math.random() * charset.length));
+    }
+    document.getElementById('newPassword').value = password;
+}
+
+// Delete Rider
+function deleteRider(riderId, riderName) {
+    document.getElementById('deleteRiderId').value = riderId;
+    document.getElementById('deleteRiderName').textContent = riderName;
+    
+    const modal = new bootstrap.Modal(document.getElementById('deleteRiderModal'));
+    modal.show();
+}
+
+// Escape HTML helper
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>

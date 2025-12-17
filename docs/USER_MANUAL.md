@@ -219,36 +219,164 @@ Set minimum stock levels. Alerts appear when stock falls below threshold.
 
 ## Delivery Management
 
-Manage delivery orders and track riders.
+Manage delivery orders and track riders with intelligent dispatch.
 
 ### Creating Delivery Orders
 
-1. Create order in POS
+1. Create order in POS or Restaurant
 2. Select **Delivery** type
-3. Enter customer address
-4. System calculates delivery fee
+3. Enter customer address (Google Maps autocomplete)
+4. System calculates delivery fee:
+   - **Automatic Mode**: Google Routes API with traffic data
+   - **Manual Mode**: Enter fee based on your pricing guide
 5. Complete payment
 6. Order appears in Delivery queue
 
-### Dispatching
+### Delivery Pricing Modes
+
+#### Automatic Pricing (Default)
+- Uses Google Routes API for real-time calculation
+- Considers traffic conditions
+- Distance and duration-based
+- Cached for 30 minutes to reduce API costs
+- Automatic fallback to Haversine distance if API fails
+
+#### Manual Pricing Mode
+- **Zero API costs** - No Google Maps charges
+- Staff enters delivery fee manually
+- Based on your custom pricing guide
+- Configurable in **Settings → Delivery & Logistics**
+- Ideal for fixed-rate or zone-based pricing
+
+**To Enable Manual Pricing:**
+1. Go to **Settings → Delivery & Logistics**
+2. Toggle **Enable Manual Pricing Mode**
+3. Enter custom instructions for staff
+4. Save settings
+
+### Intelligent Dispatch
+
+#### Auto-Assign Optimal Rider
+
+The system can automatically select the best rider based on:
+- **Traffic-aware routing** - Real-time traffic conditions
+- **Distance** - Closest available rider
+- **Capacity** - Current workload (max deliveries per rider)
+- **Availability** - Active riders with GPS location
+
+**How to Auto-Assign:**
+1. Go to **Enhanced Delivery Tracking**
+2. Find pending delivery
+3. Click **⚡ Auto-Assign** button
+4. System selects optimal rider instantly
+5. Rider receives notification
+
+#### Rider Suggestions
+
+View top rider options before assigning:
+
+1. Click **👥 Rider Suggestions** button
+2. See recommended rider with:
+   - Duration and distance
+   - Current capacity (e.g., 2/3 deliveries)
+   - GPS status
+   - Selection score
+3. View alternative riders
+4. Choose rider or let system auto-assign
+
+**Selection Criteria:**
+- Primary: Shortest duration (traffic-aware)
+- Secondary: Available capacity
+- Tertiary: Distance from pickup
+
+### Manual Dispatching
 
 1. Go to **Delivery → Dispatch**
 2. View pending deliveries
-3. Assign rider
-4. Rider receives notification
+3. Click **Assign Rider**
+4. Select from available riders
+5. Rider receives notification
+
+### Enhanced Tracking Dashboard
+
+**Access:** Delivery → Enhanced Tracking
+
+**Features:**
+- Real-time Google Maps visualization
+- Active deliveries list with status
+- Rider location markers
+- Route polylines
+- Auto-assign buttons for pending orders
+- Rider suggestions modal
+- Performance charts
+- SLA monitoring (at-risk alerts)
 
 ### Live Tracking
 
-- View all riders on map
-- See estimated arrival times
+- View all riders on map in real-time
+- See estimated arrival times (ETA)
 - Monitor status updates
-- Contact rider directly
+- Contact rider directly (phone)
+- Contact customer (phone)
+- Route visualization
+- GPS accuracy indicators
+
+### Rider Management
+
+**Add/Edit Riders:**
+1. Go to **Delivery → Riders**
+2. Click **Add Rider**
+3. Enter details:
+   - Name, phone, email
+   - Vehicle type (bike/car/motorcycle)
+   - Vehicle number, make, color
+   - License number
+   - Max concurrent deliveries (default: 3)
+4. Upload plate photo
+5. Set active/inactive status
+
+**Rider Portal:**
+- Dedicated login for riders
+- View assigned deliveries
+- Update delivery status
+- Toggle GPS tracking
+- View delivery history
+- Mobile-optimized interface
 
 ### Status Flow
 
 ```
 Pending → Assigned → Picked Up → In Transit → Delivered
+         ↓
+      Failed (with reason)
 ```
+
+### SLA Monitoring
+
+System tracks delivery times and alerts for:
+- **Pending too long** - Not assigned within limit
+- **Assigned too long** - Not picked up within limit
+- **In-transit too long** - Delivery taking too long
+- **At-risk deliveries** - Highlighted in red
+
+### Delivery Analytics
+
+**Performance Metrics:**
+- Total deliveries (daily/weekly/monthly)
+- Average delivery time
+- Success rate
+- Failed deliveries
+- Rider performance comparison
+- Peak delivery hours
+- Distance traveled
+- Delivery fee revenue
+
+**Dispatch Analytics:**
+- Auto-assign success rate
+- Average selection score
+- Candidates evaluated per delivery
+- Route calculation success rate
+- Traffic impact on duration
 
 ---
 

@@ -18,6 +18,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $formData = [
             'name' => trim((string)($_POST['name'] ?? '')),
             'phone' => trim((string)($_POST['phone'] ?? '')),
+            'username' => trim((string)($_POST['username'] ?? '')),
+            'password' => trim((string)($_POST['password'] ?? '')),
             'vehicle_type' => trim((string)($_POST['vehicle_type'] ?? '')),
             'vehicle_number' => strtoupper(trim((string)($_POST['vehicle_number'] ?? ''))),
             'license_number' => strtoupper(trim((string)($_POST['license_number'] ?? ''))),
@@ -30,6 +32,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $requiredFields = [
             'name' => 'Rider name is required.',
             'phone' => 'Phone number is required.',
+            'username' => 'Username is required.',
+            'password' => 'Password is required.',
             'vehicle_type' => 'Vehicle type is required.',
             'vehicle_number' => 'Vehicle number / plate is required.',
             'license_number' => 'License number is required.',
@@ -52,22 +56,93 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $formErrors[] = 'Plate photo must be a valid URL (or leave blank to add later).';
         }
 
-        if (empty($formErrors)) {
-            $db->insert('riders', [
-                'name' => sanitizeInput($formData['name']),
-                'phone' => sanitizeInput($formData['phone']),
-                'vehicle_type' => sanitizeInput($formData['vehicle_type']),
-                'vehicle_number' => sanitizeInput($formData['vehicle_number']),
-                'license_number' => sanitizeInput($formData['license_number']),
-                'vehicle_make' => sanitizeInput($formData['vehicle_make']),
-                'vehicle_color' => sanitizeInput($formData['vehicle_color']),
-                'emergency_contact' => $formData['emergency_contact'] !== '' ? sanitizeInput($formData['emergency_contact']) : null,
-                'vehicle_plate_photo_url' => $formData['vehicle_plate_photo_url'] !== '' ? sanitizeInput($formData['vehicle_plate_photo_url']) : null,
-                'status' => 'available'
-            ]);
-            $_SESSION['success_message'] = 'Rider added successfully';
-            redirect($_SERVER['PHP_SELF']);
+        if (!empty($formData['username'])) {
+            $existingUser = $db->fetchOne("SELECT id FROM users WHERE username = ?", [$formData['username']]);
+            if ($existingUser) {
+                $formErrors[] = 'Username already exists. Please choose a different username.';
+            }
         }
+
+        if (!empty($formData['password']) && strlen($formData['password']) < 6) {
+            $formErrors[] = 'Password must be at least 6 characters.';
+        }
+
+        if (empty($formErrors)) {
+            $db->beginTransaction();
+            try {
+                $hashedPassword = password_hash($formData['password'], PASSWORD_DEFAULT);
+                
+                $db->query(
+                    "INSERT INTO users (username, password, full_name, role, is_active) VALUES (?, ?, ?, 'rider', 1)",
+                    [$formData['username'], $hashedPassword, $formData['name']]
+                );
+                $userId = $db->getConnection()->lastInsertId();
+                
+                $db->insert('riders', [
+                    'user_id' => $userId,
+                    'name' => sanitizeInput($formData['name']),
+                    'phone' => sanitizeInput($formData['phone']),
+                    'vehicle_type' => sanitizeInput($formData['vehicle_type']),
+                    'vehicle_number' => sanitizeInput($formData['vehicle_number']),
+                    'license_number' => sanitizeInput($formData['license_number']),
+                    'vehicle_make' => sanitizeInput($formData['vehicle_make']),
+                    'vehicle_color' => sanitizeInput($formData['vehicle_color']),
+                    'emergency_contact' => $formData['emergency_contact'] !== '' ? sanitizeInput($formData['emergency_contact']) : null,
+                    'vehicle_plate_photo_url' => $formData['vehicle_plate_photo_url'] !== '' ? sanitizeInput($formData['vehicle_plate_photo_url']) : null,
+                    'status' => 'available'
+                ]);
+                
+                $db->commit();
+                $_SESSION['success_message'] = 'Rider added successfully. Username: ' . htmlspecialchars($formData['username']);
+                redirect($_SERVER['PHP_SELF']);
+            } catch (Exception $e) {
+                $db->rollback();
+                $formErrors[] = 'Failed to create rider: ' . $e->getMessage();
+            }
+        }
+    }
+    
+    if ($action === 'reset_password') {
+        $riderId = (int)($_POST['rider_id'] ?? 0);
+        $newPassword = trim((string)($_POST['new_password'] ?? ''));
+        
+        if ($riderId && !empty($newPassword)) {
+            if (strlen($newPassword) < 6) {
+                $_SESSION['error_message'] = 'Password must be at least 6 characters.';
+            } else {
+                $rider = $db->fetchOne("SELECT user_id, name FROM riders WHERE id = ?", [$riderId]);
+                if ($rider && $rider['user_id']) {
+                    $hashedPassword = password_hash($newPassword, PASSWORD_DEFAULT);
+                    $db->query("UPDATE users SET password = ? WHERE id = ?", [$hashedPassword, $rider['user_id']]);
+                    $_SESSION['success_message'] = 'Password reset successfully for ' . htmlspecialchars($rider['name']);
+                } else {
+                    $_SESSION['error_message'] = 'Rider not found or not linked to user account.';
+                }
+            }
+        }
+        redirect($_SERVER['PHP_SELF']);
+    }
+    
+    if ($action === 'delete_rider') {
+        $riderId = (int)($_POST['rider_id'] ?? 0);
+        if ($riderId) {
+            $rider = $db->fetchOne("SELECT user_id, name FROM riders WHERE id = ?", [$riderId]);
+            if ($rider) {
+                $db->beginTransaction();
+                try {
+                    $db->query("UPDATE riders SET is_active = 0 WHERE id = ?", [$riderId]);
+                    if ($rider['user_id']) {
+                        $db->query("UPDATE users SET is_active = 0 WHERE id = ?", [$rider['user_id']]);
+                    }
+                    $db->commit();
+                    $_SESSION['success_message'] = 'Rider deactivated: ' . htmlspecialchars($rider['name']);
+                } catch (Exception $e) {
+                    $db->rollback();
+                    $_SESSION['error_message'] = 'Failed to deactivate rider.';
+                }
+            }
+        }
+        redirect($_SERVER['PHP_SELF']);
     }
 }
 
@@ -486,7 +561,7 @@ include 'includes/header.php';
                     <?php foreach ($riders as $rider): ?>
                     <div class="list-group-item">
                         <div class="d-flex justify-content-between align-items-start">
-                            <div>
+                            <div class="flex-grow-1">
                                 <h6 class="mb-1"><?= htmlspecialchars($rider['name']) ?></h6>
                                 <p class="mb-1 small text-muted">
                                     <i class="bi bi-phone me-1"></i><?= htmlspecialchars($rider['phone']) ?>
@@ -506,6 +581,17 @@ include 'includes/header.php';
                                 <p class="mb-0 small">
                                     <i class="bi bi-star-fill text-warning"></i> <?= number_format((float)($rider['rating'] ?? 0), 1) ?>
                                 </p>
+                                <div class="btn-group btn-group-sm mt-2">
+                                    <button class="btn btn-outline-primary" onclick="viewRider(<?= $rider['id'] ?>)" title="View Profile">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                    <button class="btn btn-outline-warning" onclick="resetPassword(<?= $rider['id'] ?>, '<?= htmlspecialchars($rider['name'], ENT_QUOTES) ?>')" title="Reset Password">
+                                        <i class="bi bi-key"></i>
+                                    </button>
+                                    <button class="btn btn-outline-danger" onclick="deleteRider(<?= $rider['id'] ?>, '<?= htmlspecialchars($rider['name'], ENT_QUOTES) ?>')" title="Delete">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -606,63 +692,89 @@ include 'includes/header.php';
 
 <!-- Rider Modal -->
 <div class="modal fade" id="riderModal" tabindex="-1">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <form method="POST">
                 <input type="hidden" name="action" value="add_rider">
                 <div class="modal-header">
-                    <h5 class="modal-title">Add Delivery Rider</h5>
+                    <h5 class="modal-title"><i class="bi bi-person-plus-fill me-2"></i>Add Delivery Rider</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label">Rider Name *</label>
-                        <input type="text" class="form-control" name="name" value="<?= htmlspecialchars($formData['name'] ?? '') ?>" required>
+                    <div class="alert alert-info mb-4">
+                        <i class="bi bi-info-circle me-2"></i>Login credentials will be created for this rider.
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">Phone Number *</label>
-                        <input type="tel" class="form-control" name="phone" value="<?= htmlspecialchars($formData['phone'] ?? '') ?>" placeholder="e.g. +254700000000" required>
-                        <div class="form-text">Must include country code and at least 7 digits.</div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Vehicle Type *</label>
-                        <select class="form-select" name="vehicle_type" required>
-                            <option value="">Select...</option>
-                            <?php $types = ['Motorcycle','Bicycle','Car','Van','Truck'];
-                            foreach ($types as $type): ?>
-                                <option value="<?= $type ?>" <?= (isset($formData['vehicle_type']) && $formData['vehicle_type'] === $type) ? 'selected' : '' ?>><?= $type ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Vehicle Make *</label>
-                        <input type="text" class="form-control" name="vehicle_make" value="<?= htmlspecialchars($formData['vehicle_make'] ?? '') ?>" placeholder="e.g. Honda" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Vehicle Color *</label>
-                        <input type="text" class="form-control" name="vehicle_color" value="<?= htmlspecialchars($formData['vehicle_color'] ?? '') ?>" placeholder="e.g. Black" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Vehicle Number / Plate *</label>
-                        <input type="text" class="form-control" name="vehicle_number" value="<?= htmlspecialchars($formData['vehicle_number'] ?? '') ?>" placeholder="e.g. KDA 123A" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">License Number *</label>
-                        <input type="text" class="form-control" name="license_number" value="<?= htmlspecialchars($formData['license_number'] ?? '') ?>" placeholder="e.g. DL-12345" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Emergency Contact</label>
-                        <input type="text" class="form-control" name="emergency_contact" value="<?= htmlspecialchars($formData['emergency_contact'] ?? '') ?>" placeholder="Backup phone number">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Plate Photo URL</label>
-                        <input type="url" class="form-control" name="vehicle_plate_photo_url" value="<?= htmlspecialchars($formData['vehicle_plate_photo_url'] ?? '') ?>" placeholder="https://...">
-                        <div class="form-text">Optional; link to stored photo or upload later.</div>
+                    
+                    <div class="row">
+                        <!-- Left Column: Personal & Login Info -->
+                        <div class="col-md-6">
+                            <h6 class="text-muted mb-3"><i class="bi bi-person me-2"></i>Personal & Login Information</h6>
+                            <div class="mb-3">
+                                <label class="form-label">Rider Name *</label>
+                                <input type="text" class="form-control" name="name" value="<?= htmlspecialchars($formData['name'] ?? '') ?>" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Phone Number *</label>
+                                <input type="tel" class="form-control" name="phone" value="<?= htmlspecialchars($formData['phone'] ?? '') ?>" placeholder="e.g. +254700000000" required>
+                                <div class="form-text">Must include country code and at least 7 digits.</div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Emergency Contact</label>
+                                <input type="text" class="form-control" name="emergency_contact" value="<?= htmlspecialchars($formData['emergency_contact'] ?? '') ?>" placeholder="Backup phone number">
+                            </div>
+                            <hr class="my-3">
+                            <div class="mb-3">
+                                <label class="form-label">Username *</label>
+                                <input type="text" class="form-control" name="username" value="<?= htmlspecialchars($formData['username'] ?? '') ?>" placeholder="e.g. rider1" required>
+                                <div class="form-text">For rider login portal access.</div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Password *</label>
+                                <input type="text" class="form-control" name="password" value="<?= htmlspecialchars($formData['password'] ?? '') ?>" placeholder="Minimum 6 characters" required minlength="6">
+                                <div class="form-text">Share this with the rider after creation.</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Right Column: Vehicle Info -->
+                        <div class="col-md-6">
+                            <h6 class="text-muted mb-3"><i class="bi bi-scooter me-2"></i>Vehicle Information</h6>
+                            <div class="mb-3">
+                                <label class="form-label">Vehicle Type *</label>
+                                <select class="form-select" name="vehicle_type" required>
+                                    <option value="">Select...</option>
+                                    <?php $types = ['Motorcycle','Bicycle','Car','Van','Truck'];
+                                    foreach ($types as $type): ?>
+                                        <option value="<?= $type ?>" <?= (isset($formData['vehicle_type']) && $formData['vehicle_type'] === $type) ? 'selected' : '' ?>><?= $type ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Vehicle Make *</label>
+                                <input type="text" class="form-control" name="vehicle_make" value="<?= htmlspecialchars($formData['vehicle_make'] ?? '') ?>" placeholder="e.g. Honda" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Vehicle Color *</label>
+                                <input type="text" class="form-control" name="vehicle_color" value="<?= htmlspecialchars($formData['vehicle_color'] ?? '') ?>" placeholder="e.g. Black" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Vehicle Number / Plate *</label>
+                                <input type="text" class="form-control" name="vehicle_number" value="<?= htmlspecialchars($formData['vehicle_number'] ?? '') ?>" placeholder="e.g. KDA 123A" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">License Number *</label>
+                                <input type="text" class="form-control" name="license_number" value="<?= htmlspecialchars($formData['license_number'] ?? '') ?>" placeholder="e.g. DL-12345" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Plate Photo URL</label>
+                                <input type="url" class="form-control" name="vehicle_plate_photo_url" value="<?= htmlspecialchars($formData['vehicle_plate_photo_url'] ?? '') ?>" placeholder="https://...">
+                                <div class="form-text">Optional; link to stored photo or upload later.</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Add Rider</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-plus-circle me-1"></i>Add Rider</button>
                 </div>
             </form>
         </div>
@@ -727,6 +839,96 @@ include 'includes/header.php';
             </div>
         </div>
     </div>
+</div>
+
+<!-- View Rider Profile Modal -->
+<div class="modal fade" id="viewRiderModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-person-badge me-2"></i>Rider Profile</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="viewRiderContent">
+                <div class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Reset Password Modal -->
+<div class="modal fade" id="resetPasswordModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" id="resetPasswordForm">
+                <input type="hidden" name="action" value="reset_password">
+                <input type="hidden" name="rider_id" id="resetRiderId">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-key me-2"></i>Reset Password</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        Resetting password for: <strong id="resetRiderName"></strong>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">New Password *</label>
+                        <input type="text" class="form-control" name="new_password" id="newPassword" 
+                               placeholder="Minimum 6 characters" required minlength="6">
+                        <div class="form-text">Share this password with the rider.</div>
+                    </div>
+                    <div class="mb-3">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="generateRandomPassword()">
+                            <i class="bi bi-shuffle me-1"></i>Generate Random Password
+                        </button>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning">
+                        <i class="bi bi-key me-1"></i>Reset Password
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Rider Modal -->
+<div class="modal fade" id="deleteRiderModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" id="deleteRiderForm">
+                <input type="hidden" name="action" value="delete_rider">
+                <input type="hidden" name="rider_id" id="deleteRiderId">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title"><i class="bi bi-trash me-2"></i>Delete Rider</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>Warning!</strong> This will deactivate the rider account.
+                    </div>
+                    <p>Are you sure you want to delete: <strong id="deleteRiderName"></strong>?</p>
+                    <p class="text-muted small mb-0">The rider will be deactivated and cannot login. This action can be reversed by reactivating the account in the database.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-trash me-1"></i>Delete Rider
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
 const initialRiders = <?= json_encode($riders) ?>;
 const initialOrders = <?= json_encode($deliveryOrders) ?>;
@@ -1604,6 +1806,146 @@ document.addEventListener('DOMContentLoaded', () => {
     registerFilterControls();
     refreshDeliveryData();
 });
+
+// View Rider Profile
+function viewRider(riderId) {
+    const modal = new bootstrap.Modal(document.getElementById('viewRiderModal'));
+    const content = document.getElementById('viewRiderContent');
+    
+    const rider = latestRiders.find(r => r.id == riderId);
+    if (!rider) {
+        content.innerHTML = '<div class="alert alert-danger">Rider not found</div>';
+        modal.show();
+        return;
+    }
+    
+    content.innerHTML = `
+        <div class="row g-3">
+            <div class="col-md-6">
+                <h6 class="text-muted mb-2">Personal Information</h6>
+                <table class="table table-sm">
+                    <tr>
+                        <th width="40%">Name:</th>
+                        <td>${escapeHtml(rider.name)}</td>
+                    </tr>
+                    <tr>
+                        <th>Phone:</th>
+                        <td>${escapeHtml(rider.phone)}</td>
+                    </tr>
+                    <tr>
+                        <th>Emergency Contact:</th>
+                        <td>${rider.emergency_contact ? escapeHtml(rider.emergency_contact) : '<span class="text-muted">Not set</span>'}</td>
+                    </tr>
+                    <tr>
+                        <th>Status:</th>
+                        <td>
+                            <span class="badge bg-${rider.status === 'available' ? 'success' : (rider.status === 'busy' ? 'warning' : 'secondary')}">
+                                ${capitalizeFirst(rider.status || 'unknown')}
+                            </span>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+            <div class="col-md-6">
+                <h6 class="text-muted mb-2">Vehicle Information</h6>
+                <table class="table table-sm">
+                    <tr>
+                        <th width="40%">Type:</th>
+                        <td>${escapeHtml(rider.vehicle_type)}</td>
+                    </tr>
+                    <tr>
+                        <th>Make:</th>
+                        <td>${rider.vehicle_make ? escapeHtml(rider.vehicle_make) : '<span class="text-muted">N/A</span>'}</td>
+                    </tr>
+                    <tr>
+                        <th>Color:</th>
+                        <td>${rider.vehicle_color ? escapeHtml(rider.vehicle_color) : '<span class="text-muted">N/A</span>'}</td>
+                    </tr>
+                    <tr>
+                        <th>Plate Number:</th>
+                        <td><strong>${escapeHtml(rider.vehicle_number)}</strong></td>
+                    </tr>
+                    <tr>
+                        <th>License:</th>
+                        <td>${rider.license_number ? escapeHtml(rider.license_number) : '<span class="text-muted">N/A</span>'}</td>
+                    </tr>
+                </table>
+            </div>
+            <div class="col-12">
+                <h6 class="text-muted mb-2">Performance</h6>
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h4 class="mb-0">${rider.total_deliveries || 0}</h4>
+                                <small class="text-muted">Total Deliveries</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h4 class="mb-0">${rider.active_jobs || 0}</h4>
+                                <small class="text-muted">Active Jobs</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h4 class="mb-0"><i class="bi bi-star-fill text-warning"></i> ${Number(rider.rating || 0).toFixed(1)}</h4>
+                                <small class="text-muted">Rating</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h4 class="mb-0">${rider.last_assigned_at ? formatRelativeTimeFromNow(rider.last_assigned_at) : 'Never'}</h4>
+                                <small class="text-muted">Last Assigned</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    modal.show();
+}
+
+function resetPassword(riderId, riderName) {
+    document.getElementById('resetRiderId').value = riderId;
+    document.getElementById('resetRiderName').textContent = riderName;
+    document.getElementById('newPassword').value = '';
+    
+    const modal = new bootstrap.Modal(document.getElementById('resetPasswordModal'));
+    modal.show();
+}
+
+function generateRandomPassword() {
+    const length = 10;
+    const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$";
+    let password = "";
+    for (let i = 0; i < length; i++) {
+        password += charset.charAt(Math.floor(Math.random() * charset.length));
+    }
+    document.getElementById('newPassword').value = password;
+}
+
+function deleteRider(riderId, riderName) {
+    document.getElementById('deleteRiderId').value = riderId;
+    document.getElementById('deleteRiderName').textContent = riderName;
+    
+    const modal = new bootstrap.Modal(document.getElementById('deleteRiderModal'));
+    modal.show();
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
 </script>
 
 <style>
