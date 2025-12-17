@@ -457,9 +457,6 @@ include 'includes/header.php';
                             <div>
                                 <div class="tab-name"><?= htmlspecialchars($tab['tab_name']) ?></div>
                                 <div class="tab-meta">
-                                    <span class="tab-type-badge bg-<?= $tab['tab_type'] === 'card' ? 'warning' : ($tab['tab_type'] === 'room' ? 'info' : 'secondary') ?>">
-                                        <?= ucfirst($tab['tab_type']) ?>
-                                    </span>
                                     <?= $tab['item_count'] ?> items • <?= $tab['server_name'] ?>
                                 </div>
                             </div>
@@ -1509,6 +1506,57 @@ async function sendBot() {
 function printTab() {
     if (!currentTabId) return;
     window.open(`print-bar-tab.php?tab_id=${currentTabId}`, '_blank', 'width=400,height=600');
+}
+
+async function loadOpenTabs() {
+    try {
+        const response = await fetch('api/bar-tabs.php?action=get_open_tabs');
+        const result = await response.json();
+        
+        if (result.success) {
+            const container = document.querySelector('.tabs-list');
+            if (result.tabs.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center text-muted py-4">
+                        <i class="bi bi-cup-straw fs-1 d-block mb-2"></i>
+                        <p>No open tabs</p>
+                        <button class="btn btn-primary btn-sm" onclick="showNewTabModal()">Open First Tab</button>
+                    </div>`;
+            } else {
+                container.innerHTML = result.tabs.map(tab => `
+                    <div class="tab-card ${tab.id == currentTabId ? 'active' : ''}" data-tab-id="${tab.id}" onclick="selectTab(${tab.id})">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <div class="tab-name">${escapeHtml(tab.tab_name)}</div>
+                                <div class="tab-meta">
+                                    ${tab.item_count} items • ${escapeHtml(tab.server_name || 'Unknown')}
+                                </div>
+                            </div>
+                            <div class="tab-total">${formatCurrency(tab.total_amount)}</div>
+                        </div>
+                        <div class="tab-meta mt-1">
+                            <small><i class="bi bi-clock"></i> ${formatTime(tab.opened_at)}</small>
+                            ${tab.bar_station ? `<span class="station-indicator bg-info-subtle text-info ms-2"><i class="bi bi-cup-straw"></i> ${escapeHtml(tab.bar_station)}</span>` : ''}
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+    } catch (error) {
+        console.error('Error loading tabs:', error);
+    }
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function formatTime(dateStr) {
+    const date = new Date(dateStr);
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 }
 </script>
 
