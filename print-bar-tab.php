@@ -200,8 +200,13 @@ $customerName = $tab['customer_name'] ?? $tab['guest_name'] ?? $tab['tab_name'] 
     </div>
 
     <div style="text-align: center; margin: 10px 0;">
-        <strong style="font-size: 14px;">BAR TAB</strong>
-        <span class="status-badge"><?= strtoupper($tab['status']) ?></span>
+        <?php $isPaid = isset($_GET['paid']) && $_GET['paid'] == '1'; ?>
+        <strong style="font-size: 14px;"><?= $isPaid ? 'RECEIPT' : 'BAR TAB' ?></strong>
+        <?php if ($isPaid): ?>
+            <span class="status-badge" style="background:#000;color:#fff;">✓ PAID</span>
+        <?php else: ?>
+            <span class="status-badge"><?= strtoupper($tab['status']) ?></span>
+        <?php endif; ?>
     </div>
 
     <div class="tab-info">

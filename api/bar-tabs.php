@@ -40,7 +40,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         case 'get_open_tabs':
             $locationId = $_GET['location_id'] ?? null;
             $station = $_GET['station'] ?? null;
-            $tabs = $tabService->getOpenTabs($locationId, $station);
+            $waiterId = $_GET['waiter_id'] ?? null;
+            $tabs = $tabService->getOpenTabs($locationId, $station, $waiterId);
             echo json_encode(['success' => true, 'tabs' => $tabs]);
             break;
             
@@ -81,6 +82,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         switch ($action) {
             case 'open_tab':
+                // Use assigned waiter if provided, otherwise use logged-in user
+                $serverId = !empty($input['assigned_waiter_id']) ? (int)$input['assigned_waiter_id'] : $userId;
+                
                 $data = [
                     'tab_name' => $input['tab_name'] ?? 'Guest',
                     'tab_type' => $input['tab_type'] ?? 'name',
@@ -94,7 +98,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'location_id' => $input['location_id'] ?? ($_SESSION['location_id'] ?? null),
                     'bar_station' => $input['bar_station'] ?? 'Main Bar',
                     'table_id' => $input['table_id'] ?? null,
-                    'server_id' => $userId,
+                    'server_id' => $serverId,
+                    'opened_by' => $userId, // Track who actually opened the tab (cashier)
                     'guest_count' => $input['guest_count'] ?? 1,
                     'notes' => $input['notes'] ?? null
                 ];

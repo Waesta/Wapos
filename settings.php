@@ -91,6 +91,12 @@ $fieldDefinitions = [
     'branding_tagline' => ['type' => 'string'],
     'branding_primary_color' => ['type' => 'string'],
     'branding_secondary_color' => ['type' => 'string'],
+    // Waiter Assignment Settings
+    'waiter_assignment_mode' => ['type' => 'string'], // 'self' = waiter logs in, 'cashier' = cashier selects waiter, 'both' = either
+    'require_waiter_on_tab' => ['type' => 'bool'],    // Require waiter selection when creating tabs
+    'show_waiter_filter' => ['type' => 'bool'],       // Show waiter filter on tabs list
+    'waiter_commission_enabled' => ['type' => 'bool'], // Enable waiter commission tracking
+    'waiter_commission_rate' => ['type' => 'float'],   // Default commission percentage
 ];
 
 // Handle form submission
@@ -305,6 +311,12 @@ $sections = [
         'icon' => 'bi-stars',
         'description' => 'Tune earn and redeem rules shared by Retail, Restaurant, and Rooms.',
         'roles' => ['admin', 'manager', 'super_admin'],
+    ],
+    'restaurant_bar' => [
+        'title' => 'Restaurant & Bar',
+        'icon' => 'bi-cup-straw',
+        'description' => 'Configure waiter assignment modes, commission tracking, and service workflows.',
+        'roles' => ['admin', 'manager', 'super_admin', 'developer'],
     ],
 ];
 
@@ -1055,6 +1067,100 @@ $visibleSections = array_filter($sections, function ($section) use ($userRole) {
                                 </div>
                             </div>
                         <?php endif; ?>
+                    <?php elseif ($key === 'restaurant_bar'): ?>
+                        <?php
+                        $waiterMode = $settings['waiter_assignment_mode'] ?? 'self';
+                        $requireWaiter = !empty($settings['require_waiter_on_tab']);
+                        $showWaiterFilter = !empty($settings['show_waiter_filter']);
+                        $commissionEnabled = !empty($settings['waiter_commission_enabled']);
+                        $commissionRate = $settings['waiter_commission_rate'] ?? '0';
+                        ?>
+                        <div class="row g-4">
+                            <div class="col-lg-6">
+                                <div class="border rounded-3 p-3 h-100">
+                                    <h6 class="fw-semibold mb-3"><i class="bi bi-person-badge me-2"></i>Waiter Assignment Mode</h6>
+                                    <p class="text-muted small mb-3">Choose how orders/tabs are assigned to waiters in your establishment.</p>
+                                    
+                                    <div class="mb-3">
+                                        <div class="form-check mb-2">
+                                            <input class="form-check-input" type="radio" name="waiter_assignment_mode" id="waiterModeSelf" value="self" <?= $waiterMode === 'self' ? 'checked' : '' ?>>
+                                            <label class="form-check-label" for="waiterModeSelf">
+                                                <strong>Self-Service</strong>
+                                                <div class="text-muted small">Each waiter logs in with their own account. Tabs are automatically assigned to the logged-in user.</div>
+                                            </label>
+                                        </div>
+                                        <div class="form-check mb-2">
+                                            <input class="form-check-input" type="radio" name="waiter_assignment_mode" id="waiterModeCashier" value="cashier" <?= $waiterMode === 'cashier' ? 'checked' : '' ?>>
+                                            <label class="form-check-label" for="waiterModeCashier">
+                                                <strong>Cashier Assigns</strong>
+                                                <div class="text-muted small">Cashier selects which waiter the tab belongs to when creating it. Ideal for central cashier operations.</div>
+                                            </label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="radio" name="waiter_assignment_mode" id="waiterModeBoth" value="both" <?= $waiterMode === 'both' ? 'checked' : '' ?>>
+                                            <label class="form-check-label" for="waiterModeBoth">
+                                                <strong>Flexible (Both)</strong>
+                                                <div class="text-muted small">Waiter selector is available but optional. Defaults to logged-in user if not selected.</div>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    
+                                    <hr>
+                                    
+                                    <div class="form-check form-switch mb-2">
+                                        <input class="form-check-input" type="checkbox" role="switch" id="requireWaiterToggle" name="require_waiter_on_tab" <?= $requireWaiter ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="requireWaiterToggle">Require waiter selection when creating tabs</label>
+                                    </div>
+                                    <div class="form-text mb-3">When enabled, tabs cannot be created without selecting a waiter (applies to Cashier and Flexible modes).</div>
+                                    
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" id="showWaiterFilterToggle" name="show_waiter_filter" <?= $showWaiterFilter ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="showWaiterFilterToggle">Show waiter filter on tabs list</label>
+                                    </div>
+                                    <div class="form-text">Allow filtering open tabs by waiter in the Bar POS interface.</div>
+                                </div>
+                            </div>
+                            <div class="col-lg-6">
+                                <div class="border rounded-3 p-3 h-100">
+                                    <h6 class="fw-semibold mb-3"><i class="bi bi-percent me-2"></i>Waiter Commission</h6>
+                                    <p class="text-muted small mb-3">Track and calculate commissions for waiters based on their sales.</p>
+                                    
+                                    <div class="form-check form-switch mb-3">
+                                        <input class="form-check-input" type="checkbox" role="switch" id="commissionEnabledToggle" name="waiter_commission_enabled" <?= $commissionEnabled ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="commissionEnabledToggle">Enable waiter commission tracking</label>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label class="form-label">Default Commission Rate (%)</label>
+                                        <div class="input-group" style="max-width: 200px;">
+                                            <input type="number" class="form-control" name="waiter_commission_rate" step="0.5" min="0" max="100" value="<?= htmlspecialchars($commissionRate) ?>">
+                                            <span class="input-group-text">%</span>
+                                        </div>
+                                        <div class="form-text">Applied to total sales amount for each waiter. Can be overridden per waiter in user settings.</div>
+                                    </div>
+                                    
+                                    <div class="alert alert-info small mb-0">
+                                        <i class="bi bi-lightbulb me-1"></i>
+                                        <strong>Tip:</strong> Commission reports are available in Reports → Waiter Performance. You can also set individual commission rates per waiter in User Management.
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <div class="alert alert-secondary mb-0">
+                                    <div class="d-flex align-items-start">
+                                        <i class="bi bi-info-circle me-2 mt-1"></i>
+                                        <div>
+                                            <strong>How it works:</strong>
+                                            <ul class="mb-0 mt-1 small">
+                                                <li><strong>Self-Service:</strong> Waiters use their own login. Best for establishments where each waiter manages their own device/terminal.</li>
+                                                <li><strong>Cashier Assigns:</strong> A central cashier takes orders and selects which waiter brought them. Best for traditional setups with a single POS.</li>
+                                                <li><strong>Flexible:</strong> Combines both - waiter dropdown appears but defaults to logged-in user. Best for mixed operations.</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     <?php endif; ?>
                 </div>
             </section>

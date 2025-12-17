@@ -20,7 +20,12 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
     
     <!-- PWA Manifest & Meta -->
-    <link rel="manifest" href="<?= APP_URL ?>/manifest.json">
+    <?php
+    $isLocalhost = in_array($_SERVER['HTTP_HOST'] ?? '', ['localhost', '127.0.0.1'], true) 
+                   || strpos($_SERVER['HTTP_HOST'] ?? '', 'localhost:') === 0;
+    $manifestFile = $isLocalhost ? 'manifest.json' : 'manifest-prod.json';
+    ?>
+    <link rel="manifest" href="<?= APP_URL ?>/<?= $manifestFile ?>">
     <meta name="theme-color" content="#2563eb">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">

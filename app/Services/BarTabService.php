@@ -148,7 +148,7 @@ class BarTabService
     /**
      * Get all open tabs
      */
-    public function getOpenTabs(?int $locationId = null, ?string $station = null): array
+    public function getOpenTabs(?int $locationId = null, ?string $station = null, ?int $waiterId = null): array
     {
         $sql = "
             SELECT t.*, 
@@ -170,6 +170,11 @@ class BarTabService
         if ($station) {
             $sql .= " AND t.bar_station = ?";
             $params[] = $station;
+        }
+        
+        if ($waiterId) {
+            $sql .= " AND t.server_id = ?";
+            $params[] = $waiterId;
         }
         
         $sql .= " ORDER BY t.opened_at DESC";

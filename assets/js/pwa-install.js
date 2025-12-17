@@ -122,7 +122,7 @@ class PWAInstallManager {
         this.installBanner.innerHTML = `
             <div class="pwa-banner-content">
                 <div class="pwa-banner-icon">
-                    <img src="/wapos/assets/images/icons/icon-96.png" alt="WAPOS" onerror="this.src='/wapos/assets/images/logo.png'">
+                    <img src="${window.APP_URL || ''}/assets/images/icons/icon-96.png" alt="WAPOS" onerror="this.onerror=null; this.src='${window.APP_URL || ''}/assets/images/logo.png'">
                 </div>
                 <div class="pwa-banner-text">
                     <strong>Install WAPOS</strong>

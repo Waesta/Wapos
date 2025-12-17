@@ -177,9 +177,12 @@
         });
 
         if ("serviceWorker" in navigator) {
-            // Register service worker
-            navigator.serviceWorker.register("/wapos/service-worker.js", {
-                scope: '/wapos/'
+            // Register service worker - detect localhost vs production
+            const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+            const swPath = isLocalhost ? '/wapos/service-worker.js' : '/service-worker.js';
+            const swScope = isLocalhost ? '/wapos/' : '/';
+            navigator.serviceWorker.register(swPath, {
+                scope: swScope
             })
             .then(registration => {
                 console.log("[SW] Registered successfully");

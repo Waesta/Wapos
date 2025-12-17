@@ -57,6 +57,23 @@ $recipes = $barService->getRecipes();
 // Get customers for tab linking
 $customers = $db->fetchAll("SELECT id, name, phone, email FROM customers WHERE is_active = 1 ORDER BY name LIMIT 500");
 
+// Get waiter assignment settings
+$waiterAssignmentMode = $db->fetchOne("SELECT setting_value FROM settings WHERE setting_key = 'waiter_assignment_mode'")['setting_value'] ?? 'self';
+$requireWaiterOnTab = !empty($db->fetchOne("SELECT setting_value FROM settings WHERE setting_key = 'require_waiter_on_tab'")['setting_value']);
+$showWaiterFilter = !empty($db->fetchOne("SELECT setting_value FROM settings WHERE setting_key = 'show_waiter_filter'")['setting_value']);
+
+// Get waiters list for assignment (only if mode requires it)
+$waiters = [];
+if ($waiterAssignmentMode !== 'self') {
+    $waiters = $db->fetchAll("
+        SELECT id, full_name, username 
+        FROM users 
+        WHERE role IN ('waiter', 'bartender', 'cashier', 'manager', 'admin') 
+        AND is_active = 1 
+        ORDER BY full_name
+    ");
+}
+
 // Get open room bookings for room charge
 $roomBookings = $db->fetchAll("
     SELECT rb.id, rb.booking_number, r.room_number, rb.guest_name
@@ -442,6 +459,16 @@ include 'includes/header.php';
                     <i class="bi bi-arrow-left-right"></i> Transfer
                 </button>
             </div>
+            <?php if ($showWaiterFilter && !empty($waiters)): ?>
+            <div class="mt-2">
+                <select class="form-select form-select-sm" id="waiterFilterSelect" onchange="filterTabsByWaiter(this.value)">
+                    <option value="">All Waiters</option>
+                    <?php foreach ($waiters as $waiter): ?>
+                        <option value="<?= $waiter['id'] ?>"><?= htmlspecialchars($waiter['full_name'] ?: $waiter['username']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <?php endif; ?>
         </div>
         <div class="tabs-list" id="tabsList">
             <?php if (empty($openTabs)): ?>
@@ -545,7 +572,9 @@ include 'includes/header.php';
                         <i class="bi bi-three-dots-vertical"></i>
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end">
-                        <li><a class="dropdown-item" href="#" onclick="printTab()"><i class="bi bi-printer me-2"></i>Print Tab</a></li>
+                        <li><a class="dropdown-item" href="#" onclick="printBill()"><i class="bi bi-receipt me-2"></i>Print Bill (Customer)</a></li>
+                        <li><a class="dropdown-item" href="#" onclick="printTab()"><i class="bi bi-printer me-2"></i>Print Tab (Kitchen)</a></li>
+                        <li><a class="dropdown-item" href="#" onclick="printInvoice()"><i class="bi bi-file-text me-2"></i>Print Invoice (A4)</a></li>
                         <li><a class="dropdown-item" href="#" onclick="sendBot()"><i class="bi bi-send me-2"></i>Send to Bar (BOT)</a></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="#" onclick="showTransferModal()"><i class="bi bi-arrow-left-right me-2"></i>Transfer Tab</a></li>
@@ -675,6 +704,34 @@ include 'includes/header.php';
                         <?php endforeach; ?>
                     </select>
                 </div>
+                
+                <?php if ($waiterAssignmentMode !== 'self'): ?>
+                <div class="mb-3" id="waiterSelectGroup">
+                    <label class="form-label">
+                        <i class="bi bi-person-badge me-1"></i>Assign to Waiter
+                        <?php if ($requireWaiterOnTab): ?>
+                            <span class="text-danger">*</span>
+                        <?php endif; ?>
+                    </label>
+                    <select class="form-select" id="waiterSelect" <?= $requireWaiterOnTab ? 'required' : '' ?>>
+                        <?php if ($waiterAssignmentMode === 'both'): ?>
+                            <option value="">-- Use my account (<?= htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 'Me') ?>) --</option>
+                        <?php else: ?>
+                            <option value="">-- Select Waiter --</option>
+                        <?php endif; ?>
+                        <?php foreach ($waiters as $waiter): ?>
+                            <option value="<?= $waiter['id'] ?>"><?= htmlspecialchars($waiter['full_name'] ?: $waiter['username']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div class="form-text">
+                        <?php if ($waiterAssignmentMode === 'cashier'): ?>
+                            Select which waiter brought this order.
+                        <?php else: ?>
+                            Optionally assign to a different waiter, or leave blank to use your account.
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <?php endif; ?>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -934,11 +991,23 @@ function showNewTabModal() {
 async function createTab() {
     const tabType = document.querySelector('input[name="tabType"]:checked').value;
     let tabName = '';
+    
+    // Check waiter selection if required
+    const waiterSelect = document.getElementById('waiterSelect');
+    const waiterRequired = <?= $requireWaiterOnTab ? 'true' : 'false' ?>;
+    const waiterMode = '<?= $waiterAssignmentMode ?>';
+    
+    if (waiterSelect && waiterRequired && waiterMode === 'cashier' && !waiterSelect.value) {
+        alert('Please select a waiter for this tab');
+        return;
+    }
+    
     let data = {
         tab_type: tabType,
         bar_station: document.getElementById('barStationSelect').value,
         guest_count: document.getElementById('guestCount').value,
-        customer_id: document.getElementById('customerSelect').value || null
+        customer_id: document.getElementById('customerSelect').value || null,
+        assigned_waiter_id: waiterSelect ? (waiterSelect.value || null) : null
     };
     
     if (tabType === 'name') {
@@ -1430,7 +1499,12 @@ async function processPayment() {
         
         if (result.success) {
             bootstrap.Modal.getInstance(document.getElementById('paymentModal')).hide();
-            alert('Payment successful!');
+            
+            // Ask to print receipt
+            if (confirm('Payment successful! Print receipt?')) {
+                window.open(`print-bar-tab.php?tab_id=${currentTabId}&paid=1`, '_blank', 'width=400,height=600');
+            }
+            
             location.reload();
         } else {
             alert(result.message || 'Payment failed');
@@ -1503,9 +1577,19 @@ async function sendBot() {
     }
 }
 
+function printBill() {
+    if (!currentTabId) return;
+    window.open(`print-bar-bill.php?tab_id=${currentTabId}`, '_blank', 'width=400,height=600');
+}
+
 function printTab() {
     if (!currentTabId) return;
     window.open(`print-bar-tab.php?tab_id=${currentTabId}`, '_blank', 'width=400,height=600');
+}
+
+function printInvoice() {
+    if (!currentTabId) return;
+    window.open(`print-bar-invoice.php?tab_id=${currentTabId}`, '_blank', 'width=800,height=900');
 }
 
 async function loadOpenTabs() {
@@ -1557,6 +1641,48 @@ function escapeHtml(text) {
 function formatTime(dateStr) {
     const date = new Date(dateStr);
     return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+// Filter tabs by waiter
+async function filterTabsByWaiter(waiterId) {
+    try {
+        const url = waiterId 
+            ? `api/bar-tabs.php?action=get_open_tabs&waiter_id=${waiterId}`
+            : 'api/bar-tabs.php?action=get_open_tabs';
+        const response = await fetch(url);
+        const result = await response.json();
+        
+        if (result.success) {
+            const container = document.querySelector('.tabs-list');
+            if (result.tabs.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center text-muted py-4">
+                        <i class="bi bi-person-x fs-1 d-block mb-2"></i>
+                        <p>No tabs for this waiter</p>
+                    </div>`;
+            } else {
+                container.innerHTML = result.tabs.map(tab => `
+                    <div class="tab-card ${tab.id == currentTabId ? 'active' : ''}" data-tab-id="${tab.id}" data-waiter-id="${tab.server_id || ''}" onclick="selectTab(${tab.id})">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <div class="tab-name">${escapeHtml(tab.tab_name)}</div>
+                                <div class="tab-meta">
+                                    ${tab.item_count} items • ${escapeHtml(tab.server_name || 'Unknown')}
+                                </div>
+                            </div>
+                            <div class="tab-total">${formatCurrency(tab.total_amount)}</div>
+                        </div>
+                        <div class="tab-meta mt-1">
+                            <small><i class="bi bi-clock"></i> ${formatTime(tab.opened_at)}</small>
+                            ${tab.bar_station ? `<span class="station-indicator bg-info-subtle text-info ms-2"><i class="bi bi-cup-straw"></i> ${escapeHtml(tab.bar_station)}</span>` : ''}
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+    } catch (error) {
+        console.error('Error filtering tabs:', error);
+    }
 }
 </script>
 
