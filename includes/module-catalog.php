@@ -67,6 +67,24 @@ return [
         'icon' => 'bi-truck',
         'category' => 'Logistics & Field Ops',
     ],
+    'events' => [
+        'label' => 'Events & Banquets',
+        'description' => 'Weddings, conferences, venue bookings, and event services.',
+        'icon' => 'bi-calendar-event',
+        'category' => 'Hospitality & Guest Ops',
+    ],
+    'security' => [
+        'label' => 'Security Management',
+        'description' => 'Guard scheduling, patrols, incidents, and visitor logs.',
+        'icon' => 'bi-shield-check',
+        'category' => 'Operations & Safety',
+    ],
+    'hr' => [
+        'label' => 'HR & Employees',
+        'description' => 'Payroll, leave management, performance reviews, and training.',
+        'icon' => 'bi-person-badge',
+        'category' => 'Back Office & Governance',
+    ],
     'reports' => [
         'label' => 'Business Reports',
         'description' => 'Operational analytics, exports, and scheduled reports.',

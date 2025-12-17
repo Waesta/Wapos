@@ -1,0 +1,338 @@
+================================================================================
+WAPOS LIVE DEPLOYMENT - EVENTS, SECURITY & HR MODULES
+================================================================================
+Date: December 17, 2025
+Version: 1.0.0
+Modules: Events & Banquet Management, Security Management, HR & Employee Management
+================================================================================
+
+⚠️ CRITICAL: BACKUP YOUR DATABASE FIRST!
+Run: mysqldump -u [username] -p [database_name] > backup_$(date +%Y%m%d).sql
+
+================================================================================
+STEP 1: UPLOAD THESE FILES TO YOUR LIVE SERVER
+================================================================================
+
+📁 DATABASE MIGRATIONS (Upload to: /database/migrations/)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. 020_events_banquet_management.sql     [MODIFIED - Fixed foreign keys]
+2. 021_security_management.sql           [MODIFIED - Fixed foreign keys]
+3. 022_enhanced_hr_employee.sql          [NEW]
+4. 023_add_new_user_roles.sql            [NEW]
+5. 024_accounting_integration_fix.sql    [NEW]
+
+📁 SERVICE CLASSES (Upload to: /app/Services/)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+6. EventsService.php                     [NEW - Complete events logic]
+7. SecurityService.php                   [NEW - Complete security logic]
+8. HRService.php                         [NEW - Complete HR logic]
+
+📁 API ENDPOINTS (Upload to: /api/)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+9. events-api.php                        [MODIFIED - Added service details]
+10. security-api.php                     [NEW - Complete security API]
+11. hr-api.php                           [NEW - Complete HR API]
+
+📁 FRONTEND PAGES (Upload to: / root folder)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+12. events.php                           [NEW - Complete events UI]
+13. security.php                         [MODIFIED - Added patrol modal]
+14. hr-employees.php                     [MODIFIED - Fixed payroll button]
+
+📁 CONFIGURATION (Verify these exist - should already be there)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+15. includes/module-catalog.php          [VERIFY - Should have new modules]
+16. includes/header.php                  [VERIFY - Should have navigation]
+
+================================================================================
+STEP 2: RUN SQL MIGRATIONS (IN ORDER!)
+================================================================================
+
+Connect to your database:
+mysql -u [username] -p [database_name]
+
+Then run each migration file:
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ MIGRATION 1: Events & Banquet Management (10 tables)                        │
+└─────────────────────────────────────────────────────────────────────────────┘
+SOURCE /path/to/database/migrations/020_events_banquet_management.sql;
+
+Expected Output: Query OK, 0 rows affected (multiple times)
+Creates: event_venues, event_types, event_bookings, event_services, 
+         event_booking_services, event_payments, event_setup_requirements,
+         event_feedback, event_documents, event_activity_log
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ MIGRATION 2: Security Management (11 tables)                                │
+└─────────────────────────────────────────────────────────────────────────────┘
+SOURCE /path/to/database/migrations/021_security_management.sql;
+
+Expected Output: Query OK, 0 rows affected (multiple times)
+Creates: security_personnel, security_shifts, security_posts, security_schedule,
+         security_patrol_routes, security_patrol_logs, security_incidents,
+         security_visitor_log, security_equipment, security_training,
+         security_handover_notes
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ MIGRATION 3: HR & Employee Management (15 tables)                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+SOURCE /path/to/database/migrations/022_enhanced_hr_employee.sql;
+
+Expected Output: Query OK, 0 rows affected (multiple times)
+Creates: hr_departments, hr_positions, hr_employees, hr_salary_history,
+         hr_payroll_runs, hr_payroll_details, hr_leave_types, hr_leave_requests,
+         hr_performance_cycles, hr_performance_reviews, hr_employee_documents,
+         hr_disciplinary_actions, hr_training_records, hr_exit_interviews,
+         hr_employee_benefits
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ MIGRATION 4: User Roles Update                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+SOURCE /path/to/database/migrations/023_add_new_user_roles.sql;
+
+Expected Output: Query OK, 0 rows affected
+Adds roles: security_manager, security_staff, hr_manager, hr_staff, 
+           banquet_coordinator
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ MIGRATION 5: Accounting Integration                                         │
+└─────────────────────────────────────────────────────────────────────────────┘
+SOURCE /path/to/database/migrations/024_accounting_integration_fix.sql;
+
+Expected Output: Query OK, 0 rows affected
+Adds: transaction_id to event_payments, expense_transaction_id to hr_payroll_runs
+
+================================================================================
+STEP 3: VERIFY DATABASE TABLES CREATED
+================================================================================
+
+Run these verification queries:
+
+-- Check Events tables (should return 10)
+SELECT COUNT(*) as event_tables 
+FROM information_schema.tables 
+WHERE table_schema = DATABASE() 
+AND table_name LIKE 'event_%';
+
+-- Check Security tables (should return 11)
+SELECT COUNT(*) as security_tables 
+FROM information_schema.tables 
+WHERE table_schema = DATABASE() 
+AND table_name LIKE 'security_%';
+
+-- Check HR tables (should return 15)
+SELECT COUNT(*) as hr_tables 
+FROM information_schema.tables 
+WHERE table_schema = DATABASE() 
+AND table_name LIKE 'hr_%';
+
+-- Total new tables: 36
+
+-- Check sample data loaded
+SELECT COUNT(*) FROM event_venues;          -- Should be 3
+SELECT COUNT(*) FROM event_types;           -- Should be 5
+SELECT COUNT(*) FROM security_shifts;       -- Should be 6
+SELECT COUNT(*) FROM security_posts;        -- Should be 8
+SELECT COUNT(*) FROM hr_departments;        -- Should be 5
+
+================================================================================
+STEP 4: TEST THE MODULES
+================================================================================
+
+🔹 TEST EVENTS MODULE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Navigate to: https://yourdomain.com/wapos/events.php
+2. Verify dashboard loads (no 400 errors in console)
+3. Click "New Booking" - modal should open
+4. Click "Manage Venues" - modal should show 3 venues
+5. Create a test booking
+6. Click "Add Service" on a booking
+7. Click "Record Payment" on a booking
+8. Verify payment creates accounting transaction:
+   SELECT * FROM transactions WHERE description LIKE '%Event Payment%' LIMIT 1;
+
+🔹 TEST SECURITY MODULE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Navigate to: https://yourdomain.com/wapos/security.php
+2. Verify dashboard loads (no 400 errors in console)
+3. Click "Add Personnel" - modal should open
+4. Click "Schedule Shift" - modal should open
+5. Click "Report Incident" - modal should open
+6. Click "Start Patrol" - modal should open (NOT a placeholder!)
+7. Click "Log Visitor" - modal should open
+
+🔹 TEST HR MODULE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Navigate to: https://yourdomain.com/wapos/hr-employees.php
+2. Verify dashboard loads (no 400 errors in console)
+3. Click "Add Employee" - modal should open
+4. Click "Process Payroll" - modal should open
+5. Create a test payroll run
+6. Verify payroll can create accounting expense
+
+================================================================================
+STEP 5: ASSIGN USER ROLES
+================================================================================
+
+Update user roles for staff who need access:
+
+-- Make a user an Events Manager
+UPDATE users SET role = 'banquet_coordinator' WHERE id = [user_id];
+
+-- Make a user a Security Manager
+UPDATE users SET role = 'security_manager' WHERE id = [user_id];
+
+-- Make a user an HR Manager
+UPDATE users SET role = 'hr_manager' WHERE id = [user_id];
+
+-- View all available roles
+SELECT DISTINCT role FROM users;
+
+================================================================================
+WHAT'S INCLUDED (FEATURES)
+================================================================================
+
+✅ EVENTS & BANQUET MANAGEMENT
+   • Venue management (3 sample venues)
+   • Event type categorization (5 types)
+   • Booking management with status tracking
+   • Service add-ons (10+ services)
+   • Payment recording with accounting integration
+   • Customer management
+   • Event coordinator assignment
+   • Contract management
+   • Activity logging
+
+✅ SECURITY MANAGEMENT
+   • Personnel management
+   • Shift scheduling (6 shifts)
+   • Security posts (8 posts)
+   • Patrol route management (4 routes)
+   • Patrol logging with checkpoints
+   • Incident reporting
+   • Visitor logging
+   • Equipment tracking
+   • Training records
+   • Handover notes
+
+✅ HR & EMPLOYEE MANAGEMENT
+   • Department management (5 departments)
+   • Position management (10+ positions)
+   • Employee records
+   • Salary history tracking
+   • Payroll processing with accounting integration
+   • Leave management (3 leave types)
+   • Performance reviews
+   • Document management
+   • Disciplinary actions
+   • Training records
+   • Exit interviews
+   • Benefits tracking
+
+✅ ACCOUNTING INTEGRATION
+   • Event payments → Income transactions
+   • Payroll runs → Expense transactions
+   • Automatic transaction creation
+   • Full audit trail
+
+================================================================================
+IMPORTANT NOTES
+================================================================================
+
+⚠️  FOREIGN KEY FIX
+All foreign keys referencing users and customers tables have been corrected
+to INT UNSIGNED to match existing schema. This was the critical fix.
+
+⚠️  NO PLACEHOLDERS
+All features are fully implemented. No "coming soon" messages.
+
+⚠️  SAMPLE DATA
+All migrations include production-ready sample data for immediate use.
+
+⚠️  PERMISSIONS
+Module access is role-based. Assign appropriate roles to users.
+
+⚠️  BROWSER CACHE
+After deployment, users should clear browser cache (Ctrl+F5).
+
+================================================================================
+ROLLBACK PROCEDURE (IF NEEDED)
+================================================================================
+
+If something goes wrong:
+
+1. Restore database from backup:
+   mysql -u [username] -p [database_name] < backup_[timestamp].sql
+
+2. Remove uploaded files:
+   rm events.php security.php hr-employees.php
+   rm api/events-api.php api/security-api.php api/hr-api.php
+   rm app/Services/EventsService.php
+   rm app/Services/SecurityService.php
+   rm app/Services/HRService.php
+
+================================================================================
+SUCCESS INDICATORS
+================================================================================
+
+✅ All 36 tables created successfully
+✅ No 400 errors in browser console
+✅ Dashboard stats load on all modules
+✅ All modals open and close correctly
+✅ Sample data visible in dropdowns
+✅ API endpoints return success: true
+✅ Payments create accounting transactions
+✅ Payroll creates accounting expenses
+
+================================================================================
+SUPPORT & TROUBLESHOOTING
+================================================================================
+
+Check logs if issues occur:
+• PHP errors: /var/log/php_errors.log
+• MySQL errors: /var/log/mysql/error.log
+• Browser console: F12 → Console tab
+
+Common issues:
+• 400 errors → Migrations not run
+• Foreign key errors → Run migrations in correct order
+• Permission denied → Check user roles
+• Blank page → Check PHP error log
+
+================================================================================
+DEPLOYMENT CHECKLIST
+================================================================================
+
+PRE-DEPLOYMENT:
+☐ Database backup completed
+☐ Files backup completed
+☐ PHP version >= 7.4 verified
+☐ MySQL version >= 5.7 verified
+
+DEPLOYMENT:
+☐ All 14 files uploaded
+☐ All 5 migrations run successfully
+☐ 36 tables verified created
+☐ Sample data verified loaded
+
+POST-DEPLOYMENT:
+☐ Events module tested
+☐ Security module tested
+☐ HR module tested
+☐ User roles assigned
+☐ Browser cache cleared
+☐ Error logs checked
+
+================================================================================
+END OF DEPLOYMENT INSTRUCTIONS
+================================================================================
+
+Estimated deployment time: 30-45 minutes
+Files to upload: 14 files
+SQL migrations: 5 files
+New database tables: 36 tables
+Sample data: Included in all migrations
+
+For questions or issues, refer to the detailed documentation files included
+in your WAPOS installation directory.

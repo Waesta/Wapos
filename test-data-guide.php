@@ -501,9 +501,207 @@ $pageTitle = 'Sample Test Data & Testing Guide - WAPOS';
             </div>
         </section>
 
-        <!-- Section 7: Housekeeping Inventory Tests -->
+        <!-- Section 7: Events & Banquet Tests -->
+        <section id="events-tests" class="page-break">
+            <h2 class="section-title"><i class="bi bi-calendar-event me-2"></i>7. Events & Banquet Test Scenarios</h2>
+            <div class="section-content">
+                <h4>Sample Venues</h4>
+                <table class="data-table">
+                    <thead><tr><th>Venue</th><th>Type</th><th>Capacity</th><th>Rate</th></tr></thead>
+                    <tbody>
+                        <tr><td>Grand Ballroom</td><td>Ballroom</td><td>500</td><td>$5,000/day</td></tr>
+                        <tr><td>Garden Pavilion</td><td>Outdoor</td><td>200</td><td>$2,500/day</td></tr>
+                        <tr><td>Conference Room A</td><td>Meeting Room</td><td>50</td><td>$500/day</td></tr>
+                    </tbody>
+                </table>
+
+                <div class="test-card">
+                    <h4>Test 7.1: Create Event Booking</h4>
+                    <ul class="checklist">
+                        <li><span class="checkbox"></span> Go to Events → New Booking</li>
+                        <li><span class="checkbox"></span> Select event type (Wedding/Conference/Birthday)</li>
+                        <li><span class="checkbox"></span> Choose venue and date</li>
+                        <li><span class="checkbox"></span> Enter customer: <span class="highlight">John & Jane Wedding</span></li>
+                        <li><span class="checkbox"></span> Set guest count: <span class="highlight">150 guests</span></li>
+                        <li><span class="checkbox"></span> Add special requests</li>
+                        <li><span class="checkbox"></span> Save booking</li>
+                        <li><span class="checkbox"></span> Verify booking appears in list</li>
+                    </ul>
+                </div>
+
+                <div class="test-card">
+                    <h4>Test 7.2: Add Services to Booking</h4>
+                    <ul class="checklist">
+                        <li><span class="checkbox"></span> Open created booking</li>
+                        <li><span class="checkbox"></span> Click "Add Service"</li>
+                        <li><span class="checkbox"></span> Select: <span class="highlight">Catering - Buffet Dinner</span></li>
+                        <li><span class="checkbox"></span> Quantity: <span class="highlight">150</span>, Price: <span class="highlight">$25/person</span></li>
+                        <li><span class="checkbox"></span> Verify subtotal calculates automatically</li>
+                        <li><span class="checkbox"></span> Add decoration service</li>
+                        <li><span class="checkbox"></span> Verify services appear in booking</li>
+                    </ul>
+                </div>
+
+                <div class="test-card">
+                    <h4>Test 7.3: Record Payment</h4>
+                    <ul class="checklist">
+                        <li><span class="checkbox"></span> Click "Record Payment"</li>
+                        <li><span class="checkbox"></span> Payment type: <span class="highlight">Deposit</span></li>
+                        <li><span class="checkbox"></span> Amount: <span class="highlight">$1,000</span></li>
+                        <li><span class="checkbox"></span> Method: <span class="highlight">M-Pesa</span></li>
+                        <li><span class="checkbox"></span> Reference: <span class="highlight">RK12345678</span></li>
+                        <li><span class="checkbox"></span> Save payment</li>
+                        <li><span class="checkbox"></span> Verify payment in booking</li>
+                        <li><span class="checkbox"></span> Check Accounting → Transactions for income entry</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 8: Security Management Tests -->
+        <section id="security-tests">
+            <h2 class="section-title"><i class="bi bi-shield-check me-2"></i>8. Security Management Test Scenarios</h2>
+            <div class="section-content">
+                <h4>Sample Security Personnel</h4>
+                <table class="data-table">
+                    <thead><tr><th>Name</th><th>Employee #</th><th>Clearance</th><th>Status</th></tr></thead>
+                    <tbody>
+                        <tr><td>James Omondi</td><td>SEC-001</td><td>Standard</td><td>Active</td></tr>
+                        <tr><td>Mary Wanjiru</td><td>SEC-002</td><td>High</td><td>Active</td></tr>
+                    </tbody>
+                </table>
+
+                <div class="test-card">
+                    <h4>Test 8.1: Schedule Security Shift</h4>
+                    <ul class="checklist">
+                        <li><span class="checkbox"></span> Go to Security → Schedule</li>
+                        <li><span class="checkbox"></span> Click "Schedule Shift"</li>
+                        <li><span class="checkbox"></span> Personnel: <span class="highlight">James Omondi</span></li>
+                        <li><span class="checkbox"></span> Post: <span class="highlight">Main Gate</span></li>
+                        <li><span class="checkbox"></span> Shift: <span class="highlight">Night Shift (22:00-06:00)</span></li>
+                        <li><span class="checkbox"></span> Date: <span class="highlight">Today</span></li>
+                        <li><span class="checkbox"></span> Save schedule</li>
+                        <li><span class="checkbox"></span> Verify in schedule list</li>
+                    </ul>
+                </div>
+
+                <div class="test-card">
+                    <h4>Test 8.2: Start Patrol</h4>
+                    <ul class="checklist">
+                        <li><span class="checkbox"></span> Go to Patrols tab</li>
+                        <li><span class="checkbox"></span> Click "Start Patrol"</li>
+                        <li><span class="checkbox"></span> Route: <span class="highlight">Perimeter Check</span></li>
+                        <li><span class="checkbox"></span> Personnel: <span class="highlight">Mary Wanjiru</span></li>
+                        <li><span class="checkbox"></span> Start patrol</li>
+                        <li><span class="checkbox"></span> Verify patrol shows as "In Progress"</li>
+                    </ul>
+                </div>
+
+                <div class="test-card">
+                    <h4>Test 8.3: Report Incident</h4>
+                    <ul class="checklist">
+                        <li><span class="checkbox"></span> Click "Report Incident"</li>
+                        <li><span class="checkbox"></span> Type: <span class="highlight">Suspicious Activity</span></li>
+                        <li><span class="checkbox"></span> Severity: <span class="highlight">Medium</span></li>
+                        <li><span class="checkbox"></span> Location: <span class="highlight">Parking Lot B</span></li>
+                        <li><span class="checkbox"></span> Description: Enter details</li>
+                        <li><span class="checkbox"></span> Action taken: Enter response</li>
+                        <li><span class="checkbox"></span> Submit report</li>
+                        <li><span class="checkbox"></span> Verify incident in list</li>
+                    </ul>
+                </div>
+
+                <div class="test-card">
+                    <h4>Test 8.4: Log Visitor</h4>
+                    <ul class="checklist">
+                        <li><span class="checkbox"></span> Click "Log Visitor"</li>
+                        <li><span class="checkbox"></span> Name: <span class="highlight">David Kimani</span></li>
+                        <li><span class="checkbox"></span> ID Type: <span class="highlight">National ID</span></li>
+                        <li><span class="checkbox"></span> ID Number: <span class="highlight">12345678</span></li>
+                        <li><span class="checkbox"></span> Purpose: <span class="highlight">Business Meeting</span></li>
+                        <li><span class="checkbox"></span> Host: <span class="highlight">John Mukasa</span></li>
+                        <li><span class="checkbox"></span> Save entry</li>
+                        <li><span class="checkbox"></span> Verify in visitor log</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 9: HR & Employee Tests -->
+        <section id="hr-tests" class="page-break">
+            <h2 class="section-title"><i class="bi bi-people-fill me-2"></i>9. HR & Employee Management Test Scenarios</h2>
+            <div class="section-content">
+                <h4>Sample Departments</h4>
+                <table class="data-table">
+                    <thead><tr><th>Department</th><th>Manager</th><th>Employees</th></tr></thead>
+                    <tbody>
+                        <tr><td>Front Office</td><td>Peter Okello</td><td>5</td></tr>
+                        <tr><td>Housekeeping</td><td>Sarah Nambi</td><td>8</td></tr>
+                        <tr><td>Kitchen</td><td>Chef Moses</td><td>6</td></tr>
+                    </tbody>
+                </table>
+
+                <div class="test-card">
+                    <h4>Test 9.1: Add Employee</h4>
+                    <ul class="checklist">
+                        <li><span class="checkbox"></span> Go to HR → Employees</li>
+                        <li><span class="checkbox"></span> Click "Add Employee"</li>
+                        <li><span class="checkbox"></span> Name: <span class="highlight">Alice Achieng</span></li>
+                        <li><span class="checkbox"></span> Department: <span class="highlight">Front Office</span></li>
+                        <li><span class="checkbox"></span> Position: <span class="highlight">Receptionist</span></li>
+                        <li><span class="checkbox"></span> Salary: <span class="highlight">$800/month</span></li>
+                        <li><span class="checkbox"></span> Start date: <span class="highlight">Today</span></li>
+                        <li><span class="checkbox"></span> Save employee</li>
+                        <li><span class="checkbox"></span> Verify in employee list</li>
+                    </ul>
+                </div>
+
+                <div class="test-card">
+                    <h4>Test 9.2: Process Payroll</h4>
+                    <ul class="checklist">
+                        <li><span class="checkbox"></span> Go to Payroll tab</li>
+                        <li><span class="checkbox"></span> Click "Process Payroll"</li>
+                        <li><span class="checkbox"></span> Period: <span class="highlight">Current month</span></li>
+                        <li><span class="checkbox"></span> Generate payroll details</li>
+                        <li><span class="checkbox"></span> Review employee list and amounts</li>
+                        <li><span class="checkbox"></span> Approve payroll run</li>
+                        <li><span class="checkbox"></span> Verify status changes to "Approved"</li>
+                        <li><span class="checkbox"></span> Check Accounting → Transactions for expense entry</li>
+                    </ul>
+                </div>
+
+                <div class="test-card">
+                    <h4>Test 9.3: Submit Leave Request</h4>
+                    <ul class="checklist">
+                        <li><span class="checkbox"></span> Select an employee</li>
+                        <li><span class="checkbox"></span> Click "Request Leave"</li>
+                        <li><span class="checkbox"></span> Leave type: <span class="highlight">Annual Leave</span></li>
+                        <li><span class="checkbox"></span> Start date: <span class="highlight">Next week</span></li>
+                        <li><span class="checkbox"></span> End date: <span class="highlight">5 days</span></li>
+                        <li><span class="checkbox"></span> Reason: Enter details</li>
+                        <li><span class="checkbox"></span> Submit request</li>
+                        <li><span class="checkbox"></span> Manager reviews and approves/rejects</li>
+                    </ul>
+                </div>
+
+                <div class="test-card">
+                    <h4>Test 9.4: Performance Review</h4>
+                    <ul class="checklist">
+                        <li><span class="checkbox"></span> Go to Performance tab</li>
+                        <li><span class="checkbox"></span> Create performance cycle</li>
+                        <li><span class="checkbox"></span> Assign employees to review</li>
+                        <li><span class="checkbox"></span> Rate performance criteria</li>
+                        <li><span class="checkbox"></span> Add comments and goals</li>
+                        <li><span class="checkbox"></span> Save review</li>
+                        <li><span class="checkbox"></span> Verify in review history</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 10: Housekeeping Inventory Tests -->
         <section id="housekeeping-tests">
-            <h2 class="section-title"><i class="bi bi-house me-2"></i>7. Housekeeping Inventory Test Scenarios</h2>
+            <h2 class="section-title"><i class="bi bi-house me-2"></i>10. Housekeeping Inventory Test Scenarios</h2>
             <div class="section-content">
                 <div class="test-card">
                     <h4>Test 7.1: Linen Tracking</h4>
@@ -597,9 +795,9 @@ $pageTitle = 'Sample Test Data & Testing Guide - WAPOS';
         <!-- Version Info -->
         <section class="mt-4 no-print">
             <div class="alert alert-info">
-                <strong><i class="bi bi-info-circle me-2"></i>Document Version:</strong> 3.0 (December 2025)<br>
+                <strong><i class="bi bi-info-circle me-2"></i>Document Version:</strong> 4.0 (December 2025)<br>
                 <strong>Last Updated:</strong> <?= date('F d, Y') ?><br>
-                <strong>Includes:</strong> Intelligent Dispatch, Manual Pricing, Bar Management, Housekeeping Inventory
+                <strong>Includes:</strong> Events & Banquet Management, Security Management, HR & Employee Management, Intelligent Dispatch, Manual Pricing, Bar Management, Housekeeping Inventory
             </div>
         </section>
     </div>

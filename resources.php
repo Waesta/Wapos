@@ -342,6 +342,9 @@ $pageDescription = 'Complete user manual and documentation for WAPOS - Point of 
                         <li><a href="#delivery"><i class="bi bi-truck"></i> Delivery</a></li>
                         <li><a href="#housekeeping"><i class="bi bi-house"></i> Housekeeping & Inventory</a></li>
                         <li><a href="#maintenance"><i class="bi bi-tools"></i> Maintenance</a></li>
+                        <li><a href="#events"><i class="bi bi-calendar-event"></i> Events & Banquet</a></li>
+                        <li><a href="#security"><i class="bi bi-shield-check"></i> Security Management</a></li>
+                        <li><a href="#hr"><i class="bi bi-people-fill"></i> HR & Employees</a></li>
                         <li><a href="#guest-portal"><i class="bi bi-shield-lock"></i> Guest Portal</a></li>
                         <li><a href="#accounting"><i class="bi bi-calculator"></i> Accounting</a></li>
                         <li><a href="#payments"><i class="bi bi-credit-card"></i> Payment Gateways</a></li>
@@ -876,6 +879,173 @@ $pageDescription = 'Complete user manual and documentation for WAPOS - Point of 
                         <li>Mark discrepancies for investigation</li>
                         <li>Complete reconciliation</li>
                     </ol>
+                </section>
+
+                <!-- Events & Banquet Management -->
+                <section id="events">
+                    <h2><i class="bi bi-calendar-event me-2"></i>Events & Banquet Management</h2>
+                    <p>Manage event bookings, venues, services, and payments for weddings, conferences, and banquets.</p>
+
+                    <h3>Venue Management</h3>
+                    <p>Set up and manage your event spaces:</p>
+                    <ol class="steps-list">
+                        <li>Go to <strong>Events → Manage Venues</strong></li>
+                        <li>Click <strong>Add Venue</strong></li>
+                        <li>Enter venue details (name, type, capacity, location)</li>
+                        <li>Set pricing (base rate, hourly, full day)</li>
+                        <li>Add amenities (AC, projector, sound system)</li>
+                        <li>Upload venue photos</li>
+                    </ol>
+
+                    <h3>Creating Event Bookings</h3>
+                    <ol class="steps-list">
+                        <li>Click <strong>New Booking</strong></li>
+                        <li>Select event type (wedding, conference, birthday, etc.)</li>
+                        <li>Choose venue and date/time</li>
+                        <li>Enter customer details</li>
+                        <li>Add expected guest count</li>
+                        <li>Add special requests or notes</li>
+                        <li>Calculate total amount</li>
+                        <li>Save booking</li>
+                    </ol>
+
+                    <h3>Adding Services</h3>
+                    <p>Add catering, decoration, AV equipment, and other services to bookings:</p>
+                    <ul>
+                        <li>Open a booking and click <strong>Add Service</strong></li>
+                        <li>Select service from catalog or enter custom service</li>
+                        <li>Specify quantity and unit price</li>
+                        <li>System calculates subtotal automatically</li>
+                    </ul>
+
+                    <h3>Recording Payments</h3>
+                    <p>Track deposits, partial payments, and final balance:</p>
+                    <ol class="steps-list">
+                        <li>Open booking and click <strong>Record Payment</strong></li>
+                        <li>Select payment type (deposit, partial, balance, full)</li>
+                        <li>Enter amount and payment method</li>
+                        <li>Add reference number (M-Pesa code, cheque number)</li>
+                        <li>Payment automatically creates accounting transaction</li>
+                    </ol>
+
+                    <div class="info-box">
+                        <p><strong>Accounting Integration:</strong> All event payments automatically create income transactions in the accounting module for complete financial tracking.</p>
+                    </div>
+                </section>
+
+                <!-- Security Management -->
+                <section id="security">
+                    <h2><i class="bi bi-shield-check me-2"></i>Security Management</h2>
+                    <p>Manage security personnel, shifts, patrols, incidents, and visitor logs.</p>
+
+                    <h3>Personnel Management</h3>
+                    <p>Maintain security guard records:</p>
+                    <ul>
+                        <li>Employee details and contact information</li>
+                        <li>Security clearance levels</li>
+                        <li>License numbers and expiry dates</li>
+                        <li>Uniform sizes and photo</li>
+                        <li>Training certifications</li>
+                    </ul>
+
+                    <h3>Shift Scheduling</h3>
+                    <ol class="steps-list">
+                        <li>Go to <strong>Security → Schedule</strong></li>
+                        <li>Click <strong>Schedule Shift</strong></li>
+                        <li>Select personnel, post, and shift</li>
+                        <li>Set date and time</li>
+                        <li>Personnel can check in/out via dashboard</li>
+                    </ol>
+
+                    <h3>Patrol Management</h3>
+                    <p>Track security patrols with checkpoint verification:</p>
+                    <ol class="steps-list">
+                        <li>Click <strong>Start Patrol</strong></li>
+                        <li>Select patrol route and personnel</li>
+                        <li>System tracks start time and checkpoints</li>
+                        <li>Guard completes checkpoints during patrol</li>
+                        <li>Mark patrol as complete with observations</li>
+                    </ol>
+
+                    <h3>Incident Reporting</h3>
+                    <p>Document security incidents with full details:</p>
+                    <ul>
+                        <li>Incident type (theft, vandalism, trespassing, etc.)</li>
+                        <li>Severity level and location</li>
+                        <li>Detailed description and action taken</li>
+                        <li>Police/ambulance notification tracking</li>
+                        <li>Evidence collection (photos, videos)</li>
+                        <li>Follow-up notes and resolution</li>
+                    </ul>
+
+                    <h3>Visitor Logging</h3>
+                    <p>Track all visitors entering and exiting premises:</p>
+                    <ol class="steps-list">
+                        <li>Click <strong>Log Visitor</strong></li>
+                        <li>Scan or enter visitor ID</li>
+                        <li>Record purpose of visit and host details</li>
+                        <li>Issue visitor badge</li>
+                        <li>Log exit time when visitor leaves</li>
+                    </ol>
+                </section>
+
+                <!-- HR & Employee Management -->
+                <section id="hr">
+                    <h2><i class="bi bi-people-fill me-2"></i>HR & Employee Management</h2>
+                    <p>Comprehensive human resources management including payroll, leave, performance, and employee records.</p>
+
+                    <h3>Employee Records</h3>
+                    <p>Maintain complete employee information:</p>
+                    <ul>
+                        <li>Personal details and contact information</li>
+                        <li>Department and position assignment</li>
+                        <li>Employment status and dates</li>
+                        <li>Salary and compensation details</li>
+                        <li>Emergency contacts</li>
+                        <li>Document uploads (contracts, certificates)</li>
+                    </ul>
+
+                    <h3>Payroll Processing</h3>
+                    <ol class="steps-list">
+                        <li>Go to <strong>HR → Payroll</strong></li>
+                        <li>Click <strong>Process Payroll</strong></li>
+                        <li>Select pay period (start and end date)</li>
+                        <li>System generates payroll details for all employees</li>
+                        <li>Review and approve payroll run</li>
+                        <li>Payroll creates accounting expense transaction</li>
+                    </ol>
+
+                    <div class="info-box">
+                        <p><strong>Accounting Integration:</strong> Approved payroll runs automatically create expense transactions in the accounting module.</p>
+                    </div>
+
+                    <h3>Leave Management</h3>
+                    <p>Handle employee leave requests and approvals:</p>
+                    <ol class="steps-list">
+                        <li>Employee submits leave request with dates</li>
+                        <li>Manager reviews request in HR dashboard</li>
+                        <li>Approve or reject with comments</li>
+                        <li>System tracks leave balances by type</li>
+                    </ol>
+
+                    <h3>Performance Reviews</h3>
+                    <p>Conduct structured performance evaluations:</p>
+                    <ul>
+                        <li>Create performance cycles (annual, quarterly)</li>
+                        <li>Assign reviewers to employees</li>
+                        <li>Rate performance on multiple criteria</li>
+                        <li>Add goals and development plans</li>
+                        <li>Track review history</li>
+                    </ul>
+
+                    <h3>Training & Development</h3>
+                    <p>Record employee training and certifications:</p>
+                    <ul>
+                        <li>Training name and type</li>
+                        <li>Training date and provider</li>
+                        <li>Certificate numbers and expiry dates</li>
+                        <li>Upload certificate documents</li>
+                    </ul>
                 </section>
 
                 <!-- Guest Portal -->

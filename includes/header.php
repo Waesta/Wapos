@@ -765,6 +765,14 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'module' => 'rooms'
                             ],
                             [
+                                'roles' => ['admin','manager','frontdesk'],
+                                'href' => $basePath . '/events.php',
+                                'page' => 'events.php',
+                                'icon' => 'bi-calendar-event',
+                                'label' => 'Events & Banquets',
+                                'module' => 'events'
+                            ],
+                            [
                                 'roles' => ['admin','manager','housekeeping_manager','housekeeping_staff','housekeeper','housekeeping','frontdesk'],
                                 'href' => $basePath . '/housekeeping.php',
                                 'page' => 'housekeeping.php',
@@ -787,6 +795,14 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'icon' => 'bi-tools',
                                 'label' => 'Maintenance',
                                 'module' => 'maintenance'
+                            ],
+                            [
+                                'roles' => ['admin','manager','security_manager','security_staff'],
+                                'href' => $basePath . '/security.php',
+                                'page' => 'security.php',
+                                'icon' => 'bi-shield-check',
+                                'label' => 'Security Management',
+                                'module' => 'security'
                             ],
                             [
                                 'roles' => ['super_admin', 'developer', 'admin', 'manager', 'frontdesk'],
@@ -921,7 +937,15 @@ header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
                                 'module' => 'users'
                             ],
                             [
-                                'roles' => ['admin','manager','cashier','waiter','bartender','housekeeping_staff','maintenance_staff','frontdesk'],
+                                'roles' => ['admin','manager','hr_manager','hr_staff'],
+                                'href' => $basePath . '/hr-employees.php',
+                                'page' => 'hr-employees.php',
+                                'icon' => 'bi-person-badge',
+                                'label' => 'HR & Employees',
+                                'module' => 'hr'
+                            ],
+                            [
+                                'roles' => ['admin','manager','cashier','waiter','bartender','housekeeping_staff','maintenance_staff','frontdesk','security_staff'],
                                 'href' => $basePath . '/time-clock.php',
                                 'page' => 'time-clock.php',
                                 'icon' => 'bi-clock-history',

@@ -897,6 +897,54 @@ $ctaButton = $cm->get('home_cta_button', 'Sign In to Dashboard');
                         <li>Barcode scanner support</li>
                     </ul>
                 </article>
+
+                <!-- Events & Banquet Management -->
+                <article class="module-card">
+                    <div class="module-icon" style="background: rgba(245,158,11,0.12); color: #f59e0b;"><i class="bi bi-calendar-event" aria-hidden="true"></i></div>
+                    <h3>Events & Banquet Management</h3>
+                    <ul class="module-features">
+                        <li>Venue management & booking</li>
+                        <li>Event type categorization</li>
+                        <li>Customer & guest tracking</li>
+                        <li>Service add-ons & packages</li>
+                        <li>Payment tracking with accounting</li>
+                        <li>Contract & document management</li>
+                        <li>Event coordinator assignment</li>
+                        <li>Setup requirements & checklists</li>
+                    </ul>
+                </article>
+
+                <!-- Security Management -->
+                <article class="module-card">
+                    <div class="module-icon" style="background: rgba(220,38,38,0.12); color: #dc2626;"><i class="bi bi-shield-check" aria-hidden="true"></i></div>
+                    <h3>Security Management</h3>
+                    <ul class="module-features">
+                        <li>Personnel & guard management</li>
+                        <li>Shift scheduling & posts</li>
+                        <li>Patrol route tracking</li>
+                        <li>Incident reporting & logging</li>
+                        <li>Visitor entry/exit logs</li>
+                        <li>Equipment tracking</li>
+                        <li>Training records</li>
+                        <li>Handover notes & briefings</li>
+                    </ul>
+                </article>
+
+                <!-- HR & Employee Management -->
+                <article class="module-card">
+                    <div class="module-icon" style="background: rgba(168,85,247,0.12); color: #a855f7;"><i class="bi bi-people-fill" aria-hidden="true"></i></div>
+                    <h3>HR & Employee Management</h3>
+                    <ul class="module-features">
+                        <li>Department & position management</li>
+                        <li>Employee records & documents</li>
+                        <li>Payroll processing with accounting</li>
+                        <li>Leave management & approvals</li>
+                        <li>Performance reviews & cycles</li>
+                        <li>Disciplinary actions tracking</li>
+                        <li>Training & development records</li>
+                        <li>Benefits & salary history</li>
+                    </ul>
+                </article>
             </div>
         </section>
 

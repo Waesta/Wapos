@@ -17,9 +17,12 @@
 7. [Customer Management](#7-customer-management)
 8. [Housekeeping Operations](#8-housekeeping-operations)
 9. [Room Management](#9-room-management)
-10. [Reports & Analytics](#10-reports--analytics)
-11. [Settings & Configuration](#11-settings--configuration)
-12. [Troubleshooting](#12-troubleshooting)
+10. [Events & Banquet Management](#10-events--banquet-management)
+11. [Security Management](#11-security-management)
+12. [HR & Employee Management](#12-hr--employee-management)
+13. [Reports & Analytics](#13-reports--analytics)
+14. [Settings & Configuration](#14-settings--configuration)
+15. [Troubleshooting](#15-troubleshooting)
 
 ---
 
@@ -49,6 +52,11 @@
 | **Maintenance** | Work orders | Issue tracking, asset management |
 | **Front Desk** | Guest services | Room bookings, check-in/out, folios |
 | **Inventory Manager** | Stock control | Products, stock, procurement |
+| **Banquet Coordinator** | Events management | Venue bookings, event services, payments |
+| **Security Manager** | Security operations | Personnel, shifts, patrols, incidents |
+| **Security Staff** | Guard duties | Shift check-in, patrols, visitor logs |
+| **HR Manager** | Human resources | Employee records, payroll, performance |
+| **HR Staff** | HR operations | Leave requests, training records |
 
 ## 1.3 Navigation
 
