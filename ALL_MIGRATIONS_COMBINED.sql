@@ -644,7 +644,7 @@ CREATE TABLE IF NOT EXISTS hr_departments (
     department_name VARCHAR(100) NOT NULL,
     department_code VARCHAR(20) UNIQUE NOT NULL,
     parent_department_id INT,
-    manager_user_id INT,
+    manager_user_id INT UNSIGNED,
     description TEXT,
     cost_center_code VARCHAR(50),
     is_active BOOLEAN DEFAULT TRUE,
@@ -679,11 +679,11 @@ CREATE TABLE IF NOT EXISTS hr_positions (
 -- Employee Extended Profile
 CREATE TABLE IF NOT EXISTS hr_employees (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT UNIQUE NOT NULL,
+    user_id INT UNSIGNED UNIQUE NOT NULL,
     employee_number VARCHAR(50) UNIQUE NOT NULL,
     department_id INT,
     position_id INT,
-    reports_to_user_id INT,
+    reports_to_user_id INT UNSIGNED,
     hire_date DATE NOT NULL,
     probation_end_date DATE,
     confirmation_date DATE,
@@ -748,7 +748,7 @@ CREATE TABLE IF NOT EXISTS hr_payroll_structure (
     currency VARCHAR(10) DEFAULT 'KES',
     is_active BOOLEAN DEFAULT TRUE,
     notes TEXT,
-    created_by INT NOT NULL,
+    created_by INT UNSIGNED NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (employee_id) REFERENCES hr_employees(id) ON DELETE CASCADE,
@@ -770,10 +770,10 @@ CREATE TABLE IF NOT EXISTS hr_payroll_runs (
     total_net DECIMAL(12,2) DEFAULT 0.00,
     employee_count INT DEFAULT 0,
     notes TEXT,
-    created_by INT NOT NULL,
-    approved_by INT,
+    created_by INT UNSIGNED NOT NULL,
+    approved_by INT UNSIGNED,
     approved_at TIMESTAMP NULL,
-    processed_by INT,
+    processed_by INT UNSIGNED,
     processed_at TIMESTAMP NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -875,7 +875,7 @@ CREATE TABLE IF NOT EXISTS hr_leave_applications (
     supporting_document_path VARCHAR(255),
     status ENUM('pending', 'approved', 'rejected', 'cancelled', 'recalled') DEFAULT 'pending',
     applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    reviewed_by INT,
+    reviewed_by INT UNSIGNED,
     reviewed_at TIMESTAMP NULL,
     review_comments TEXT,
     cancelled_at TIMESTAMP NULL,
@@ -901,7 +901,7 @@ CREATE TABLE IF NOT EXISTS hr_performance_cycles (
     review_deadline DATE NOT NULL,
     status ENUM('draft', 'active', 'completed', 'cancelled') DEFAULT 'draft',
     description TEXT,
-    created_by INT NOT NULL,
+    created_by INT UNSIGNED NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT,
@@ -914,7 +914,7 @@ CREATE TABLE IF NOT EXISTS hr_performance_reviews (
     id INT AUTO_INCREMENT PRIMARY KEY,
     cycle_id INT NOT NULL,
     employee_id INT NOT NULL,
-    reviewer_id INT NOT NULL,
+    reviewer_id INT UNSIGNED NOT NULL,
     review_date DATE NOT NULL,
     review_type ENUM('self', 'supervisor', 'peer', '360') NOT NULL,
     overall_rating DECIMAL(3,2) CHECK (overall_rating BETWEEN 1 AND 5),
@@ -961,9 +961,9 @@ CREATE TABLE IF NOT EXISTS hr_employee_documents (
     file_size INT,
     expiry_date DATE,
     is_verified BOOLEAN DEFAULT FALSE,
-    verified_by INT,
+    verified_by INT UNSIGNED,
     verified_at TIMESTAMP NULL,
-    uploaded_by INT NOT NULL,
+    uploaded_by INT UNSIGNED NOT NULL,
     uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (employee_id) REFERENCES hr_employees(id) ON DELETE CASCADE,
     FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE RESTRICT,
@@ -1011,7 +1011,7 @@ CREATE TABLE IF NOT EXISTS hr_disciplinary_actions (
     suspension_end_date DATE,
     suspension_days INT,
     is_paid_suspension BOOLEAN DEFAULT FALSE,
-    issued_by INT NOT NULL,
+    issued_by INT UNSIGNED NOT NULL,
     issued_date DATE NOT NULL,
     acknowledged_by_employee BOOLEAN DEFAULT FALSE,
     acknowledged_at TIMESTAMP NULL,
@@ -1046,7 +1046,7 @@ CREATE TABLE IF NOT EXISTS hr_employee_loans (
     end_date DATE NOT NULL,
     reason TEXT,
     status ENUM('pending', 'approved', 'active', 'completed', 'defaulted', 'cancelled') DEFAULT 'pending',
-    approved_by INT,
+    approved_by INT UNSIGNED,
     approved_at TIMESTAMP NULL,
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -1149,34 +1149,93 @@ MODIFY COLUMN role ENUM(
 -- Description: Adds missing columns and ensures proper accounting integration
 -- ============================================================================
 
--- Fix event_payments table - add transaction_id if not exists
-ALTER TABLE event_payments 
-ADD COLUMN IF NOT EXISTS transaction_id INT COMMENT 'Link to accounting transactions table';
+-- Fix event_payments table - add transaction_id
+-- Check if column exists first, then add if missing
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.columns 
+    WHERE table_schema = DATABASE() AND table_name = 'event_payments' AND column_name = 'transaction_id');
 
-ALTER TABLE event_payments 
-ADD INDEX IF NOT EXISTS idx_transaction (transaction_id);
+SET @sql = IF(@col_exists = 0, 
+    'ALTER TABLE event_payments ADD COLUMN transaction_id INT COMMENT ''Link to accounting transactions table''', 
+    'SELECT ''Column transaction_id already exists'' AS message');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Add index for transaction_id
+SET @idx_exists = (SELECT COUNT(*) FROM information_schema.statistics 
+    WHERE table_schema = DATABASE() AND table_name = 'event_payments' AND index_name = 'idx_transaction');
+
+SET @sql = IF(@idx_exists = 0, 
+    'ALTER TABLE event_payments ADD INDEX idx_transaction (transaction_id)', 
+    'SELECT ''Index idx_transaction already exists'' AS message');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- Modify payment_date to DATE type if it's TIMESTAMP
 ALTER TABLE event_payments 
 MODIFY COLUMN payment_date DATE NOT NULL;
 
 -- Add accounting integration for security expenses (optional future use)
-ALTER TABLE security_incidents 
-ADD COLUMN IF NOT EXISTS expense_transaction_id INT COMMENT 'Link to accounting for incident expenses';
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.columns 
+    WHERE table_schema = DATABASE() AND table_name = 'security_incidents' AND column_name = 'expense_transaction_id');
 
--- Add accounting integration for HR payroll
-ALTER TABLE hr_payroll_runs 
-ADD COLUMN IF NOT EXISTS expense_transaction_id INT COMMENT 'Link to accounting for payroll expenses';
+SET @sql = IF(@col_exists = 0, 
+    'ALTER TABLE security_incidents ADD COLUMN expense_transaction_id INT COMMENT ''Link to accounting for incident expenses''', 
+    'SELECT ''Column expense_transaction_id already exists in security_incidents'' AS message');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
-ALTER TABLE hr_payroll_runs 
-ADD INDEX IF NOT EXISTS idx_expense_transaction (expense_transaction_id);
+-- Add accounting integration for HR payroll (only if table exists)
+SET @table_exists = (SELECT COUNT(*) FROM information_schema.tables 
+    WHERE table_schema = DATABASE() AND table_name = 'hr_payroll_runs');
+
+SET @col_exists = IF(@table_exists > 0,
+    (SELECT COUNT(*) FROM information_schema.columns 
+        WHERE table_schema = DATABASE() AND table_name = 'hr_payroll_runs' AND column_name = 'expense_transaction_id'),
+    1);
+
+SET @sql = IF(@table_exists > 0 AND @col_exists = 0, 
+    'ALTER TABLE hr_payroll_runs ADD COLUMN expense_transaction_id INT COMMENT ''Link to accounting for payroll expenses''', 
+    'SELECT ''Skipping hr_payroll_runs - table does not exist or column already exists'' AS message');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Add index for hr_payroll_runs expense_transaction_id (only if table exists)
+SET @idx_exists = IF(@table_exists > 0,
+    (SELECT COUNT(*) FROM information_schema.statistics 
+        WHERE table_schema = DATABASE() AND table_name = 'hr_payroll_runs' AND index_name = 'idx_expense_transaction'),
+    1);
+
+SET @sql = IF(@table_exists > 0 AND @idx_exists = 0, 
+    'ALTER TABLE hr_payroll_runs ADD INDEX idx_expense_transaction (expense_transaction_id)', 
+    'SELECT ''Skipping hr_payroll_runs index - table does not exist or index already exists'' AS message');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- Ensure all required columns exist in event_booking_services
-ALTER TABLE event_booking_services 
-ADD COLUMN IF NOT EXISTS service_name VARCHAR(200) NOT NULL AFTER service_id;
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.columns 
+    WHERE table_schema = DATABASE() AND table_name = 'event_booking_services' AND column_name = 'service_name');
 
-ALTER TABLE event_booking_services 
-ADD COLUMN IF NOT EXISTS service_category VARCHAR(100) AFTER service_name;
+SET @sql = IF(@col_exists = 0, 
+    'ALTER TABLE event_booking_services ADD COLUMN service_name VARCHAR(200) NOT NULL AFTER service_id', 
+    'SELECT ''Column service_name already exists'' AS message');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @col_exists = (SELECT COUNT(*) FROM information_schema.columns 
+    WHERE table_schema = DATABASE() AND table_name = 'event_booking_services' AND column_name = 'service_category');
+
+SET @sql = IF(@col_exists = 0, 
+    'ALTER TABLE event_booking_services ADD COLUMN service_category VARCHAR(100) AFTER service_name', 
+    'SELECT ''Column service_category already exists'' AS message');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- ============================================================================
 -- MIGRATION COMPLETE
