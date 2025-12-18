@@ -755,7 +755,14 @@ function createPayrollRun() {
         },
         body: JSON.stringify(data)
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            return response.text().then(text => {
+                throw new Error(text || 'Failed to create payroll run');
+            });
+        }
+        return response.json();
+    })
     .then(data => {
         if (data.success) {
             const payrollRunId = data.data.id;
@@ -769,20 +776,28 @@ function createPayrollRun() {
                 body: JSON.stringify({ payroll_run_id: payrollRunId })
             });
         }
-        throw new Error(data.message);
+        throw new Error(data.message || 'Failed to create payroll run');
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            return response.text().then(text => {
+                throw new Error(text || 'Failed to generate payroll details');
+            });
+        }
+        return response.json();
+    })
     .then(data => {
         if (data.success) {
             showNotification('Success', 'Payroll run created and generated successfully', 'success');
             bootstrap.Modal.getInstance(document.getElementById('createPayrollRunModal')).hide();
             loadPayrollRuns();
         } else {
-            showNotification('Error', data.message, 'danger');
+            showNotification('Error', data.message || 'Failed to process payroll', 'danger');
         }
     })
     .catch(error => {
-        showNotification('Error', error.message, 'danger');
+        console.error('Payroll creation error:', error);
+        showNotification('Error', error.message || 'An error occurred while processing payroll', 'danger');
     });
 }
 
