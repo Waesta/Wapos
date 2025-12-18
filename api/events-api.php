@@ -10,7 +10,7 @@ use App\Services\EventsService;
 
 header('Content-Type: application/json');
 
-$auth->requireRole(['admin', 'manager', 'frontdesk']);
+$auth->requireRole(['super_admin', 'admin', 'manager', 'frontdesk']);
 
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 $eventsService = new EventsService();

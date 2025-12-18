@@ -10,7 +10,7 @@ use App\Services\SecurityService;
 
 header('Content-Type: application/json');
 
-$auth->requireRole(['admin', 'manager', 'security_manager', 'security_staff']);
+$auth->requireRole(['super_admin', 'admin', 'manager', 'security_manager', 'security_staff']);
 
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 $securityService = new SecurityService();
@@ -40,7 +40,7 @@ try {
             
         case 'create_personnel':
             validateCSRFToken();
-            $auth->requireRole(['admin', 'manager', 'security_manager']);
+            $auth->requireRole(['super_admin', 'admin', 'manager', 'security_manager']);
             $data = json_decode(file_get_contents('php://input'), true);
             
             $result = $securityService->createPersonnel($data);
@@ -49,7 +49,7 @@ try {
             
         case 'update_personnel':
             validateCSRFToken();
-            $auth->requireRole(['admin', 'manager', 'security_manager']);
+            $auth->requireRole(['super_admin', 'admin', 'manager', 'security_manager', 'super_admin']);
             $data = json_decode(file_get_contents('php://input'), true);
             $id = $data['id'] ?? null;
             if (!$id) throw new Exception('Personnel ID required');
@@ -105,7 +105,7 @@ try {
             
         case 'create_schedule':
             validateCSRFToken();
-            $auth->requireRole(['admin', 'manager', 'security_manager']);
+            $auth->requireRole(['super_admin', 'admin', 'manager', 'security_manager']);
             $data = json_decode(file_get_contents('php://input'), true);
             
             $result = $securityService->createSchedule($data, $userId);
@@ -223,7 +223,7 @@ try {
             
         case 'resolve_incident':
             validateCSRFToken();
-            $auth->requireRole(['admin', 'manager', 'security_manager']);
+            $auth->requireRole(['super_admin', 'admin', 'manager', 'security_manager']);
             $data = json_decode(file_get_contents('php://input'), true);
             $id = $data['id'] ?? null;
             $resolution = $data['resolution'] ?? '';

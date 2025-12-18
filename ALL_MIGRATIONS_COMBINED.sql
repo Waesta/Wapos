@@ -1074,6 +1074,28 @@ INSERT INTO hr_departments (department_name, department_code, description) VALUE
 ('Sales & Marketing', 'DEPT-SM', 'Sales, marketing, and business development'),
 ('IT & Technology', 'DEPT-IT', 'Information technology and systems');
 
+-- Sample Positions
+INSERT INTO hr_positions (position_title, position_code, department_id, job_level, employment_type, min_salary, max_salary, is_active) VALUES
+('General Manager', 'POS-GM', 1, 'executive', 'full_time', 80000, 120000, TRUE),
+('Operations Manager', 'POS-OPMGR', 4, 'manager', 'full_time', 50000, 70000, TRUE),
+('Accountant', 'POS-ACC', 2, 'mid', 'full_time', 30000, 45000, TRUE),
+('HR Manager', 'POS-HRMGR', 3, 'manager', 'full_time', 45000, 60000, TRUE),
+('HR Officer', 'POS-HRO', 3, 'mid', 'full_time', 25000, 35000, TRUE),
+('Chef', 'POS-CHEF', 5, 'senior', 'full_time', 35000, 50000, TRUE),
+('Sous Chef', 'POS-SCHEF', 5, 'mid', 'full_time', 25000, 35000, TRUE),
+('Waiter/Waitress', 'POS-WAIT', 5, 'entry', 'full_time', 15000, 20000, TRUE),
+('Bartender', 'POS-BART', 5, 'junior', 'full_time', 18000, 25000, TRUE),
+('Receptionist', 'POS-RECEP', 6, 'entry', 'full_time', 18000, 25000, TRUE),
+('Front Desk Manager', 'POS-FDMGR', 6, 'manager', 'full_time', 35000, 50000, TRUE),
+('Housekeeper', 'POS-HK', 7, 'entry', 'full_time', 15000, 20000, TRUE),
+('Housekeeping Supervisor', 'POS-HKSUP', 7, 'junior', 'full_time', 20000, 28000, TRUE),
+('Security Guard', 'POS-SECG', 8, 'entry', 'full_time', 18000, 24000, TRUE),
+('Security Manager', 'POS-SECMGR', 8, 'manager', 'full_time', 35000, 50000, TRUE),
+('Sales Executive', 'POS-SALES', 9, 'mid', 'full_time', 25000, 40000, TRUE),
+('Marketing Manager', 'POS-MKTMGR', 9, 'manager', 'full_time', 40000, 60000, TRUE),
+('IT Support', 'POS-ITSUP', 10, 'junior', 'full_time', 25000, 35000, TRUE),
+('System Administrator', 'POS-SYSADM', 10, 'mid', 'full_time', 35000, 50000, TRUE);
+
 -- Sample Leave Types
 INSERT INTO hr_leave_types (leave_name, leave_code, description, annual_entitlement_days, requires_approval, is_paid, carry_forward_allowed, max_carry_forward_days, accrual_rate) VALUES
 ('Annual Leave', 'LEAVE-ANN', 'Annual vacation leave', 21, TRUE, TRUE, TRUE, 5, 1.75),

@@ -667,6 +667,12 @@ class HRService {
             AND CURDATE() BETWEEN start_date AND end_date
         ")['count'];
         
+        $stats['employees_on_leave_total'] = $this->db->fetchOne("
+            SELECT COUNT(*) as count 
+            FROM hr_leave_applications
+            WHERE status = 'approved'
+        ")['count'];
+        
         $stats['upcoming_birthdays'] = $this->db->fetchAll("
             SELECT e.id, u.full_name, e.date_of_birth
             FROM hr_employees e

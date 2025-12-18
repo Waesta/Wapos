@@ -10,7 +10,7 @@ use App\Services\HRService;
 
 header('Content-Type: application/json');
 
-$auth->requireRole(['admin', 'manager', 'hr_manager', 'hr_staff']);
+$auth->requireRole(['super_admin', 'admin', 'manager', 'hr_manager', 'hr_staff']);
 
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 $hrService = new HRService();
@@ -74,7 +74,7 @@ try {
             
         case 'create_employee':
             validateCSRFToken();
-            $auth->requireRole(['admin', 'manager', 'hr_manager']);
+            $auth->requireRole(['super_admin', 'admin', 'manager', 'hr_manager']);
             $data = json_decode(file_get_contents('php://input'), true);
             
             $result = $hrService->createEmployee($data);
@@ -83,7 +83,7 @@ try {
             
         case 'update_employee':
             validateCSRFToken();
-            $auth->requireRole(['admin', 'manager', 'hr_manager']);
+            $auth->requireRole(['super_admin', 'admin', 'manager', 'hr_manager']);
             $data = json_decode(file_get_contents('php://input'), true);
             $id = $data['id'] ?? null;
             if (!$id) throw new Exception('Employee ID required');
@@ -104,7 +104,7 @@ try {
             
         case 'create_payroll_structure':
             validateCSRFToken();
-            $auth->requireRole(['admin', 'manager', 'hr_manager']);
+            $auth->requireRole(['super_admin', 'admin', 'manager', 'hr_manager']);
             $data = json_decode(file_get_contents('php://input'), true);
             $employeeId = $data['employee_id'] ?? null;
             if (!$employeeId) throw new Exception('Employee ID required');
@@ -124,7 +124,7 @@ try {
             
         case 'create_payroll_run':
             validateCSRFToken();
-            $auth->requireRole(['admin', 'manager', 'hr_manager']);
+            $auth->requireRole(['super_admin', 'admin', 'manager', 'hr_manager']);
             $data = json_decode(file_get_contents('php://input'), true);
             
             $result = $hrService->createPayrollRun($data, $userId);
@@ -137,7 +137,7 @@ try {
             
         case 'generate_payroll_details':
             validateCSRFToken();
-            $auth->requireRole(['admin', 'manager', 'hr_manager']);
+            $auth->requireRole(['super_admin', 'admin', 'manager', 'hr_manager']);
             $data = json_decode(file_get_contents('php://input'), true);
             $payrollRunId = $data['payroll_run_id'] ?? null;
             if (!$payrollRunId) throw new Exception('Payroll run ID required');
@@ -148,7 +148,7 @@ try {
             
         case 'approve_payroll_run':
             validateCSRFToken();
-            $auth->requireRole(['admin', 'manager']);
+            $auth->requireRole(['super_admin', 'admin', 'manager']);
             $data = json_decode(file_get_contents('php://input'), true);
             $payrollRunId = $data['payroll_run_id'] ?? null;
             if (!$payrollRunId) throw new Exception('Payroll run ID required');
@@ -203,7 +203,7 @@ try {
             
         case 'review_leave_application':
             validateCSRFToken();
-            $auth->requireRole(['admin', 'manager', 'hr_manager']);
+            $auth->requireRole(['super_admin', 'admin', 'manager', 'hr_manager']);
             $data = json_decode(file_get_contents('php://input'), true);
             $applicationId = $data['application_id'] ?? null;
             $status = $data['status'] ?? null;
@@ -243,6 +243,22 @@ try {
         case 'get_dashboard_stats':
             $stats = $hrService->getDashboardStats();
             echo json_encode(['success' => true, 'data' => $stats]);
+            break;
+            
+        // ==================== USERS ====================
+        
+        case 'get_users':
+            // Get all active users for employee assignment
+            $db = Database::getInstance()->getConnection();
+            $stmt = $db->prepare("
+                SELECT id, username, full_name, email, role 
+                FROM users 
+                WHERE is_active = 1 AND deleted_at IS NULL
+                ORDER BY full_name ASC
+            ");
+            $stmt->execute();
+            $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            echo json_encode(['success' => true, 'data' => $users]);
             break;
             
         default:

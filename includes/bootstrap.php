@@ -135,8 +135,20 @@ function generateCSRFToken() {
     return $_SESSION["csrf_token"];
 }
 
-function validateCSRFToken($token) {
-    return isset($_SESSION["csrf_token"]) && hash_equals($_SESSION["csrf_token"], $token);
+function validateCSRFToken($token = null) {
+    if ($token === null) {
+        $token = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? ($_POST['csrf_token'] ?? null);
+    }
+
+    if (!$token || !isset($_SESSION["csrf_token"])) {
+        throw new Exception('Invalid CSRF token');
+    }
+
+    if (!hash_equals($_SESSION["csrf_token"], $token)) {
+        throw new Exception('CSRF token mismatch');
+    }
+
+    return true;
 }
 
 function formatDate($date, $format = 'Y-m-d H:i:s') {

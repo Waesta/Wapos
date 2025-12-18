@@ -54,9 +54,9 @@ require_once 'includes/header.php';
         <div class="col-md-3">
             <div class="card bg-success text-white">
                 <div class="card-body">
-                    <h6 class="card-subtitle mb-2">On Leave Today</h6>
+                    <h6 class="card-subtitle mb-2">On Leave</h6>
                     <h3 class="card-title mb-0" id="statOnLeaveToday">0</h3>
-                    <small>Employees</small>
+                    <small>Total Approved</small>
                 </div>
             </div>
         </div>
@@ -271,7 +271,12 @@ require_once 'includes/header.php';
             <div class="modal-body">
                 <form id="employeeForm">
                     <input type="hidden" id="employeeId" name="id">
+                    <input type="hidden" name="employment_status" value="probation">
                     <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Full Name *</label>
+                            <input type="text" class="form-control" name="full_name" required placeholder="e.g., John Doe">
+                        </div>
                         <div class="col-md-6">
                             <label class="form-label">Employee Number *</label>
                             <input type="text" class="form-control" name="employee_number" required>
@@ -340,6 +345,13 @@ require_once 'includes/header.php';
             </div>
             <div class="modal-body">
                 <form id="leaveApplicationForm">
+                    <div class="mb-3 d-none" id="leaveEmployeeSelectGroup">
+                        <label class="form-label">Employee *</label>
+                        <select class="form-select" id="leaveEmployeeSelect">
+                            <option value="">Select Employee</option>
+                        </select>
+                        <small class="text-muted">Required because your account is not linked to an employee profile.</small>
+                    </div>
                     <div class="mb-3">
                         <label class="form-label">Leave Type *</label>
                         <select class="form-select" name="leave_type_id" id="leaveTypeId" required onchange="checkLeaveBalance()">
@@ -448,6 +460,7 @@ let currentEmployeeId = null;
 let departmentChart = null;
 
 document.addEventListener('DOMContentLoaded', function() {
+    initializeEmployeeContext();
     loadDashboardStats();
     loadEmployees();
     loadLeaveApplications();
@@ -466,6 +479,79 @@ function loadDashboardStats() {
                 document.getElementById('statPendingLeave').textContent = data.data.pending_leave_requests || 0;
                 document.getElementById('statOnLeaveToday').textContent = data.data.employees_on_leave_today || 0;
             }
+        })
+        .catch(error => console.error('Error loading dashboard stats:', error));
+}
+
+function fetchEmployeeContext() {
+    return fetch('api/hr-api.php?action=get_employee_by_user')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.data) {
+                currentEmployeeId = data.data.id;
+                const employeeNameDisplay = document.querySelector('.employee-context-name');
+                if (employeeNameDisplay) {
+                    employeeNameDisplay.textContent = data.data.full_name || data.data.employee_number;
+                }
+                return currentEmployeeId;
+            }
+            throw new Error('No employee profile attached to this account.');
+        });
+}
+
+function initializeEmployeeContext() {
+    fetchEmployeeContext().catch(err => {
+        console.warn('Unable to load employee context', err.message || err);
+    });
+
+    const userSelect = document.querySelector('[name="user_id"]');
+    if (userSelect) {
+        userSelect.addEventListener('change', handleUserSelection);
+    }
+}
+
+function handleUserSelection(event) {
+    const option = event.target.selectedOptions[0];
+    if (!option) return;
+
+    const fullName = option.getAttribute('data-full-name');
+    const email = option.getAttribute('data-email');
+    const fullNameInput = document.querySelector('[name="full_name"]');
+    const emailInput = document.querySelector('[name="personal_email"]');
+
+    if (fullName && fullNameInput && !fullNameInput.hasAttribute('readonly')) {
+        fullNameInput.value = fullName;
+    }
+    if (email && emailInput && !emailInput.value) {
+        emailInput.value = email;
+    }
+}
+
+function checkLeaveBalance() {
+    const leaveTypeId = document.getElementById('leaveTypeId').value;
+    const info = document.getElementById('leaveBalanceInfo');
+
+    if (!currentEmployeeId) {
+        info.textContent = 'No employee profile linked to your account.';
+        return;
+    }
+
+    if (!leaveTypeId) {
+        info.textContent = '';
+        return;
+    }
+
+    fetch(`api/hr-api.php?action=get_leave_balance&employee_id=${currentEmployeeId}&leave_type_id=${leaveTypeId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.data) {
+                info.textContent = `Balance: ${data.data.balance_days} days remaining in ${data.data.year}.`;
+            } else {
+                info.textContent = data.message || 'Unable to fetch leave balance.';
+            }
+        })
+        .catch(() => {
+            info.textContent = 'Error checking leave balance.';
         });
 }
 
@@ -620,16 +706,253 @@ function loadDropdowns() {
         });
 }
 
-function showEmployeeModal() {
-    document.getElementById('employeeForm').reset();
-    document.getElementById('employeeModalTitle').textContent = 'Add Employee';
-    new bootstrap.Modal(document.getElementById('employeeModal')).show();
+function loadEmployeeFormOptions(selected = {}) {
+    const userSelect = document.querySelector('[name="user_id"]');
+    const deptSelect = document.querySelector('[name="department_id"]');
+    const posSelect = document.querySelector('[name="position_id"]');
+
+    const userPromise = fetch('api/hr-api.php?action=get_users')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && userSelect) {
+                userSelect.innerHTML = '<option value="">Select User</option>';
+                data.data.forEach(user => {
+                    userSelect.innerHTML += `<option value="${user.id}" data-full-name="${user.full_name}" data-email="${user.email}">${user.full_name} (${user.username})</option>`;
+                });
+                if (selected.user_id) {
+                    userSelect.value = selected.user_id;
+                }
+            }
+        });
+
+    const deptPromise = fetch('api/hr-api.php?action=get_departments')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && deptSelect) {
+                deptSelect.innerHTML = '<option value="">Select Department</option>';
+                data.data.forEach(dept => {
+                    deptSelect.innerHTML += `<option value="${dept.id}">${dept.department_name}</option>`;
+                });
+                if (selected.department_id) {
+                    deptSelect.value = selected.department_id;
+                }
+            }
+        });
+
+    const posPromise = fetch('api/hr-api.php?action=get_positions')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && posSelect) {
+                posSelect.innerHTML = '<option value="">Select Position</option>';
+                data.data.forEach(pos => {
+                    posSelect.innerHTML += `<option value="${pos.id}">${pos.position_title}</option>`;
+                });
+                if (selected.position_id) {
+                    posSelect.value = selected.position_id;
+                }
+            }
+        });
+
+    return Promise.all([userPromise, deptPromise, posPromise]);
+}
+
+function populateEmployeeForm(employee) {
+    if (!employee) return;
+
+    document.querySelector('[name="full_name"]').value = employee.full_name || '';
+    document.querySelector('[name="employee_number"]').value = employee.employee_number || '';
+    document.querySelector('[name="user_id"]').value = employee.user_id || '';
+    document.querySelector('[name="department_id"]').value = employee.department_id || '';
+    document.querySelector('[name="position_id"]').value = employee.position_id || '';
+    document.querySelector('[name="hire_date"]').value = employee.hire_date ? employee.hire_date.substring(0, 10) : '';
+    document.querySelector('[name="employment_type"]').value = employee.employment_type || 'full_time';
+    document.querySelector('[name="employment_status"]').value = employee.employment_status || 'probation';
+    document.querySelector('[name="personal_phone"]').value = employee.personal_phone || '';
+    document.querySelector('[name="personal_email"]').value = employee.personal_email || '';
+    document.querySelector('[name="address"]').value = employee.address || '';
+}
+
+function showEmployeeModal(employee = null) {
+    const form = document.getElementById('employeeForm');
+    form.reset();
+    document.getElementById('employeeModalTitle').textContent = employee ? 'Edit Employee' : 'Add Employee';
+    document.getElementById('employeeId').value = employee ? employee.id : '';
+    document.querySelector('[name="employment_status"]').value = employee?.employment_status || 'probation';
+
+    const modalInstance = new bootstrap.Modal(document.getElementById('employeeModal'));
+    modalInstance.show();
+
+    loadEmployeeFormOptions({
+        user_id: employee?.user_id,
+        department_id: employee?.department_id,
+        position_id: employee?.position_id
+    }).then(() => {
+        if (employee) {
+            populateEmployeeForm(employee);
+        } else {
+            const fullNameInput = document.querySelector('[name="full_name"]');
+            if (fullNameInput) fullNameInput.removeAttribute('readonly');
+        }
+    }).catch(error => console.error('Error loading employee options:', error));
+}
+
+function editEmployee(employeeId) {
+    fetch(`api/hr-api.php?action=get_employee&id=${employeeId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.data) {
+                showEmployeeModal(data.data);
+            } else {
+                showNotification('Error', 'Unable to load employee details', 'danger');
+            }
+        })
+        .catch(error => {
+            console.error('Load employee error:', error);
+            showNotification('Error', 'Failed to load employee details', 'danger');
+        });
+}
+
+function saveEmployee() {
+    const form = document.getElementById('employeeForm');
+    if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+    }
+
+    const formData = new FormData(form);
+    const data = Object.fromEntries(formData.entries());
+    const employeeId = document.getElementById('employeeId').value;
+    const action = employeeId ? 'update_employee' : 'create_employee';
+
+    const payload = {
+        id: employeeId || undefined,
+        user_id: data.user_id,
+        employee_number: data.employee_number,
+        department_id: data.department_id || null,
+        position_id: data.position_id || null,
+        reports_to_user_id: data.reports_to_user_id || null,
+        hire_date: data.hire_date,
+        probation_end_date: data.probation_end_date || null,
+        employment_status: data.employment_status || 'probation',
+        employment_type: data.employment_type,
+        work_location: data.work_location || null,
+        work_schedule: data.work_schedule || null,
+        id_number: data.id_number || null,
+        passport_number: data.passport_number || null,
+        tax_pin: data.tax_pin || null,
+        social_security_number: data.social_security_number || null,
+        bank_name: data.bank_name || null,
+        bank_account_number: data.bank_account_number || null,
+        bank_branch: data.bank_branch || null,
+        emergency_contact_name: data.emergency_contact_name || null,
+        emergency_contact_relationship: data.emergency_contact_relationship || null,
+        emergency_contact_phone: data.emergency_contact_phone || null,
+        date_of_birth: data.date_of_birth || null,
+        gender: data.gender || null,
+        marital_status: data.marital_status || null,
+        nationality: data.nationality || null,
+        address: data.address || null,
+        city: data.city || null,
+        postal_code: data.postal_code || null,
+        country: data.country || null,
+        personal_email: data.personal_email || null,
+        personal_phone: data.personal_phone || null,
+        photo_path: data.photo_path || null,
+        notes: data.notes || null
+    };
+
+    fetch(`api/hr-api.php?action=${action}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': csrfToken
+        },
+        body: JSON.stringify(payload)
+    })
+    .then(response => response.text())
+    .then(text => {
+        console.log('API Response:', text);
+        try {
+            const data = JSON.parse(text);
+            if (data.success) {
+                showNotification('Success', data.message || 'Employee saved successfully', 'success');
+                bootstrap.Modal.getInstance(document.getElementById('employeeModal')).hide();
+                loadEmployees();
+            } else {
+                showNotification('Error', data.message || 'Failed to save employee', 'danger');
+            }
+        } catch (e) {
+            console.error('JSON Parse Error:', e);
+            console.error('Response text:', text);
+            showNotification('Error', 'Server error: ' + text.substring(0, 200), 'danger');
+        }
+    })
+    .catch(error => {
+        console.error('Save employee error:', error);
+        showNotification('Error', error.message || 'An error occurred while saving employee', 'danger');
+    });
 }
 
 function showLeaveApplicationModal() {
-    document.getElementById('leaveApplicationForm').reset();
-    document.getElementById('leaveEmployeeId').value = 1; // Set to current user's employee ID
-    new bootstrap.Modal(document.getElementById('leaveApplicationModal')).show();
+    const openModal = () => {
+        const form = document.getElementById('leaveApplicationForm');
+        form.reset();
+        document.getElementById('leaveEmployeeId').value = currentEmployeeId;
+        document.getElementById('leaveBalanceInfo').textContent = '';
+        toggleLeaveEmployeeSelector(false);
+        new bootstrap.Modal(document.getElementById('leaveApplicationModal')).show();
+    };
+
+    if (currentEmployeeId) {
+        openModal();
+        return;
+    }
+
+    fetchEmployeeContext()
+        .then(openModal)
+        .catch(err => {
+            console.warn('Leave application opened without linked employee:', err.message || err);
+            toggleLeaveEmployeeSelector(true);
+            loadEmployeesForLeave();
+            new bootstrap.Modal(document.getElementById('leaveApplicationModal')).show();
+        });
+}
+
+function toggleLeaveEmployeeSelector(show) {
+    const group = document.getElementById('leaveEmployeeSelectGroup');
+    if (!group) return;
+    if (show) {
+        group.classList.remove('d-none');
+    } else {
+        group.classList.add('d-none');
+        document.getElementById('leaveEmployeeSelect').value = '';
+    }
+}
+
+function loadEmployeesForLeave() {
+    const select = document.getElementById('leaveEmployeeSelect');
+    if (!select) return;
+
+    select.innerHTML = '<option value="">Select Employee</option>';
+    fetch('api/hr-api.php?action=get_employees')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.data.length) {
+                data.data.forEach(emp => {
+                    select.innerHTML += `<option value="${emp.id}">${emp.full_name} (${emp.employee_number})</option>`;
+                });
+            } else {
+                select.innerHTML = '<option value="">No employees available</option>';
+            }
+        })
+        .catch(err => {
+            console.error('Failed to load employees for leave:', err);
+            select.innerHTML = '<option value="">Unable to load employees</option>';
+        });
+
+    select.addEventListener('change', () => {
+        document.getElementById('leaveEmployeeId').value = select.value;
+    }, { once: true });
 }
 
 function showCreatePayrollRunModal() {
@@ -898,7 +1221,7 @@ function formatDate(dateString) {
     });
 }
 
-function showNotification(title, message, type) {
+function showNotification(title, message, type = 'info') {
     const toast = document.createElement('div');
     toast.className = `toast align-items-center text-white bg-${type} border-0`;
     toast.setAttribute('role', 'alert');
